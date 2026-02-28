@@ -1,0 +1,1 @@
+"""InteligentResearch backend application."""
