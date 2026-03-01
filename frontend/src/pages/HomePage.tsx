@@ -1,13 +1,7 @@
-import { Navbar, Sidebar } from '@/components'
-
 export function HomePage() {
   return (
-    <>
-      <Navbar />
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 min-h-[calc(100vh-3.5rem)]" />
-      </div>
-    </>
+    <div className="min-h-full">
+      {/* Main content only — Navbar and Sidebar are rendered by MainLayout and do not re-render on route change */}
+    </div>
   )
 }

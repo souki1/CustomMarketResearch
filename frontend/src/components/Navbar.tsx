@@ -45,7 +45,7 @@ export function Navbar() {
         <div className="flex items-center justify-between h-11 gap-2">
           <button
             type="button"
-            className="flex items-center justify-center p-1.5 -ml-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors"
+            className="flex items-center justify-center p-1.5 -ml-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
             aria-label="Home"
           >
             <NavbarIcon />
@@ -54,7 +54,7 @@ export function Navbar() {
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-500 text-white text-xs font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-500 text-white text-xs font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors cursor-pointer"
             >
               <StarIcon className="w-3.5 h-3.5 text-white" />
               Upgrade your plan
@@ -62,7 +62,7 @@ export function Navbar() {
 
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors"
+              className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
               aria-label="Credits"
             >
               <CreditsIcon className="w-3.5 h-3.5" />
@@ -71,7 +71,7 @@ export function Navbar() {
 
             <button
               type="button"
-              className="flex items-center justify-center w-7 h-7 rounded-full text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors"
+              className="flex items-center justify-center w-7 h-7 rounded-full text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
               aria-label="Help"
             >
               <HelpIcon className="w-4 h-4" />
@@ -79,14 +79,14 @@ export function Navbar() {
 
             <button
               type="button"
-              className="relative flex items-center justify-center w-7 h-7 rounded-full text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors"
+              className="relative flex items-center justify-center w-7 h-7 rounded-full text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
               aria-label="Notifications"
             >
               <BellIcon className="w-4 h-4" />
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-blue-600" aria-hidden />
             </button>
 
-            <div className="flex items-center gap-2 pl-1.5 border-l border-gray-200">
+            <div className="flex items-center gap-2 pl-1.5 border-l border-gray-200 cursor-pointer">
               <div className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-700 text-white text-xs font-semibold shrink-0">
                 S
               </div>
