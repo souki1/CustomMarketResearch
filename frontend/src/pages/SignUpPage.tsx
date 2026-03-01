@@ -1,4 +1,7 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { setCurrentUserName, setToken } from '@/lib/auth'
+import { getGoogleLoginUrl, signUp } from '@/lib/api'
 
 function GoogleIcon() {
   return (
@@ -24,6 +27,41 @@ function GoogleIcon() {
 }
 
 export function SignUpPage() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
+
+  function handleGoogleSignUp() {
+    window.location.href = getGoogleLoginUrl()
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await signUp({ email: email.trim(), password })
+      setToken(res.access_token)
+      setCurrentUserName(res.display_name)
+      navigate('/')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign up failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <section className="min-h-[60vh] flex items-center justify-center py-12">
       <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-lg border border-gray-200/80 p-8">
@@ -36,6 +74,7 @@ export function SignUpPage() {
 
         <button
           type="button"
+          onClick={handleGoogleSignUp}
           className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors"
         >
           <GoogleIcon />
@@ -51,7 +90,12 @@ export function SignUpPage() {
           </div>
         </div>
 
-        <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">
+              {error}
+            </p>
+          )}
           <div className="space-y-2">
             <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700">
               Email
@@ -61,6 +105,9 @@ export function SignUpPage() {
               type="email"
               autoComplete="email"
               placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
@@ -73,6 +120,9 @@ export function SignUpPage() {
               type="password"
               autoComplete="new-password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
@@ -85,14 +135,18 @@ export function SignUpPage() {
               type="password"
               autoComplete="new-password"
               placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
           <button
             type="submit"
+            disabled={loading}
             className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Create account
+            {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
         <p className="mt-6 text-center text-sm text-gray-600">
