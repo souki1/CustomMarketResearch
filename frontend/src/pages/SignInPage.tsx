@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { setCurrentUserName } from '@/lib/auth'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { setCurrentUserName, setToken } from '@/lib/auth'
+import { getGoogleLoginUrl, signIn } from '@/lib/api'
 
 function GoogleIcon() {
   return (
@@ -33,37 +34,44 @@ function EnvelopeIcon() {
   )
 }
 
-function deriveNameFromEmail(email: string) {
-  const [localPart] = email.split('@')
-  if (!localPart) return ''
-
-  const cleaned = localPart.replace(/[._-]+/g, ' ')
-
-  return cleaned
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
 export function SignInPage() {
   const [step, setStep] = useState<'email' | 'password'>('email')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const err = searchParams.get('error')
+    if (err) setError(err === 'google_denied' ? 'Google sign-in was cancelled or failed.' : 'Something went wrong.')
+  }, [searchParams])
+
+  function handleGoogleSignIn() {
+    window.location.href = getGoogleLoginUrl()
+  }
 
   function handleContinue(e: React.FormEvent) {
     e.preventDefault()
+    setError('')
     if (email.trim()) setStep('password')
   }
 
-  function handleSignIn(e: React.FormEvent) {
+  async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
-    const trimmedEmail = email.trim()
-    if (trimmedEmail) {
-      const name = deriveNameFromEmail(trimmedEmail)
-      if (name) setCurrentUserName(name)
+    setError('')
+    setLoading(true)
+    try {
+      const res = await signIn({ email: email.trim(), password })
+      setToken(res.access_token)
+      setCurrentUserName(res.display_name)
+      navigate('/')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed')
+    } finally {
+      setLoading(false)
     }
-    navigate('/')
   }
 
   return (
@@ -78,10 +86,16 @@ export function SignInPage() {
             : 'Enter your password to sign in.'}
         </p>
 
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4" role="alert">
+            {error}
+          </p>
+        )}
         {step === 'email' ? (
           <>
             <button
               type="button"
+              onClick={handleGoogleSignIn}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors"
             >
               <GoogleIcon />
@@ -152,14 +166,18 @@ export function SignInPage() {
                 type="password"
                 autoComplete="current-password"
                 placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
                 className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               />
             </div>
             <button
               type="submit"
+              disabled={loading}
               className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign in
+              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
         )}
