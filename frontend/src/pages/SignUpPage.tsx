@@ -1,4 +1,6 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { setCurrentUserName } from '@/lib/auth'
 
 function GoogleIcon() {
   return (
@@ -23,7 +25,31 @@ function GoogleIcon() {
   )
 }
 
+function deriveNameFromEmail(email: string) {
+  const [localPart] = email.split('@')
+  if (!localPart) return ''
+  const cleaned = localPart.replace(/[._-]+/g, ' ')
+  return cleaned
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export function SignUpPage() {
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const displayName = name.trim() || deriveNameFromEmail(email.trim())
+    if (displayName) setCurrentUserName(displayName)
+    navigate('/')
+  }
+
   return (
     <section className="min-h-[60vh] flex items-center justify-center py-12">
       <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-lg border border-gray-200/80 p-8">
@@ -51,7 +77,21 @@ export function SignUpPage() {
           </div>
         </div>
 
-        <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          <div className="space-y-2">
+            <label htmlFor="signup-name" className="block text-sm font-medium text-gray-700">
+              Name
+            </label>
+            <input
+              id="signup-name"
+              type="text"
+              autoComplete="name"
+              placeholder="Your name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            />
+          </div>
           <div className="space-y-2">
             <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700">
               Email
@@ -61,6 +101,8 @@ export function SignUpPage() {
               type="email"
               autoComplete="email"
               placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
@@ -73,6 +115,8 @@ export function SignUpPage() {
               type="password"
               autoComplete="new-password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
@@ -85,6 +129,8 @@ export function SignUpPage() {
               type="password"
               autoComplete="new-password"
               placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />
           </div>
