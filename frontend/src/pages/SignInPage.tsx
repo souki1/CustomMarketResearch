@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { setCurrentUserName } from '@/lib/auth'
 
 function GoogleIcon() {
   return (
@@ -32,6 +33,19 @@ function EnvelopeIcon() {
   )
 }
 
+function deriveNameFromEmail(email: string) {
+  const [localPart] = email.split('@')
+  if (!localPart) return ''
+
+  const cleaned = localPart.replace(/[._-]+/g, ' ')
+
+  return cleaned
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export function SignInPage() {
   const [step, setStep] = useState<'email' | 'password'>('email')
   const [email, setEmail] = useState('')
@@ -44,6 +58,11 @@ export function SignInPage() {
 
   function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
+    const trimmedEmail = email.trim()
+    if (trimmedEmail) {
+      const name = deriveNameFromEmail(trimmedEmail)
+      if (name) setCurrentUserName(name)
+    }
     navigate('/')
   }
 
