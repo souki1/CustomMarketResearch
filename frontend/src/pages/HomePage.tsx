@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
+import {
+  AllFilesView,
+  Card,
+  CreateFileModal,
+  CreateFolderModal,
+} from '@/components'
 import { getCurrentUserName } from '@/lib/auth'
+import type { FileTableRow } from '@/types'
 
-const icon3DClass = 'icon-3d shrink-0 rounded-lg p-3'
+
+
+const icon3DClass = 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl'
 
 const FEATURE_CARDS = [
   {
@@ -42,21 +51,117 @@ const FEATURE_CARDS = [
   },
 ] as const
 
+const PLACEHOLDER_FILES: FileTableRow[] = [
+  { id: 'f1', name: 'Clay Starter Table', isFolder: false, favorite: true, createdAt: 'Feb 25, 2026', lastOpened: 'Feb 28, 2026', owner: 'Souki Girish', access: 'Edit', parentId: null },
+  { id: 'f2', name: 'People Search', isFolder: false, favorite: false, createdAt: 'Feb 25, 2026', lastOpened: 'Feb 28, 2026', owner: 'Souki Girish', access: 'Edit', parentId: null },
+  { id: 'f3', name: 'updated_file2', isFolder: false, favorite: false, createdAt: 'Feb 25, 2026', lastOpened: 'Feb 28, 2026', owner: 'Souki Girish', access: 'Edit', parentId: null },
+  { id: 'f4', name: 'Copy of 10K Finder & Analyzer | Sales', isFolder: false, favorite: false, createdAt: 'Feb 25, 2026', lastOpened: 'Feb 28, 2026', owner: 'Souki Girish', access: 'Edit', parentId: null },
+]
+
 type FileTab = 'all' | 'recents' | 'favourites'
+
+type FolderItem = { id: string; name: string; createdAt: string; parentId: string | null }
+type FileItem = { id: string; name: string; createdAt: string; lastOpened: string; owner: string; access: string; parentId: string | null }
 
 export function HomePage() {
   const [displayName, setDisplayName] = useState(() => getCurrentUserName() ?? 'there')
   const [searchQuery, setSearchQuery] = useState('')
   const [fileTab, setFileTab] = useState<FileTab>('all')
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [createFolderOpen, setCreateFolderOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [createFileOpen, setCreateFileOpen] = useState(false)
+  const [newFileName, setNewFileName] = useState('')
+  const [folders, setFolders] = useState<FolderItem[]>([])
+  const [files, setFiles] = useState<FileItem[]>([])
 
   useEffect(() => {
     const stored = getCurrentUserName()
     if (stored) setDisplayName(stored)
   }, [])
 
+  const handleCreateFolder = () => {
+    const name = newFolderName.trim()
+    if (!name) return
+    setFolders((prev) => [
+      ...prev,
+      {
+        id: `folder-${Date.now()}`,
+        name,
+        createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        parentId: currentFolderId,
+      },
+    ])
+    setNewFolderName('')
+    setCreateFolderOpen(false)
+  }
+
+  const handleCreateFile = () => {
+    const name = newFileName.trim()
+    if (!name) return
+    const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    setFiles((prev) => [
+      ...prev,
+      {
+        id: `file-${Date.now()}`,
+        name,
+        createdAt: now,
+        lastOpened: '—',
+        owner: displayName,
+        access: 'Edit',
+        parentId: currentFolderId,
+      },
+    ])
+    setNewFileName('')
+    setCreateFileOpen(false)
+  }
+
+  const allRows: FileTableRow[] = [
+    ...folders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      isFolder: true,
+      favorite: false,
+      createdAt: f.createdAt,
+      lastOpened: '—',
+      owner: displayName,
+      access: 'Edit',
+      parentId: f.parentId,
+    })),
+    ...PLACEHOLDER_FILES,
+    ...files.map((f) => ({
+      id: f.id,
+      name: f.name,
+      isFolder: false,
+      favorite: false,
+      createdAt: f.createdAt,
+      lastOpened: f.lastOpened,
+      owner: f.owner,
+      access: f.access,
+      parentId: f.parentId,
+    })),
+  ]
+
+  const rowsInCurrentFolder = allRows.filter(
+    (row) => (row.parentId ?? null) === currentFolderId
+  )
+
+  const breadcrumbPath = (() => {
+    if (!currentFolderId) return []
+    const path: { id: string; name: string }[] = []
+    let id: string | null = currentFolderId
+    while (id) {
+      const folder = folders.find((f) => f.id === id)
+      if (!folder) break
+      path.unshift({ id: folder.id, name: folder.name })
+      id = folder.parentId
+    }
+    return path
+  })()
+
   return (
     <div className="min-h-full bg-white">
-      <div className="flex flex-col pl-3 pr-6 py-6">
+      <div className="flex flex-col pl-6 pr-6 py-6">
         <h1 className="text-base font-bold tracking-tight text-gray-900 sm:text-lg">
           Hey {displayName}, ready to get started?
         </h1>
@@ -83,20 +188,20 @@ export function HomePage() {
           </button>
         </div>
 
-        {/* CARD SIZE – Width: w-80. Padding: p-4. Gap between cards: gap-5. Icon/text gap: gap-4. Icon: h-8 w-8, p-3. */}
         <div className="mt-4 flex flex-wrap gap-5">
           {FEATURE_CARDS.map((card) => (
-            <button
+            <Card
               key={card.id}
+              as="button"
               type="button"
-              className="flex w-80 flex-row items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 text-left shadow-md transition-shadow hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-1"
+              className="flex w-80 flex-row items-center gap-4"
             >
               {card.icon}
               <div className="min-w-10 flex-1">
                 <p className="text-sm font-semibold text-gray-900">{card.title}</p>
                 <p className="mt-1 text-xs leading-snug text-gray-500">{card.description}</p>
               </div>
-            </button>
+            </Card>
           ))}
         </div>
 
@@ -106,7 +211,7 @@ export function HomePage() {
               key={tab}
               type="button"
               onClick={() => setFileTab(tab)}
-              className={`pb-2.5 text-sm font-medium transition-colors focus:outline-none ${
+              className={`pb-2.5 text-sm font-medium transition-colors focus:outline-none focus:ring-0 ${
                 fileTab === tab
                   ? 'border-b-2 border-blue-600 text-blue-600 -mb-px'
                   : 'text-gray-600 hover:text-gray-900'
@@ -116,7 +221,46 @@ export function HomePage() {
             </button>
           ))}
         </div>
+
+        {fileTab === 'all' && (
+          <AllFilesView
+            rows={rowsInCurrentFolder}
+            breadcrumbPath={breadcrumbPath}
+            onOpenFolder={setCurrentFolderId}
+            onGoToFolder={setCurrentFolderId}
+            onNewFolderClick={() => setCreateFolderOpen(true)}
+            onNewFileClick={() => setCreateFileOpen(true)}
+          />
+        )}
+
+        {fileTab === 'recents' && (
+          <div className="mt-6 text-sm text-gray-500">Recents — no items yet.</div>
+        )}
+        {fileTab === 'favourites' && (
+          <div className="mt-6 text-sm text-gray-500">Favorites — no items yet.</div>
+        )}
       </div>
+
+      <CreateFolderModal
+        open={createFolderOpen}
+        name={newFolderName}
+        onNameChange={setNewFolderName}
+        onCreate={handleCreateFolder}
+        onCancel={() => {
+          setCreateFolderOpen(false)
+          setNewFolderName('')
+        }}
+      />
+      <CreateFileModal
+        open={createFileOpen}
+        name={newFileName}
+        onNameChange={setNewFileName}
+        onCreate={handleCreateFile}
+        onCancel={() => {
+          setCreateFileOpen(false)
+          setNewFileName('')
+        }}
+      />
     </div>
   )
 }

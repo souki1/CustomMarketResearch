@@ -67,7 +67,32 @@ function SignOutIcon({ className }: { className?: string }) {
   )
 }
 
-export function Navbar() {
+function SidebarPanelIcon({ className, open }: { className?: string; open: boolean }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* Left panel (sidebar): filled when open, outline when closed */}
+      <rect x="2" y="4" width="8" height="16" rx="1.5" className={open ? 'fill-gray-300 stroke-gray-400' : ''} />
+      {/* Right area (content) */}
+      <rect x="13" y="4" width="9" height="16" rx="1.5" />
+    </svg>
+  )
+}
+
+type NavbarProps = {
+  sidebarOpen?: boolean
+  onSidebarToggle?: () => void
+}
+
+export function Navbar({ sidebarOpen = true, onSidebarToggle }: NavbarProps) {
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -96,13 +121,26 @@ export function Navbar() {
     <nav className="sticky top-0 z-10 border-b border-gray-200 bg-white" aria-label="Main navigation">
       <div className="w-full max-w-8xl mx-auto px-3 sm:px-4">
         <div className="flex items-center justify-between h-11 gap-2">
-          <button
-            type="button"
-            className="flex items-center justify-center p-1.5 -ml-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
-            aria-label="Home"
-          >
-            <NavbarIcon />
-          </button>
+          <div className="flex items-center gap-1">
+            {onSidebarToggle && (
+              <button
+                type="button"
+                onClick={onSidebarToggle}
+                className="flex items-center justify-center p-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
+                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+                title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+              >
+                <SidebarPanelIcon className="w-5 h-5" open={sidebarOpen} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="flex items-center justify-center p-1.5 -ml-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
+              aria-label="Home"
+            >
+              <NavbarIcon />
+            </button>
+          </div>
 
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
             <button
