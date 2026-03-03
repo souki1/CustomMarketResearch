@@ -10,6 +10,7 @@ type AllFilesViewProps = {
   breadcrumbPath: BreadcrumbSegment[]
   onOpenFolder: (folderId: string) => void
   onGoToFolder: (folderId: string | null) => void
+  onOpenFile?: (fileId: string, fileName?: string) => void
   onNewFolderClick: () => void
   onNewFileClick: () => void
 }
@@ -19,6 +20,7 @@ export function AllFilesView({
   breadcrumbPath,
   onOpenFolder,
   onGoToFolder,
+  onOpenFile,
   onNewFolderClick,
   onNewFileClick,
 }: AllFilesViewProps) {
@@ -85,7 +87,7 @@ export function AllFilesView({
       <div className="border-b border-gray-200" />
 
       <AllFilesFilters />
-      <FileTable rows={rows} onOpenFolder={onOpenFolder} />
+      <FileTable rows={rows} onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} />
     </div>
   )
 }

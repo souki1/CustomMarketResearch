@@ -1,3 +1,5 @@
+import { Link, useLocation } from 'react-router-dom'
+
 function HomeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -27,6 +29,9 @@ type SidebarProps = {
 
 export function Sidebar({ open }: SidebarProps) {
   const iconClass = 'h-5 w-5 shrink-0 text-gray-500'
+  const location = useLocation()
+  const isHome = location.pathname === '/'
+  const isResearch = location.pathname === '/research'
 
   return (
     <aside
@@ -36,22 +41,22 @@ export function Sidebar({ open }: SidebarProps) {
     >
       <div className="flex h-full flex-col py-4">
         <nav className="flex flex-col gap-1 px-2">
-          <button
-            type="button"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          <Link
+            to="/"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${isHome ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
             title="Home"
           >
             <HomeIcon className={iconClass} />
             <span>Home</span>
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          </Link>
+          <Link
+            to="/research"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${isResearch ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
             title="Research"
           >
             <ResearchIcon className={iconClass} />
             <span>Research</span>
-          </button>
+          </Link>
           <button
             type="button"
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"

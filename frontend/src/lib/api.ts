@@ -4,6 +4,18 @@ export type SignUpPayload = { email: string; password: string; display_name?: st
 export type SignInPayload = { email: string; password: string }
 export type AuthResponse = { access_token: string; token_type: string; display_name: string }
 
+export type WorkspaceItem = {
+  id: number
+  name: string
+  is_folder: boolean
+  parent_id: number | null
+  favorite: boolean
+  access: string
+  created_at: string
+  last_opened: string | null
+  owner_display_name?: string | null
+}
+
 async function request<T>(
   path: string,
   options: RequestInit & { token?: string } = {}
@@ -31,10 +43,75 @@ export async function signIn(payload: SignInPayload): Promise<AuthResponse> {
   return request<AuthResponse>('/auth/signin', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export async function getMe(token: string): Promise< { id: number; email: string; display_name: string }> {
+export async function getMe(token: string): Promise<{ id: number; email: string; display_name: string }> {
   return request('/auth/me', { token })
 }
 
 export function getGoogleLoginUrl(): string {
   return `${API_BASE}/auth/google`
+}
+
+export async function listWorkspaceItems(parentId: number | null, token: string): Promise<WorkspaceItem[]> {
+  const search = parentId == null ? '' : `?parent_id=${parentId}`
+  return request<WorkspaceItem[]>(`/workspace/items${search}`, { token })
+}
+
+export async function createWorkspaceFolder(
+  name: string,
+  parentId: number | null,
+  token: string
+): Promise<WorkspaceItem> {
+  return request<WorkspaceItem>('/workspace/folders', {
+    method: 'POST',
+    body: JSON.stringify({ name, is_folder: true, parent_id: parentId }),
+    token,
+  })
+}
+
+export async function createWorkspaceFile(
+  name: string,
+  parentId: number | null,
+  token: string
+): Promise<WorkspaceItem> {
+  return request<WorkspaceItem>('/workspace/files', {
+    method: 'POST',
+    body: JSON.stringify({ name, is_folder: false, parent_id: parentId }),
+    token,
+  })
+}
+
+export async function uploadWorkspaceCsv(
+  file: File,
+  parentId: number | null,
+  token: string
+): Promise<WorkspaceItem> {
+  const form = new FormData()
+  form.append('file', file)
+  if (parentId != null) form.append('parent_id', String(parentId))
+
+  const headers: HeadersInit = {}
+  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/workspace/upload-csv`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+  return res.json()
+}
+
+export async function getWorkspaceFileContent(itemId: number, token: string): Promise<string> {
+  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, { headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+  return res.text()
 }

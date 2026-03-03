@@ -4,6 +4,7 @@ import type { FileTableRow as Row } from '@/types'
 type FileTableProps = {
   rows: Row[]
   onOpenFolder?: (folderId: string) => void
+  onOpenFile?: (fileId: string, fileName?: string) => void
 }
 
 function FolderIcon() {
@@ -58,7 +59,15 @@ function StarIcon({ filled }: { filled: boolean }) {
   )
 }
 
-function FileTableRow({ row, onOpenFolder }: { row: Row; onOpenFolder?: (folderId: string) => void }) {
+function FileTableRow({
+  row,
+  onOpenFolder,
+  onOpenFile,
+}: {
+  row: Row
+  onOpenFolder?: (folderId: string) => void
+  onOpenFile?: (fileId: string, fileName?: string) => void
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -86,6 +95,14 @@ function FileTableRow({ row, onOpenFolder }: { row: Row; onOpenFolder?: (folderI
             <button
               type="button"
               onClick={() => onOpenFolder(row.id)}
+              className="font-medium text-gray-900 text-left hover:text-blue-600 focus:outline-none focus:ring-0 focus:underline"
+            >
+              {row.name}
+            </button>
+          ) : onOpenFile ? (
+            <button
+              type="button"
+              onClick={() => onOpenFile(row.id, row.name)}
               className="font-medium text-gray-900 text-left hover:text-blue-600 focus:outline-none focus:ring-0 focus:underline"
             >
               {row.name}
@@ -157,7 +174,7 @@ function FileTableRow({ row, onOpenFolder }: { row: Row; onOpenFolder?: (folderI
   )
 }
 
-export function FileTable({ rows, onOpenFolder }: FileTableProps) {
+export function FileTable({ rows, onOpenFolder, onOpenFile }: FileTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
       <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
@@ -189,7 +206,7 @@ export function FileTable({ rows, onOpenFolder }: FileTableProps) {
         </thead>
         <tbody className="divide-y divide-gray-200 bg-white">
           {rows.map((row) => (
-            <FileTableRow key={row.id} row={row} onOpenFolder={onOpenFolder} />
+            <FileTableRow key={row.id} row={row} onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} />
           ))}
         </tbody>
       </table>

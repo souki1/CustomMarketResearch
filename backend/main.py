@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from config import get_settings
 from database import init_db
 from models import User  # noqa: F401 - register model for create_all
-from routers import auth
+from routers import auth, workspace
 
 settings = get_settings()
 
@@ -35,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(workspace.router)
 
 
 @app.get("/")

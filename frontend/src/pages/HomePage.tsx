@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import type { ChangeEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AllFilesView,
   Card,
   CreateFileModal,
   CreateFolderModal,
 } from '@/components'
-import { getCurrentUserName } from '@/lib/auth'
+import { getCurrentUserName, getToken } from '@/lib/auth'
+import { createWorkspaceFile, createWorkspaceFolder, listWorkspaceItems, uploadWorkspaceCsv } from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
 
@@ -59,105 +62,247 @@ const PLACEHOLDER_FILES: FileTableRow[] = [
 ]
 
 type FileTab = 'all' | 'recents' | 'favourites'
-
-type FolderItem = { id: string; name: string; createdAt: string; parentId: string | null }
-type FileItem = { id: string; name: string; createdAt: string; lastOpened: string; owner: string; access: string; parentId: string | null }
+type BreadcrumbSegment = { id: string; name: string }
 
 export function HomePage() {
+  const navigate = useNavigate()
   const [displayName, setDisplayName] = useState(() => getCurrentUserName() ?? 'there')
   const [searchQuery, setSearchQuery] = useState('')
   const [fileTab, setFileTab] = useState<FileTab>('all')
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [rows, setRows] = useState<FileTableRow[]>([])
+  const [breadcrumbPath, setBreadcrumbPath] = useState<BreadcrumbSegment[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
-  const [folders, setFolders] = useState<FolderItem[]>([])
-  const [files, setFiles] = useState<FileItem[]>([])
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const stored = getCurrentUserName()
     if (stored) setDisplayName(stored)
   }, [])
 
-  const handleCreateFolder = () => {
+  const token = getToken()
+
+  useEffect(() => {
+    if (!token) {
+      setRows(PLACEHOLDER_FILES)
+      setError(null)
+      return
+    }
+
+    const parentNumeric = currentFolderId ? Number(currentFolderId) : null
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    listWorkspaceItems(parentNumeric, token)
+      .then((items) => {
+        if (cancelled) return
+        const mapped: FileTableRow[] = items.map((item) => {
+          const created = new Date(item.created_at)
+          const createdAt = created.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          const lastOpened = item.last_opened
+            ? new Date(item.last_opened).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })
+            : '—'
+          return {
+            id: String(item.id),
+            name: item.name,
+            isFolder: item.is_folder,
+            favorite: item.favorite,
+            createdAt,
+            lastOpened,
+            owner: item.owner_display_name ?? (getCurrentUserName() ?? 'You'),
+            access: item.access,
+            parentId: item.parent_id != null ? String(item.parent_id) : null,
+          }
+        })
+        setRows(mapped)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Failed to load files')
+        setRows([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, currentFolderId])
+
+  const handleCreateFolder = async () => {
     const name = newFolderName.trim()
     if (!name) return
-    setFolders((prev) => [
-      ...prev,
-      {
-        id: `folder-${Date.now()}`,
+    if (!token) {
+      // fallback to local-only state if not authenticated
+      const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      const localFolder: FileTableRow = {
+        id: `local-folder-${Date.now()}`,
         name,
-        createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        parentId: currentFolderId,
-      },
-    ])
-    setNewFolderName('')
-    setCreateFolderOpen(false)
-  }
-
-  const handleCreateFile = () => {
-    const name = newFileName.trim()
-    if (!name) return
-    const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    setFiles((prev) => [
-      ...prev,
-      {
-        id: `file-${Date.now()}`,
-        name,
+        isFolder: true,
+        favorite: false,
         createdAt: now,
         lastOpened: '—',
         owner: displayName,
         access: 'Edit',
         parentId: currentFolderId,
-      },
-    ])
+      }
+      setRows((prev) => [...prev, localFolder])
+    } else {
+      const parentNumeric = currentFolderId ? Number(currentFolderId) : null
+      try {
+        const created = await createWorkspaceFolder(name, parentNumeric, token)
+        const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+        const newRow: FileTableRow = {
+          id: String(created.id),
+          name: created.name,
+          isFolder: created.is_folder,
+          favorite: created.favorite,
+          createdAt,
+          lastOpened: '—',
+          owner: created.owner_display_name ?? displayName,
+          access: created.access,
+          parentId: created.parent_id != null ? String(created.parent_id) : null,
+        }
+        setRows((prev) => [...prev, newRow])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create folder')
+      }
+    }
+    setNewFolderName('')
+    setCreateFolderOpen(false)
+  }
+
+  const handleCreateFile = async () => {
+    const name = newFileName.trim()
+    if (!name) return
+    if (!token) {
+      const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      const localFile: FileTableRow = {
+        id: `local-file-${Date.now()}`,
+        name,
+        isFolder: false,
+        favorite: false,
+        createdAt: now,
+        lastOpened: '—',
+        owner: displayName,
+        access: 'Edit',
+        parentId: currentFolderId,
+      }
+      setRows((prev) => [...prev, localFile])
+    } else {
+      const parentNumeric = currentFolderId ? Number(currentFolderId) : null
+      try {
+        const created = await createWorkspaceFile(name, parentNumeric, token)
+        const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+        const newRow: FileTableRow = {
+          id: String(created.id),
+          name: created.name,
+          isFolder: created.is_folder,
+          favorite: created.favorite,
+          createdAt,
+          lastOpened: '—',
+          owner: created.owner_display_name ?? displayName,
+          access: created.access,
+          parentId: created.parent_id != null ? String(created.parent_id) : null,
+        }
+        setRows((prev) => [...prev, newRow])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create file')
+      }
+    }
     setNewFileName('')
     setCreateFileOpen(false)
   }
 
-  const allRows: FileTableRow[] = [
-    ...folders.map((f) => ({
-      id: f.id,
-      name: f.name,
-      isFolder: true,
-      favorite: false,
-      createdAt: f.createdAt,
-      lastOpened: '—',
-      owner: displayName,
-      access: 'Edit',
-      parentId: f.parentId,
-    })),
-    ...PLACEHOLDER_FILES,
-    ...files.map((f) => ({
-      id: f.id,
-      name: f.name,
-      isFolder: false,
-      favorite: false,
-      createdAt: f.createdAt,
-      lastOpened: f.lastOpened,
-      owner: f.owner,
-      access: f.access,
-      parentId: f.parentId,
-    })),
-  ]
-
-  const rowsInCurrentFolder = allRows.filter(
+  const rowsInCurrentFolder = rows.filter(
     (row) => (row.parentId ?? null) === currentFolderId
   )
 
-  const breadcrumbPath = (() => {
-    if (!currentFolderId) return []
-    const path: { id: string; name: string }[] = []
-    let id: string | null = currentFolderId
-    while (id) {
-      const folder = folders.find((f) => f.id === id)
-      if (!folder) break
-      path.unshift({ id: folder.id, name: folder.name })
-      id = folder.parentId
+  const handleOpenFolder = (folderId: string) => {
+    setCurrentFolderId(folderId)
+    setBreadcrumbPath((prev) => {
+      const existingIndex = prev.findIndex((seg) => seg.id === folderId)
+      if (existingIndex >= 0) return prev.slice(0, existingIndex + 1)
+      const folder = rows.find((row) => row.id === folderId && row.isFolder)
+      const name = folder?.name ?? 'Folder'
+      return [...prev, { id: folderId, name }]
+    })
+  }
+
+  const handleGoToFolder = (folderId: string | null) => {
+    setCurrentFolderId(folderId)
+    if (!folderId) {
+      setBreadcrumbPath([])
+      return
     }
-    return path
-  })()
+    setBreadcrumbPath((prev) => {
+      const existingIndex = prev.findIndex((seg) => seg.id === folderId)
+      if (existingIndex >= 0) return prev.slice(0, existingIndex + 1)
+      const folder = rows.find((row) => row.id === folderId && row.isFolder)
+      const name = folder?.name ?? 'Folder'
+      return [...prev, { id: folderId, name }]
+    })
+  }
+
+  const handleUploadCsvClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleCsvSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!token) {
+      setError('You need to be signed in to upload CSV files.')
+      return
+    }
+    try {
+      const parentNumeric = currentFolderId ? Number(currentFolderId) : null
+      const created = await uploadWorkspaceCsv(file, parentNumeric, token)
+      const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      const newRow: FileTableRow = {
+        id: String(created.id),
+        name: created.name,
+        isFolder: created.is_folder,
+        favorite: created.favorite,
+        createdAt,
+        lastOpened: '—',
+        owner: created.owner_display_name ?? displayName,
+        access: created.access,
+        parentId: created.parent_id != null ? String(created.parent_id) : null,
+      }
+      setRows((prev) => [...prev, newRow])
+      // reset input so same file can be selected again later
+      event.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload CSV file')
+    }
+  }
 
   return (
     <div className="min-h-full bg-white">
@@ -222,14 +367,28 @@ export function HomePage() {
           ))}
         </div>
 
+        {error && (
+          <div className="mt-2 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+        {loading && !error && (
+          <div className="mt-2 text-sm text-gray-500">
+            Loading files…
+          </div>
+        )}
+
         {fileTab === 'all' && (
           <AllFilesView
             rows={rowsInCurrentFolder}
             breadcrumbPath={breadcrumbPath}
-            onOpenFolder={setCurrentFolderId}
-            onGoToFolder={setCurrentFolderId}
+            onOpenFolder={handleOpenFolder}
+            onGoToFolder={handleGoToFolder}
+            onOpenFile={(fileId, fileName) =>
+              navigate(`/research?fileId=${fileId}${fileName ? `&name=${encodeURIComponent(fileName)}` : ''}`)
+            }
             onNewFolderClick={() => setCreateFolderOpen(true)}
-            onNewFileClick={() => setCreateFileOpen(true)}
+            onNewFileClick={handleUploadCsvClick}
           />
         )}
 
@@ -260,6 +419,13 @@ export function HomePage() {
           setCreateFileOpen(false)
           setNewFileName('')
         }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleCsvSelected}
       />
     </div>
   )
