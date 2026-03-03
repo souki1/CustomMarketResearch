@@ -3,7 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent } from '@/lib/api'
 
-type TabState = { id: string; name: string; data: string[][]; fileId: number | null }
+type TabState = {
+  id: string
+  name: string
+  data: string[][]
+  fileId: number | null
+  folderPath?: string | null
+}
 
 function parseCsv(text: string): string[][] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
@@ -25,25 +31,33 @@ function parseCsv(text: string): string[][] {
 }
 
 function newBlankSheet(): TabState {
+  const header = Array.from({ length: DEFAULT_SHEET_COLS }, () => '')
+  const rows = Array.from({ length: DEFAULT_SHEET_ROWS }, () =>
+    Array.from({ length: DEFAULT_SHEET_COLS }, () => '')
+  )
   return {
     id: crypto.randomUUID(),
     name: 'New sheet',
-    data: [['']],
+    data: [header, ...rows],
     fileId: null,
+    folderPath: null,
   }
 }
-
-const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100]
+const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
+const DEFAULT_SHEET_ROWS = 10
+const DEFAULT_SHEET_COLS = 10
 
 export function ResearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fileIdParam = searchParams.get('fileId')
   const nameFromUrl = searchParams.get('name')
+  const folderFromUrl = searchParams.get('folder')
   const [tabs, setTabs] = useState<TabState[]>(() => [newBlankSheet()])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+  const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set())
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [toolbarActive, setToolbarActive] = useState<'all' | 'selected' | 'deep' | null>('all')
@@ -67,7 +81,8 @@ export function ResearchPage() {
       setError('Sign in to view file content.')
       return
     }
-    const existing = tabs.find((t) => t.fileId === Number(fileIdParam))
+    const numericId = Number(fileIdParam)
+    const existing = tabs.find((t) => t.fileId === numericId)
     if (existing) {
       setActiveTabId(existing.id)
       setError(null)
@@ -75,7 +90,7 @@ export function ResearchPage() {
     }
     setLoading(true)
     setError(null)
-    getWorkspaceFileContent(Number(fileIdParam), token)
+    getWorkspaceFileContent(numericId, token)
       .then((text) => {
         const data = parseCsv(text)
         const name = nameFromUrl ?? `File ${fileIdParam}`
@@ -83,16 +98,25 @@ export function ResearchPage() {
           id: crypto.randomUUID(),
           name,
           data: data.length > 0 ? data : [['']],
-          fileId: Number(fileIdParam),
+          fileId: numericId,
+          folderPath: folderFromUrl,
         }
-        setTabs((prev) => [...prev, newTab])
-        setActiveTabId(newTab.id)
+        setTabs((prev) => {
+          // If a tab for this fileId was created while we were loading, reuse it.
+          const existingTab = prev.find((t) => t.fileId === numericId)
+          if (existingTab) {
+            setActiveTabId(existingTab.id)
+            return prev
+          }
+          setActiveTabId(newTab.id)
+          return [...prev, newTab]
+        })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Failed to load file')
       })
       .finally(() => setLoading(false))
-  }, [fileIdParam])
+  }, [fileIdParam, nameFromUrl, folderFromUrl, tabs])
 
   const addNewTab = useCallback(() => {
     const tab = newBlankSheet()
@@ -207,6 +231,10 @@ export function ResearchPage() {
   }
 
   const numCols = content?.[0]?.length ?? 0
+  const activePathLabel =
+    activeTab && activeTab.name
+      ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
+      : ''
 
   return (
     <div className="min-h-full bg-white px-6 py-6">
@@ -253,6 +281,12 @@ export function ResearchPage() {
           + New tab
         </button>
       </div>
+
+      {activePathLabel && (
+        <p className="mb-1 text-xs font-medium text-gray-500 truncate">
+          {activePathLabel}
+        </p>
+      )}
 
       {loading && (
         <p className="mb-2 text-sm text-gray-500">Loading file…</p>
@@ -369,7 +403,7 @@ export function ResearchPage() {
             <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-10 px-2 py-3">
+                  <th className="w-10 px-2 py-3 border-r border-gray-200">
                     <input
                       type="checkbox"
                       checked={totalDataRows > 0 && selectedRows.size >= totalDataRows}
@@ -377,15 +411,37 @@ export function ResearchPage() {
                       className="rounded border-gray-300"
                     />
                   </th>
-                  {content[0].map((cell, i) => (
-                    <th key={i} scope="col" className="p-0">
-                      <input
-                        value={cell}
-                        onChange={(e) => updateCell(0, i, e.target.value)}
-                        className="w-full min-w-[100px] border-0 bg-transparent px-4 py-3 font-medium text-gray-900 focus:ring-2 focus:ring-inset focus:ring-blue-500"
-                      />
-                    </th>
-                  ))}
+                  {content[0].map((cell, i) => {
+                    const columnHasData = content.some(
+                      (row) => (row[i] ?? '').trim().length > 0
+                    )
+                    return (
+                      <th key={i} scope="col" className="px-2 py-2 border-r border-gray-200 last:border-r-0">
+                        <div className="flex items-center gap-2">
+                          {columnHasData && (
+                            <input
+                              type="checkbox"
+                              checked={selectedColumns.has(i)}
+                              onChange={() =>
+                                setSelectedColumns((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(i)) next.delete(i)
+                                  else next.add(i)
+                                  return next
+                                })
+                              }
+                              className="mt-0.5 rounded border-gray-300"
+                            />
+                          )}
+                          <input
+                            value={cell}
+                            onChange={(e) => updateCell(0, i, e.target.value)}
+                            className="w-full min-w-[100px] border-0 bg-transparent px-2 py-1.5 font-medium text-gray-900 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                          />
+                        </div>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
@@ -393,7 +449,7 @@ export function ResearchPage() {
                   const dataRowIndex = rowIndices[idx]
                   return (
                     <tr key={dataRowIndex} className="hover:bg-gray-50">
-                      <td className="w-10 px-2 py-2">
+                      <td className="w-10 px-2 py-2 border-r border-gray-200">
                         <input
                           type="checkbox"
                           checked={selectedRows.has(dataRowIndex)}
@@ -402,7 +458,7 @@ export function ResearchPage() {
                         />
                       </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
-                        <td key={colIndex} className="p-0">
+                        <td key={colIndex} className="p-0 border-r border-gray-200 last:border-r-0">
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
