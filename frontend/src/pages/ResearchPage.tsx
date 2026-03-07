@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
-import { getWorkspaceFileContent } from '@/lib/api'
+import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
 
 type TabState = {
   id: string
@@ -64,7 +64,10 @@ export function ResearchPage() {
   const [otherMenuOpen, setOtherMenuOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
-  const [lastFile, setLastFile] = useState<{ fileId: number; name: string; folderPath: string | null } | null>(null)
+  const [filePickerOpen, setFilePickerOpen] = useState(false)
+  const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
+  const [filePickerLoading, setFilePickerLoading] = useState(false)
+  const [filePickerError, setFilePickerError] = useState<string | null>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
@@ -76,20 +79,35 @@ export function ResearchPage() {
     }
   }, [tabs, activeTabId])
 
-  // Load last opened file metadata for \"Open existing\" option
+  // Fetch all workspace files when file picker opens
   useEffect(() => {
-    try {
-      const idRaw = localStorage.getItem('ir_last_file_id')
-      if (!idRaw) return
-      const idNum = Number(idRaw)
-      if (!Number.isFinite(idNum)) return
-      const name = localStorage.getItem('ir_last_file_name') ?? `File ${idRaw}`
-      const folderPath = localStorage.getItem('ir_last_file_folder')
-      setLastFile({ fileId: idNum, name, folderPath: folderPath || null })
-    } catch {
-      // ignore
+    if (!filePickerOpen) return
+    const token = getToken()
+    if (!token) {
+      setFilePickerError('Sign in to open files.')
+      return
     }
-  }, [])
+    setFilePickerLoading(true)
+    setFilePickerError(null)
+    type FileEntry = { id: number; name: string; folderPath: string | null }
+    async function collectFiles(parentId: number | null, pathPrefix: string): Promise<FileEntry[]> {
+      const items = await listWorkspaceItems(parentId, token!)
+      const result: FileEntry[] = []
+      for (const item of items) {
+        if (item.is_folder) {
+          const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
+          result.push(...(await collectFiles(item.id, nextPrefix)))
+        } else {
+          result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
+        }
+      }
+      return result
+    }
+    collectFiles(null, '')
+      .then(setFilePickerFiles)
+      .catch((err) => setFilePickerError(err instanceof Error ? err.message : 'Failed to load files'))
+      .finally(() => setFilePickerLoading(false))
+  }, [filePickerOpen])
 
   useEffect(() => {
     if (!fileIdParam) return
@@ -144,7 +162,9 @@ export function ResearchPage() {
   }, [setSearchParams])
 
   const closeTab = useCallback(
-    (id: string) => {
+    (e: React.MouseEvent, id: string) => {
+      e.stopPropagation()
+      if (tabs.length <= 1) return
       const idx = tabs.findIndex((t) => t.id === id)
       if (idx < 0) return
       const next = tabs.filter((t) => t.id !== id)
@@ -156,6 +176,23 @@ export function ResearchPage() {
     },
     [tabs, activeTabId]
   )
+
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+
+  const renameTab = useCallback((id: string, name: string) => {
+    const trimmed = name.trim() || 'Untitled'
+    setTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, name: trimmed } : t))
+    )
+    setEditingTabId(null)
+    setEditingName('')
+  }, [])
+
+  const startEditingTab = useCallback((tab: TabState) => {
+    setEditingTabId(tab.id)
+    setEditingName(tab.name)
+  }, [])
 
   const setActiveTabData = useCallback(
     (updater: (prev: string[][]) => string[][]) => {
@@ -270,16 +307,41 @@ export function ResearchPage() {
                 : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
+            {editingTabId === tab.id ? (
+              <input
+                type="text"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onBlur={() => renameTab(tab.id, editingName)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') renameTab(tab.id, editingName)
+                  if (e.key === 'Escape') {
+                    setEditingTabId(null)
+                    setEditingName('')
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                autoFocus
+                aria-label="Rename tab"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveTabId(tab.id)}
+                onDoubleClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  startEditingTab(tab)
+                }}
+                className="font-medium"
+              >
+                {tab.name}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setActiveTabId(tab.id)}
-              className="font-medium"
-            >
-              {tab.name}
-            </button>
-            <button
-              type="button"
-              onClick={() => closeTab(tab.id)}
+              onClick={(e) => closeTab(e, tab.id)}
               className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
               aria-label="Close tab"
             >
@@ -311,30 +373,98 @@ export function ResearchPage() {
                 <span className="text-gray-400">+</span>
                 New sheet
               </button>
-              {lastFile && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewTabMenuOpen(false)
-                    const params = new URLSearchParams()
-                    params.set('fileId', String(lastFile.fileId))
-                    if (lastFile.name) params.set('name', lastFile.name)
-                    if (lastFile.folderPath) params.set('folder', lastFile.folderPath)
-                    setSearchParams(params, { replace: true })
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                >
-                  <span className="text-gray-400">↺</span>
-                  Open last file
-                  <span className="truncate text-xs text-gray-500">
-                    {lastFile.folderPath ? `${lastFile.folderPath} / ` : ''}{lastFile.name}
-                  </span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setNewTabMenuOpen(false)
+                  setFilePickerOpen(true)
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <span className="text-gray-400">↺</span>
+                Open file…
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Open file picker modal */}
+      {filePickerOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setFilePickerOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="file-picker-title"
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <h3 id="file-picker-title" className="text-base font-semibold text-gray-900">
+                Open file
+              </h3>
+              <button
+                type="button"
+                onClick={() => setFilePickerOpen(false)}
+                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {filePickerLoading && (
+                <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
+              )}
+              {filePickerError && (
+                <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
+              )}
+              {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
+                <p className="py-8 text-center text-sm text-gray-500">No files in workspace.</p>
+              )}
+              {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
+                <ul className="space-y-0.5">
+                  {filePickerFiles.map((file) => (
+                    <li key={file.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const params = new URLSearchParams()
+                          params.set('fileId', String(file.id))
+                          params.set('name', file.name)
+                          if (file.folderPath) params.set('folder', file.folderPath)
+                          setSearchParams(params, { replace: true })
+                          setFilePickerOpen(false)
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
+                      >
+                        <span className="truncate w-full font-medium">{file.name}</span>
+                        {file.folderPath && (
+                          <span className="truncate w-full text-xs text-gray-500">{file.folderPath}</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-gray-200 px-4 py-2">
+              <button
+                type="button"
+                onClick={() => setFilePickerOpen(false)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activePathLabel && (
         <p className="mb-1 text-xs font-medium text-gray-500 truncate">
