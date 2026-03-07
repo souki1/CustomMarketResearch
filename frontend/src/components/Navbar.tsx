@@ -83,14 +83,6 @@ function BillingIcon({ className }: { className?: string }) {
   )
 }
 
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-  )
-}
-
 function SidebarPanelIcon({ className, open }: { className?: string; open: boolean }) {
   return (
     <svg
@@ -522,21 +514,6 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                   className={`absolute right-0 top-full mt-1 w-[260px] rounded-xl border border-gray-200 bg-white py-1.5 shadow-sm z-50 origin-top-right transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
                   role="menu"
                 >
-                  {onOpenCommandPalette && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDropdownOpen(false)
-                        onOpenCommandPalette()
-                      }}
-                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                      role="menuitem"
-                    >
-                      <SearchIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                      Search
-                      <kbd className="ml-auto shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Ctrl + K</kbd>
-                    </button>
-                  )}
                   <Link
                     to="/settings#profile"
                     onClick={() => setDropdownOpen(false)}
