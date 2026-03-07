@@ -384,9 +384,21 @@ export function HomePage() {
             breadcrumbPath={breadcrumbPath}
             onOpenFolder={handleOpenFolder}
             onGoToFolder={handleGoToFolder}
-            onOpenFile={(fileId, fileName) =>
-              navigate(`/research?fileId=${fileId}${fileName ? `&name=${encodeURIComponent(fileName)}` : ''}`)
-            }
+            onOpenFile={(fileId, fileName) => {
+              const folderPath = breadcrumbPath.map((seg) => seg.name).join(' / ')
+              const params = new URLSearchParams()
+              params.set('fileId', fileId)
+              if (fileName) params.set('name', fileName)
+              if (folderPath) params.set('folder', folderPath)
+              try {
+                localStorage.setItem('ir_last_file_id', fileId)
+                if (fileName) localStorage.setItem('ir_last_file_name', fileName)
+                if (folderPath) localStorage.setItem('ir_last_file_folder', folderPath)
+              } catch {
+                // ignore
+              }
+              navigate(`/research?${params.toString()}`)
+            }}
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={handleUploadCsvClick}
           />
