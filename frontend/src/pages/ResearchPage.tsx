@@ -63,6 +63,8 @@ export function ResearchPage() {
   const [toolbarActive, setToolbarActive] = useState<'all' | 'selected' | 'deep' | null>('all')
   const [otherMenuOpen, setOtherMenuOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
+  const [lastFile, setLastFile] = useState<{ fileId: number; name: string; folderPath: string | null } | null>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
@@ -73,6 +75,21 @@ export function ResearchPage() {
       setActiveTabId(tabs[0].id)
     }
   }, [tabs, activeTabId])
+
+  // Load last opened file metadata for \"Open existing\" option
+  useEffect(() => {
+    try {
+      const idRaw = localStorage.getItem('ir_last_file_id')
+      if (!idRaw) return
+      const idNum = Number(idRaw)
+      if (!Number.isFinite(idNum)) return
+      const name = localStorage.getItem('ir_last_file_name') ?? `File ${idRaw}`
+      const folderPath = localStorage.getItem('ir_last_file_folder')
+      setLastFile({ fileId: idNum, name, folderPath: folderPath || null })
+    } catch {
+      // ignore
+    }
+  }, [])
 
   useEffect(() => {
     if (!fileIdParam) return
@@ -272,14 +289,51 @@ export function ResearchPage() {
             </button>
           </div>
         ))}
-        <button
-          type="button"
-          onClick={addNewTab}
-          className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          title="New tab"
-        >
-          + New tab
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setNewTabMenuOpen((o) => !o)}
+            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            title="New tab"
+          >
+            + New tab
+          </button>
+          {newTabMenuOpen && (
+            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewTabMenuOpen(false)
+                  addNewTab()
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <span className="text-gray-400">+</span>
+                New sheet
+              </button>
+              {lastFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTabMenuOpen(false)
+                    const params = new URLSearchParams()
+                    params.set('fileId', String(lastFile.fileId))
+                    if (lastFile.name) params.set('name', lastFile.name)
+                    if (lastFile.folderPath) params.set('folder', lastFile.folderPath)
+                    setSearchParams(params, { replace: true })
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  <span className="text-gray-400">↺</span>
+                  Open last file
+                  <span className="truncate text-xs text-gray-500">
+                    {lastFile.folderPath ? `${lastFile.folderPath} / ` : ''}{lastFile.name}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {activePathLabel && (
