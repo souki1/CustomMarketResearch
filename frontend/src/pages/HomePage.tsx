@@ -319,7 +319,7 @@ export function HomePage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ask me anything about Clay or describe what you'd like to do..."
+            placeholder="Search files, run research, or ask AI anything…"
             className="min-w-0 flex-1 border-none bg-transparent px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
           />
           <button
@@ -401,6 +401,9 @@ export function HomePage() {
             }}
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={handleUploadCsvClick}
+            onNewResearchClick={() => navigate('/research')}
+            onImportCsvClick={handleUploadCsvClick}
+            onUploadFileClick={handleUploadCsvClick}
           />
         )}
 

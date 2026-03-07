@@ -12,7 +12,10 @@ type AllFilesViewProps = {
   onGoToFolder: (folderId: string | null) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
   onNewFolderClick: () => void
-  onNewFileClick: () => void
+  onNewFileClick?: () => void
+  onNewResearchClick?: () => void
+  onImportCsvClick?: () => void
+  onUploadFileClick?: () => void
 }
 
 export function AllFilesView({
@@ -23,6 +26,9 @@ export function AllFilesView({
   onOpenFile,
   onNewFolderClick,
   onNewFileClick,
+  onNewResearchClick,
+  onImportCsvClick,
+  onUploadFileClick,
 }: AllFilesViewProps) {
   const breadcrumbParts: { label: string; onClick?: () => void }[] = [
     { label: 'All Files', onClick: () => onGoToFolder(null) },
@@ -80,7 +86,13 @@ export function AllFilesView({
               aria-label="Search files"
             />
           </div>
-          <NewMenu onFolderClick={onNewFolderClick} onFileClick={onNewFileClick} />
+          <NewMenu
+            onFolderClick={onNewFolderClick}
+            onFileClick={onNewFileClick}
+            onNewResearchClick={onNewResearchClick}
+            onImportCsvClick={onImportCsvClick ?? onNewFileClick}
+            onUploadFileClick={onUploadFileClick ?? onNewFileClick}
+          />
         </div>
       </div>
 
