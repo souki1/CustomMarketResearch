@@ -159,7 +159,7 @@ function FileTableRow({
   }
 
   return (
-    <tr className="transition-colors hover:bg-gray-100">
+    <tr className="bg-white transition-colors duration-150 ease-out hover:bg-gray-50">
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           {row.isFolder ? <FolderIcon /> : <FileIcon />}
@@ -342,16 +342,17 @@ export function FileTable({
     setSortDir((d) => (sortBy === key ? (d === 'asc' ? 'desc' : 'asc') : 'asc'))
   }
 
-  const thClass = "px-4 py-3 font-medium text-gray-900"
-  const thSortClass = thClass + " cursor-pointer select-none hover:bg-gray-100 rounded-t transition-colors"
+  const thClass = 'px-4 py-3 font-medium text-gray-900'
+  const thSortClass =
+    'w-full text-left ' + thClass + ' cursor-pointer select-none hover:bg-gray-100 rounded-t transition-colors inline-flex items-center'
 
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
       <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
         <thead className="bg-gray-50">
           <tr>
-            <th scope="col">
-              <button type="button" onClick={() => toggleSort('name')} className={`${thSortClass} flex items-center`}>
+            <th scope="col" className="p-0" aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
+              <button type="button" onClick={() => toggleSort('name')} className={thSortClass}>
                 Name
                 <SortIcon dir={sortBy === 'name' ? sortDir : null} />
               </button>
@@ -362,8 +363,8 @@ export function FileTable({
             <th scope="col" className="px-4 py-3 font-medium text-gray-900">
               Tags
             </th>
-            <th scope="col">
-              <button type="button" onClick={() => toggleSort('createdAt')} className={`${thSortClass} flex items-center`}>
+            <th scope="col" className="p-0" aria-sort={sortBy === 'createdAt' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
+              <button type="button" onClick={() => toggleSort('createdAt')} className={thSortClass}>
                 Created at
                 <SortIcon dir={sortBy === 'createdAt' ? sortDir : null} />
               </button>
@@ -371,8 +372,8 @@ export function FileTable({
             <th scope="col" className="px-4 py-3 font-medium text-gray-900">
               Last opened by me
             </th>
-            <th scope="col">
-              <button type="button" onClick={() => toggleSort('owner')} className={`${thSortClass} flex items-center`}>
+            <th scope="col" className="p-0" aria-sort={sortBy === 'owner' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
+              <button type="button" onClick={() => toggleSort('owner')} className={thSortClass}>
                 Owner
                 <SortIcon dir={sortBy === 'owner' ? sortDir : null} />
               </button>
