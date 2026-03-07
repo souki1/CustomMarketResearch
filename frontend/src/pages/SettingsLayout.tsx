@@ -36,7 +36,9 @@ export function SettingsLayout() {
         </nav>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        <Outlet />
+        <div className="mx-auto w-full max-w-[720px]">
+          <Outlet />
+        </div>
       </div>
     </div>
   )
