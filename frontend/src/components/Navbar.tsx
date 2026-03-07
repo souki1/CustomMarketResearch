@@ -515,7 +515,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                   role="menu"
                 >
                   <Link
-                    to="/settings#profile"
+                    to="/settings/profile"
                     onClick={() => setDropdownOpen(false)}
                     className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
                     role="menuitem"
@@ -533,7 +533,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                     Workspace
                   </button>
                   <Link
-                    to="/settings#billing"
+                    to="/settings/billing"
                     onClick={() => setDropdownOpen(false)}
                     className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
                     role="menuitem"
@@ -542,7 +542,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                     Billing
                   </Link>
                   <Link
-                    to="/settings"
+                    to="/settings/profile"
                     onClick={() => setDropdownOpen(false)}
                     className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
                     role="menuitem"

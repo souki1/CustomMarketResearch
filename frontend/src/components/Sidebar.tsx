@@ -32,7 +32,7 @@ export function Sidebar({ open }: SidebarProps) {
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
-  const isSettings = location.pathname === '/settings'
+  const isSettings = location.pathname.startsWith('/settings')
 
   return (
     <aside
