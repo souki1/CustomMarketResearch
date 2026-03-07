@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { setCurrentUserName, setToken } from '@/lib/auth'
+import { setCurrentUserName, setCurrentUserEmail, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
 
 function GoogleIcon() {
@@ -64,7 +64,8 @@ export function SignUpPage() {
     try {
       const res = await signUp({ email: email.trim(), password })
       setToken(res.access_token)
-      setCurrentUserName(res.display_name)
+      setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
+      setCurrentUserEmail(email.trim())
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed')
@@ -75,7 +76,7 @@ export function SignUpPage() {
 
   return (
     <section className="min-h-[60vh] flex items-center justify-center py-12">
-      <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-lg border border-gray-200/80 p-8">
+      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-200/80 p-8">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 mb-1">
           Create an account
         </h1>

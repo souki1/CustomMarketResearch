@@ -16,7 +16,7 @@ export function CreateFileModal({ open, name, onNameChange, onCreate, onCancel }
       aria-modal="true"
       aria-labelledby="create-file-title"
     >
-      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h3 id="create-file-title" className="text-lg font-semibold text-gray-900">
           New file
         </h3>

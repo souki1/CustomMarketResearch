@@ -1,6 +1,7 @@
 export { AllFilesFilters } from './AllFilesFilters'
 export { AllFilesView } from './AllFilesView'
 export { Card } from './Card'
+export { CommandPalette } from './CommandPalette'
 export { CreateFileModal } from './CreateFileModal'
 export { CreateFolderModal } from './CreateFolderModal'
 export { FileTable } from './FileTable'

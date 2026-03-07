@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Navbar, Sidebar } from '@/components'
+import { CommandPalette, Navbar, Sidebar } from '@/components'
 
 const SIDEBAR_OPEN_KEY = 'sidebar-open'
 
@@ -16,6 +16,7 @@ export function MainLayout() {
       return true
     }
   })
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -27,7 +28,12 @@ export function MainLayout() {
 
   return (
     <>
-      <Navbar sidebarOpen={sidebarOpen} onSidebarToggle={() => setSidebarOpen((o) => !o)} />
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+      <Navbar
+        sidebarOpen={sidebarOpen}
+        onSidebarToggle={() => setSidebarOpen((o) => !o)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
       <div className="flex">
         <div
           className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${sidebarOpen ? 'w-56' : 'w-0'}`}

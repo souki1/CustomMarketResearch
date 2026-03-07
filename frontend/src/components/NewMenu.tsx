@@ -36,7 +36,7 @@ export function NewMenu({ onFolderClick, onFileClick }: NewMenuProps) {
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-xl border border-gray-200 bg-white py-1 shadow-sm"
           role="menu"
         >
           <button

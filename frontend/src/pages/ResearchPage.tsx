@@ -309,7 +309,7 @@ export function ResearchPage() {
             Other options
           </button>
           {otherMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute left-0 top-full z-10 mt-1 min-w-[160px] rounded-xl border border-gray-200 bg-white py-1 shadow-sm">
               <button
                 type="button"
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"

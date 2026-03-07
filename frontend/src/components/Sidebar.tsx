@@ -32,6 +32,7 @@ export function Sidebar({ open }: SidebarProps) {
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
+  const isSettings = location.pathname === '/settings'
 
   return (
     <aside
@@ -57,14 +58,14 @@ export function Sidebar({ open }: SidebarProps) {
             <ResearchIcon className={iconClass} />
             <span>Research</span>
           </Link>
-          <button
-            type="button"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          <Link
+            to="/settings"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${isSettings ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
             title="Settings"
           >
             <SettingsIcon className={iconClass} />
             <span>Settings</span>
-          </button>
+          </Link>
         </nav>
       </div>
     </aside>

@@ -150,7 +150,7 @@ function FileTableRow({
           </button>
           {menuOpen && (
             <div
-              className="absolute right-0 top-full z-10 mt-1 min-w-[140px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+              className="absolute right-0 top-full z-10 mt-1 min-w-[140px] rounded-xl border border-gray-200 bg-white py-1 shadow-sm"
               role="menu"
             >
               {row.isFolder && (

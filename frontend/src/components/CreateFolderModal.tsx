@@ -16,7 +16,7 @@ export function CreateFolderModal({ open, name, onNameChange, onCreate, onCancel
       aria-modal="true"
       aria-labelledby="create-folder-title"
     >
-      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h3 id="create-folder-title" className="text-lg font-semibold text-gray-900">
           New folder
         </h3>

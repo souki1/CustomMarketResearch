@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserName, setToken } from '@/lib/auth'
+import { setCurrentUserName, setCurrentUserEmail, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signIn } from '@/lib/api'
 
 function GoogleIcon() {
@@ -66,6 +66,7 @@ export function SignInPage() {
       const res = await signIn({ email: email.trim(), password })
       setToken(res.access_token)
       setCurrentUserName(res.display_name)
+      setCurrentUserEmail(email.trim())
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
@@ -76,7 +77,7 @@ export function SignInPage() {
 
   return (
     <section className="min-h-screen flex items-center justify-center py-12 px-4">
-      <div className="w-full max-w-md mx-auto bg-white rounded-2xl shadow-lg border border-gray-200/80 p-8">
+      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-200/80 p-8">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 mb-1">
           Welcome back!
         </h1>
