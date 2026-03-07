@@ -183,6 +183,42 @@ async def upload_csv(
     )
 
 
+@router.delete("/items/{item_id}", status_code=204)
+async def delete_item(
+    item_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    user: Annotated[User, Depends(get_current_user)] = None,
+):
+    result = await db.execute(
+        select(WorkspaceItem).where(
+            WorkspaceItem.id == item_id,
+            WorkspaceItem.owner_id == user.id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    # If folder, check it has no children
+    if item.is_folder:
+        child_result = await db.execute(
+            select(WorkspaceItem).where(WorkspaceItem.parent_id == item_id)
+        )
+        if child_result.scalars().first() is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete non-empty folder. Delete or move its contents first.",
+            )
+    # If file with stored path, remove from disk
+    if item.file_path:
+        path = Path(item.file_path)
+        if path.is_file():
+            try:
+                path.unlink()
+            except OSError:
+                pass  # continue with DB delete
+    await db.delete(item)
+
+
 @router.get("/items/{item_id}/content", response_class=PlainTextResponse)
 async def get_item_content(
     item_id: int,

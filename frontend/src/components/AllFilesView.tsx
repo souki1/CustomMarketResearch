@@ -11,6 +11,7 @@ type AllFilesViewProps = {
   onOpenFolder: (folderId: string) => void
   onGoToFolder: (folderId: string | null) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
+  onDelete?: (row: FileTableRow) => void
   onNewFolderClick: () => void
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
@@ -24,6 +25,7 @@ export function AllFilesView({
   onOpenFolder,
   onGoToFolder,
   onOpenFile,
+  onDelete,
   onNewFolderClick,
   onNewFileClick,
   onNewResearchClick,
@@ -99,7 +101,7 @@ export function AllFilesView({
       <div className="border-b border-gray-200" />
 
       <AllFilesFilters />
-      <FileTable rows={rows} onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} />
+      <FileTable rows={rows} onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onDelete={onDelete} />
     </div>
   )
 }

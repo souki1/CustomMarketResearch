@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import {
   AllFilesView,
   Card,
@@ -8,8 +9,19 @@ import {
   CreateFolderModal,
 } from '@/components'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { createWorkspaceFile, createWorkspaceFolder, listWorkspaceItems, uploadWorkspaceCsv } from '@/lib/api'
+import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, uploadWorkspaceCsv } from '@/lib/api'
 import type { FileTableRow } from '@/types'
+
+/** Convert an Excel file to a CSV File so we can upload it via the existing CSV endpoint. */
+async function excelFileToCsvFile(file: File): Promise<File> {
+  const buf = await file.arrayBuffer()
+  const wb = XLSX.read(buf, { type: 'array' })
+  const firstSheetName = wb.SheetNames[0]
+  const sheet = wb.Sheets[firstSheetName]
+  const csv = XLSX.utils.sheet_to_csv(sheet)
+  const baseName = file.name.replace(/\\.(xlsx?|xls)$/i, '')
+  return new File([csv], `${baseName}.csv`, { type: 'text/csv' })
+}
 
 
 
@@ -266,6 +278,20 @@ export function HomePage() {
     })
   }
 
+  const handleDelete = async (row: FileTableRow) => {
+    if (!token) {
+      setError('You need to be signed in to delete items.')
+      return
+    }
+    try {
+      setError(null)
+      await deleteWorkspaceItem(Number(row.id), token)
+      setRows((prev) => prev.filter((r) => r.id !== row.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete item')
+    }
+  }
+
   const handleUploadCsvClick = () => {
     fileInputRef.current?.click()
   }
@@ -273,13 +299,39 @@ export function HomePage() {
   const handleCsvSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+    event.target.value = ''
+
     if (!token) {
-      setError('You need to be signed in to upload CSV files.')
+      setError('You need to be signed in to upload files.')
       return
     }
+
+    const isCsv =
+      file.name.toLowerCase().endsWith('.csv') ||
+      file.type === 'text/csv' ||
+      file.type === 'application/csv'
+    const isExcel = /\.(xlsx?|xls)$/i.test(file.name)
+
+    let fileToUpload: File
+    if (isCsv) {
+      fileToUpload = file
+    } else if (isExcel) {
+      try {
+        setError(null)
+        fileToUpload = await excelFileToCsvFile(file)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to read Excel file. Try saving as CSV and uploading instead.')
+        return
+      }
+    } else {
+      setError('Unsupported file type. Please upload a CSV or Excel file (.csv, .xlsx, .xls).')
+      return
+    }
+
     try {
+      setError(null)
       const parentNumeric = currentFolderId ? Number(currentFolderId) : null
-      const created = await uploadWorkspaceCsv(file, parentNumeric, token)
+      const created = await uploadWorkspaceCsv(fileToUpload, parentNumeric, token)
       const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -300,7 +352,7 @@ export function HomePage() {
       // reset input so same file can be selected again later
       event.target.value = ''
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload CSV file')
+      setError(err instanceof Error ? err.message : 'Failed to upload file')
     }
   }
 
@@ -399,6 +451,7 @@ export function HomePage() {
               }
               navigate(`/research?${params.toString()}`)
             }}
+            onDelete={handleDelete}
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={handleUploadCsvClick}
             onNewResearchClick={() => navigate('/research')}
@@ -438,7 +491,7 @@ export function HomePage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         className="hidden"
         onChange={handleCsvSelected}
       />

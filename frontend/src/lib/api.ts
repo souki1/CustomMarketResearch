@@ -115,3 +115,13 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
   }
   return res.text()
 }
+
+export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {
+  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+}
