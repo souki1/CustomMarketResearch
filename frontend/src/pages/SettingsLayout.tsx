@@ -16,17 +16,17 @@ export function SettingsLayout() {
         <p className="mt-1 text-xs text-gray-500">
           Configure your profile, company, billing, and security.
         </p>
-        <nav className="mt-5 space-y-1" aria-label="Settings sections">
+        <nav className="mt-5 space-y-0.5" aria-label="Settings sections">
           {SECTIONS.map(({ path, label }) => (
             <NavLink
               key={path}
               to={`/settings/${path}`}
               end={path === 'profile'}
               className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                `block rounded-r-lg border-l-2 py-2.5 pl-3 pr-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
                   isActive
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'border-blue-600 bg-blue-50/80 font-semibold text-gray-900'
+                    : 'border-transparent font-medium text-gray-700 hover:bg-gray-100'
                 }`
               }
             >

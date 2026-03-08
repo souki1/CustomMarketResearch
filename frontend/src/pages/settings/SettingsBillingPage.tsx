@@ -11,6 +11,7 @@ export function SettingsBillingPage() {
         </p>
       </header>
 
+      {/* Card 1: Plan information */}
       <Card className={SETTINGS_CARD_CLASS}>
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-sm font-semibold text-gray-900">Plan information</h2>
@@ -32,20 +33,9 @@ export function SettingsBillingPage() {
             </div>
           </div>
         </div>
-        <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-gray-100 pt-5">
-          <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-2">
-            Add payment method
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-700">Auto-renew</span>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input type="checkbox" className="peer sr-only" defaultChecked />
-              <span className="h-5 w-9 rounded-full bg-gray-200 peer-checked:bg-emerald-500 transition-colors" />
-              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
-            </label>
-          </div>
-        </div>
       </Card>
+
+      {/* Card 2: Invoice history */}
 
       <Card className={`${SETTINGS_CARD_CLASS} mt-6`}>
         <h2 className="text-sm font-semibold text-gray-900">Invoice history</h2>
