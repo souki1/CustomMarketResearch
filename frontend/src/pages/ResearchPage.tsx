@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
+import { useLayout } from '@/contexts/LayoutContext'
 
 type TabState = {
   id: string
@@ -68,6 +69,12 @@ export function ResearchPage() {
   const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
   const [filePickerError, setFilePickerError] = useState<string | null>(null)
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+  const [inspectorMaximized, setInspectorMaximized] = useState(false)
+  const { setCollapseSidebarForInspector } = useLayout()
+  const selectedRowIndexRef = useRef<number | null>(null)
+  selectedRowIndexRef.current = selectedRowIndex
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
@@ -240,6 +247,23 @@ export function ResearchPage() {
     })
   }
 
+  const handleRowClick = useCallback(
+    (dataRowIndex: number, e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest('input, button')) return
+      setSelectedRowIndex(dataRowIndex)
+      setSelectedRows((prev) => {
+        const next = new Set(prev)
+        if (!next.has(dataRowIndex)) next.add(dataRowIndex)
+        return next
+      })
+      if (selectedRowIndexRef.current !== dataRowIndex) {
+        setIsInspectorOpen(true)
+        setCollapseSidebarForInspector(true)
+      }
+    },
+    [setCollapseSidebarForInspector]
+  )
+
   const toggleSelectAll = () => {
     if (!content || content.length <= 1) return
     if (selectedRows.size >= content.length - 1) setSelectedRows(new Set())
@@ -289,9 +313,31 @@ export function ResearchPage() {
     activeTab && activeTab.name
       ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
       : ''
+  const headers = content?.[0] ?? []
+  const selectedRowData =
+    selectedRowIndex != null && content
+      ? content[1 + selectedRowIndex] ?? null
+      : null
+
+  const closeInspector = useCallback(
+    (e?: React.MouseEvent) => {
+      e?.stopPropagation()
+      setIsInspectorOpen(false)
+      setInspectorMaximized(false)
+      setCollapseSidebarForInspector(false)
+    },
+    [setCollapseSidebarForInspector]
+  )
 
   return (
-    <div className="min-h-full bg-white px-6 py-6">
+    <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
+      <div
+        className={
+          isInspectorOpen
+            ? 'flex-1 min-w-0 overflow-auto px-6 py-6'
+            : 'px-6 py-6'
+        }
+      >
       <h2 className="mb-2 text-lg font-semibold text-gray-900">Data Research</h2>
 
       {/* Tab bar */}
@@ -515,6 +561,26 @@ export function ResearchPage() {
           </svg>
           Deep Search Selected
         </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (selectedRows.size === 0) return
+            const first = Math.min(...selectedRows)
+            setSelectedRowIndex(first)
+            setIsInspectorOpen(true)
+            setCollapseSidebarForInspector(true)
+          }}
+          disabled={selectedRows.size === 0}
+          title={selectedRows.size === 0 ? 'Select a row to preview' : 'Preview selected row'}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          Preview Selected
+        </button>
         <div className="relative">
           <button
             type="button"
@@ -631,9 +697,14 @@ export function ResearchPage() {
               <tbody className="divide-y divide-gray-200 bg-white">
                 {pageRows.map((row, idx) => {
                   const dataRowIndex = rowIndices[idx]
+                  const isSelectedRow = selectedRowIndex === dataRowIndex
                   return (
-                    <tr key={dataRowIndex} className="hover:bg-gray-50">
-                      <td className="w-10 px-2 py-2 border-r border-gray-200">
+                    <tr
+                      key={dataRowIndex}
+                      className={`cursor-pointer transition-colors ${isSelectedRow ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                      onClick={(e) => handleRowClick(dataRowIndex, e)}
+                    >
+                      <td className="w-10 px-2 py-2 border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedRows.has(dataRowIndex)}
@@ -734,6 +805,129 @@ export function ResearchPage() {
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
           Select a tab or open a file from Home.
         </div>
+      )}
+      </div>
+
+      {isInspectorOpen && (
+        <aside
+          className={
+            inspectorMaximized
+              ? 'fixed inset-0 z-50 flex flex-col bg-white shadow-xl'
+              : 'flex w-[38%] min-w-[280px] max-w-[560px] shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+          }
+          style={
+            inspectorMaximized
+              ? undefined
+              : { boxShadow: '-2px 0 10px rgba(0,0,0,0.08)' }
+          }
+          role="complementary"
+          aria-label="Row preview"
+        >
+          <style>{`
+            @keyframes slideInRight {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          `}</style>
+          <header className="flex shrink-0 items-center justify-end gap-1 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setInspectorMaximized((m) => !m)
+              }}
+              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+              title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+              aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+            >
+              {inspectorMaximized ? (
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={closeInspector}
+              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+              title="Close panel"
+              aria-label="Close panel"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </header>
+          <div className="flex-1 overflow-auto p-4">
+            {selectedRowData ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Item
+                  </h3>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {headers[0] ? `${headers[0]}: ${selectedRowData[0] ?? '—'}` : selectedRowData[0] ?? 'Row ' + (firstSelectedRowIndex != null ? firstSelectedRowIndex + 1 : '')}
+                  </p>
+                </div>
+                {selectedRowData[1] != null && String(selectedRowData[1]).trim() !== '' && (
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                      Description
+                    </h3>
+                    <p className="text-sm text-gray-700">
+                      {headers[1] ? `${headers[1]}: ${selectedRowData[1]}` : String(selectedRowData[1])}
+                    </p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Key attributes
+                  </h3>
+                  <ul className="space-y-2">
+                    {headers.map((label, i) => (
+                      <li key={i} className="flex justify-between gap-2 text-sm">
+                        <span className="text-gray-500">{label || `Column ${i + 1}`}</span>
+                        <span className="min-w-0 truncate text-right font-medium text-gray-900">
+                          {selectedRowData[i] ?? '—'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Metadata
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Row {firstSelectedRowIndex != null ? firstSelectedRowIndex + 1 : ''} of {content ? content.length - 1 : 0}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                  >
+                    Research this row
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Copy row
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                Select a row in the table to preview its details here.
+              </div>
+            )}
+          </div>
+        </aside>
       )}
     </div>
   )
