@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { setCurrentUserName, setCurrentUserEmail, setToken } from '@/lib/auth'
+import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
 
 function GoogleIcon() {
@@ -66,6 +66,7 @@ export function SignUpPage() {
       setToken(res.access_token)
       setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
       setCurrentUserEmail(email.trim())
+      setCurrentUserPhotoUrl(null)
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed')

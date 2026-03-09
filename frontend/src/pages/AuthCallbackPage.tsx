@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserEmail, setCurrentUserName, setToken } from '@/lib/auth'
+import { setCurrentUserEmail, setCurrentUserName, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
+import { getMe } from '@/lib/api'
 
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams()
@@ -19,6 +20,12 @@ export function AuthCallbackPage() {
       setToken(token)
       if (displayName) setCurrentUserName(displayName)
       if (email) setCurrentUserEmail(email)
+      // Fetch profile photo after login so navbar can show it immediately
+      getMe(token)
+        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
+        .catch(() => {
+          // ignore (navbar will fall back to letter avatar)
+        })
     }
     navigate('/', { replace: true })
   }, [token, displayName, email, error, navigate])

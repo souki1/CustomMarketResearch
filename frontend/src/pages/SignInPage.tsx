@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserName, setCurrentUserEmail, setToken } from '@/lib/auth'
-import { getGoogleLoginUrl, signIn } from '@/lib/api'
+import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
+import { getGoogleLoginUrl, getMe, signIn } from '@/lib/api'
 
 function GoogleIcon() {
   return (
@@ -67,6 +67,12 @@ export function SignInPage() {
       setToken(res.access_token)
       setCurrentUserName(res.display_name)
       setCurrentUserEmail(email.trim())
+      // Fetch profile photo right after login so navbar can show it
+      getMe(res.access_token)
+        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
+        .catch(() => {
+          // ignore
+        })
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')

@@ -70,6 +70,7 @@ export function SettingsProfilePage() {
   const [pwBusy, setPwBusy] = useState(false)
   const [pwMsg, setPwMsg] = useState<string | null>(null)
   const [pwErr, setPwErr] = useState<string | null>(null)
+  const passwordsMismatch = pwConfirm.length > 0 && pwNew !== pwConfirm
 
   useEffect(() => {
     const token = getToken()
@@ -493,6 +494,9 @@ export function SettingsProfilePage() {
                       value={pwConfirm}
                       onChange={(e) => setPwConfirm(e.target.value)}
                     />
+                    {passwordsMismatch && (
+                      <p className="mt-1 text-xs text-red-600">Passwords do not match.</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 pt-1">
                     <button
