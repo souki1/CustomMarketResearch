@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getCurrentUserName, getCurrentUserEmail, clearAuth } from '@/lib/auth'
+import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
+import { profilePhotoUrl } from '@/lib/api'
 import { useBucket, type BucketItem } from '@/contexts/BucketContext'
 
 function NavbarIcon() {
@@ -182,6 +183,12 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [displayName, setDisplayName] = useState(() => getCurrentUserName() ?? 'User')
+  const [userEmail, setUserEmail] = useState(() => getCurrentUserEmail())
+  const [profilePhotoFullUrl, setProfilePhotoFullUrl] = useState<string | null>(() => {
+    const path = getCurrentUserPhotoUrl()
+    return path ? profilePhotoUrl(path) : null
+  })
   const [showCommandTip, setShowCommandTip] = useState(() => {
     try {
       return !localStorage.getItem(TIP_SEEN_KEY)
@@ -197,10 +204,25 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const helpRef = useRef<HTMLDivElement>(null)
   const searchBarRef = useRef<HTMLDivElement>(null)
 
-  const displayName = getCurrentUserName() ?? 'User'
-  const userEmail = getCurrentUserEmail()
   const workspaceLabel = `${displayName}'s Workspace`
   const unreadCount = notifications.filter((n) => n.unread).length
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      setDisplayName(getCurrentUserName() ?? 'User')
+      setUserEmail(getCurrentUserEmail())
+      const path = getCurrentUserPhotoUrl()
+      setProfilePhotoFullUrl(path ? profilePhotoUrl(path) : null)
+    }
+
+    syncFromStorage()
+    window.addEventListener(AUTH_CHANGED_EVENT, syncFromStorage as EventListener)
+    window.addEventListener('storage', syncFromStorage)
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, syncFromStorage as EventListener)
+      window.removeEventListener('storage', syncFromStorage)
+    }
+  }, [])
 
 
   useEffect(() => {
@@ -529,8 +551,16 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 aria-haspopup="true"
                 aria-label="Workspace and account menu"
               >
-                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-700 text-white text-xs font-semibold shrink-0">
-                  {displayName.charAt(0).toUpperCase()}
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-700 text-white text-xs font-semibold">
+                  {profilePhotoFullUrl ? (
+                    <img
+                      src={profilePhotoFullUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    displayName.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div className="hidden sm:block text-left min-w-0">
                   <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{displayName}</p>

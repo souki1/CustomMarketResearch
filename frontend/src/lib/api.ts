@@ -91,6 +91,32 @@ export async function uploadProfilePhoto(file: File, token: string): Promise<MeR
   return res.json()
 }
 
+export type PasswordChangeRequestResponse = { detail: string; delivery?: string | null; dev_code?: string | null }
+
+export async function requestPasswordChangeCode(
+  token: string,
+  channel: 'email' | 'sms' = 'email'
+): Promise<PasswordChangeRequestResponse> {
+  return request<PasswordChangeRequestResponse>('/auth/change-password/request', {
+    method: 'POST',
+    body: JSON.stringify({ channel }),
+    token,
+  })
+}
+
+export type PasswordChangeConfirmResponse = { detail: string }
+
+export async function confirmPasswordChange(
+  token: string,
+  payload: { code: string; new_password: string }
+): Promise<PasswordChangeConfirmResponse> {
+  return request<PasswordChangeConfirmResponse>('/auth/change-password/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
 export function getGoogleLoginUrl(): string {
   return `${API_BASE}/auth/google`
 }

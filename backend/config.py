@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     google_client_secret: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
     frontend_url: str = Field(default="", validation_alias="FRONTEND_URL")
 
+    # Optional email delivery for OTP / verification codes
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", validation_alias="SMTP_FROM")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
+
+    # Development helper: include OTP in API response (do NOT enable in production)
+    dev_return_otp: bool = Field(default=False, validation_alias="DEV_RETURN_OTP")
+
 
 @lru_cache
 def get_settings() -> Settings:

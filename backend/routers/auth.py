@@ -1,4 +1,9 @@
 import time
+import hashlib
+import secrets
+import smtplib
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
@@ -13,13 +18,57 @@ from auth_utils import create_access_token, decode_access_token, hash_password, 
 from config import get_settings
 from database import get_db
 from models import User
-from schemas import SignInBody, SignUpBody, TokenResponse, UpdateProfileBody, UserResponse
+from schemas import (
+    PasswordChangeConfirmBody,
+    PasswordChangeConfirmResponse,
+    PasswordChangeRequestBody,
+    PasswordChangeRequestResponse,
+    SignInBody,
+    SignUpBody,
+    TokenResponse,
+    UpdateProfileBody,
+    UserResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROFILE_PHOTO_DIR = _BACKEND_DIR / "uploads" / "profiles"
 PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+
+OTP_TTL_MINUTES = 10
+OTP_RESEND_COOLDOWN_SECONDS = 30
+OTP_MAX_ATTEMPTS = 5
+
+
+def _hash_otp(user_id: int, code: str) -> str:
+    raw = f"{settings.secret_key}:{user_id}:{code}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _send_email_code(to_email: str, code: str) -> str:
+    """
+    Send a verification code via SMTP if configured.
+    Returns delivery string: 'smtp' or 'console'.
+    """
+    if not settings.smtp_host or not settings.smtp_from:
+        # Dev fallback: print code to backend console.
+        print(f"[DEV] Password change code for {to_email}: {code}")  # noqa: T201
+        return "console"
+
+    msg = EmailMessage()
+    msg["Subject"] = "Your verification code"
+    msg["From"] = settings.smtp_from
+    msg["To"] = to_email
+    msg.set_content(f"Your verification code is: {code}\n\nThis code expires in {OTP_TTL_MINUTES} minutes.")
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
+        if settings.smtp_use_tls:
+            s.starttls()
+        if settings.smtp_username and settings.smtp_password:
+            s.login(settings.smtp_username, settings.smtp_password)
+        s.send_message(msg)
+    return "smtp"
 
 
 async def get_current_user(
@@ -216,3 +265,66 @@ async def get_profile_photo(filename: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(path)
+
+
+@router.post("/change-password/request", response_model=PasswordChangeRequestResponse)
+async def request_password_change(
+    body: PasswordChangeRequestBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if body.channel == "sms":
+        raise HTTPException(status_code=400, detail="SMS delivery is not configured yet. Use email.")
+
+    now = datetime.now(timezone.utc)
+    if user.password_change_code_last_sent_at is not None:
+        delta = (now - user.password_change_code_last_sent_at).total_seconds()
+        if delta < OTP_RESEND_COOLDOWN_SECONDS:
+            raise HTTPException(status_code=429, detail="Please wait before requesting another code")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    user.password_change_code_hash = _hash_otp(user.id, code)
+    user.password_change_code_expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
+    user.password_change_code_last_sent_at = now
+    user.password_change_code_attempts = 0
+    await db.flush()
+
+    delivery = _send_email_code(user.email, code)
+    resp = PasswordChangeRequestResponse(detail="Verification code sent", delivery=delivery)
+    if settings.dev_return_otp:
+        resp.dev_code = code
+    return resp
+
+
+@router.post("/change-password/confirm", response_model=PasswordChangeConfirmResponse)
+async def confirm_password_change(
+    body: PasswordChangeConfirmBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    code = (body.code or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Code is required")
+    if not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    now = datetime.now(timezone.utc)
+    if not user.password_change_code_hash or not user.password_change_code_expires_at:
+        raise HTTPException(status_code=400, detail="No active verification code. Request a new code.")
+    if user.password_change_code_expires_at < now:
+        raise HTTPException(status_code=400, detail="Code expired. Request a new code.")
+    if user.password_change_code_attempts >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many attempts. Request a new code.")
+
+    if _hash_otp(user.id, code) != user.password_change_code_hash:
+        user.password_change_code_attempts += 1
+        await db.flush()
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    user.password_hash = hash_password(body.new_password)
+    user.password_change_code_hash = None
+    user.password_change_code_expires_at = None
+    user.password_change_code_attempts = 0
+    await db.flush()
+    await db.refresh(user)
+    return PasswordChangeConfirmResponse(detail="Password updated")

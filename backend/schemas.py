@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
+from typing import Literal
 
 
 class SignUpBody(BaseModel):
@@ -36,6 +37,25 @@ class UpdateProfileBody(BaseModel):
     display_name: str | None = None
     phone: str | None = None
     job_title: str | None = None
+
+
+class PasswordChangeRequestBody(BaseModel):
+    channel: Literal["email", "sms"] = "email"
+
+
+class PasswordChangeRequestResponse(BaseModel):
+    detail: str
+    delivery: str | None = None
+    dev_code: str | None = None
+
+
+class PasswordChangeConfirmBody(BaseModel):
+    code: str
+    new_password: str
+
+
+class PasswordChangeConfirmResponse(BaseModel):
+    detail: str
 
 
 class WorkspaceItemBase(BaseModel):
