@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
+import { useBucket } from '@/contexts/BucketContext'
 import { useLayout } from '@/contexts/LayoutContext'
 
 type TabState = {
@@ -73,9 +74,7 @@ export function ResearchPage() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
   const { setCollapseSidebarForInspector } = useLayout()
-  const selectedRowIndexRef = useRef<number | null>(null)
-  selectedRowIndexRef.current = selectedRowIndex
-
+  const { addItem, showToast } = useBucket()
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -247,21 +246,21 @@ export function ResearchPage() {
     })
   }
 
-  const handleRowClick = useCallback(
-    (dataRowIndex: number, e: React.MouseEvent) => {
-      if ((e.target as HTMLElement).closest('input, button')) return
-      setSelectedRowIndex(dataRowIndex)
-      setSelectedRows((prev) => {
-        const next = new Set(prev)
-        if (!next.has(dataRowIndex)) next.add(dataRowIndex)
-        return next
-      })
-      if (selectedRowIndexRef.current !== dataRowIndex) {
+  // Cell click: open inspector for this row, or switch to this row, or close if same row
+  const handleCellClick = useCallback(
+    (dataRowIndex: number) => {
+      if (selectedRowIndex === dataRowIndex) {
+        setSelectedRowIndex(null)
+        setIsInspectorOpen(false)
+        setInspectorMaximized(false)
+        setCollapseSidebarForInspector(false)
+      } else {
+        setSelectedRowIndex(dataRowIndex)
         setIsInspectorOpen(true)
         setCollapseSidebarForInspector(true)
       }
     },
-    [setCollapseSidebarForInspector]
+    [selectedRowIndex, setCollapseSidebarForInspector]
   )
 
   const toggleSelectAll = () => {
@@ -322,12 +321,21 @@ export function ResearchPage() {
   const closeInspector = useCallback(
     (e?: React.MouseEvent) => {
       e?.stopPropagation()
+      setSelectedRowIndex(null)
       setIsInspectorOpen(false)
       setInspectorMaximized(false)
       setCollapseSidebarForInspector(false)
     },
     [setCollapseSidebarForInspector]
   )
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isInspectorOpen) closeInspector()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isInspectorOpen, closeInspector])
 
   return (
     <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
@@ -563,8 +571,7 @@ export function ResearchPage() {
         </button>
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation()
+          onClick={() => {
             if (selectedRows.size === 0) return
             const first = Math.min(...selectedRows)
             setSelectedRowIndex(first)
@@ -572,10 +579,10 @@ export function ResearchPage() {
             setCollapseSidebarForInspector(true)
           }}
           disabled={selectedRows.size === 0}
-          title={selectedRows.size === 0 ? 'Select a row to preview' : 'Preview selected row'}
+          title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
           className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
@@ -701,10 +708,9 @@ export function ResearchPage() {
                   return (
                     <tr
                       key={dataRowIndex}
-                      className={`cursor-pointer transition-colors ${isSelectedRow ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                      onClick={(e) => handleRowClick(dataRowIndex, e)}
+                      className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
                     >
-                      <td className="w-10 px-2 py-2 border-r border-gray-200" onClick={(e) => e.stopPropagation()}>
+                      <td className="w-10 px-2 py-2 border-r border-gray-200">
                         <input
                           type="checkbox"
                           checked={selectedRows.has(dataRowIndex)}
@@ -713,7 +719,11 @@ export function ResearchPage() {
                         />
                       </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
-                        <td key={colIndex} className="p-0 border-r border-gray-200 last:border-r-0">
+                        <td
+                          key={colIndex}
+                          className="cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
+                          onClick={() => handleCellClick(dataRowIndex)}
+                        >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
@@ -870,7 +880,7 @@ export function ResearchPage() {
                     Item
                   </h3>
                   <p className="text-lg font-semibold text-gray-900">
-                    {headers[0] ? `${headers[0]}: ${selectedRowData[0] ?? '—'}` : selectedRowData[0] ?? 'Row ' + (firstSelectedRowIndex != null ? firstSelectedRowIndex + 1 : '')}
+                    {headers[0] ? `${headers[0]}: ${selectedRowData[0] ?? '—'}` : selectedRowData[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
                   </p>
                 </div>
                 {selectedRowData[1] != null && String(selectedRowData[1]).trim() !== '' && (
@@ -903,7 +913,7 @@ export function ResearchPage() {
                     Metadata
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Row {firstSelectedRowIndex != null ? firstSelectedRowIndex + 1 : ''} of {content ? content.length - 1 : 0}
+                    Row {selectedRowIndex != null ? selectedRowIndex + 1 : ''} of {content ? content.length - 1 : 0}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -912,6 +922,29 @@ export function ResearchPage() {
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                   >
                     Research this row
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedRowIndex == null || !effectiveTabId) return
+                      const id = `${effectiveTabId}-${selectedRowIndex}`
+                      const title = selectedRowData[0] ?? ''
+                      const manufacturer = selectedRowData[1] ?? ''
+                      const price = selectedRowData[2] ?? ''
+                      const result = addItem({
+                        id,
+                        title: String(title),
+                        manufacturer: String(manufacturer),
+                        price: String(price),
+                        rowIndex: selectedRowIndex,
+                        tabId: effectiveTabId,
+                      })
+                      if (result.added) showToast('Item added to Bucket')
+                      else showToast('Item already in Bucket')
+                    }}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Add to Bucket
                   </button>
                   <button
                     type="button"

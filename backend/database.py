@@ -36,3 +36,20 @@ async def get_db() -> AsyncSession:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add new User columns if missing (e.g. phone, job_title, profile_photo_url)
+        def add_user_columns(sync_conn):
+            for col, spec in [
+                ("phone", "VARCHAR(50)"),
+                ("job_title", "VARCHAR(255)"),
+                ("profile_photo_url", "VARCHAR(512)"),
+            ]:
+                try:
+                    sync_conn.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE users ADD COLUMN {col} {spec}"
+                        )
+                    )
+                except Exception:
+                    pass  # column already exists
+
+        await conn.run_sync(add_user_columns)

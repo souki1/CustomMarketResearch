@@ -43,8 +43,52 @@ export async function signIn(payload: SignInPayload): Promise<AuthResponse> {
   return request<AuthResponse>('/auth/signin', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export async function getMe(token: string): Promise<{ id: number; email: string; display_name: string }> {
-  return request('/auth/me', { token })
+export type MeResponse = {
+  id: number
+  email: string
+  display_name: string
+  phone: string | null
+  job_title: string | null
+  profile_photo_url: string | null
+}
+
+export async function getMe(token: string): Promise<MeResponse> {
+  return request<MeResponse>('/auth/me', { token })
+}
+
+export async function updateProfile(
+  payload: { display_name?: string; phone?: string; job_title?: string },
+  token: string
+): Promise<MeResponse> {
+  return request<MeResponse>('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
+export function profilePhotoUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const base = API_BASE.replace(/\/$/, '')
+  const path = url.startsWith('/') ? url : `/${url}`
+  return `${base}${path}`
+}
+
+export async function uploadProfilePhoto(file: File, token: string): Promise<MeResponse> {
+  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_BASE}/auth/me/photo`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = typeof err.detail === 'string' ? err.detail : 'Upload failed'
+    throw new Error(msg)
+  }
+  return res.json()
 }
 
 export function getGoogleLoginUrl(): string {

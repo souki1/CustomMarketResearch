@@ -24,9 +24,18 @@ class UserResponse(BaseModel):
     id: int
     email: str
     display_name: str
+    phone: str | None = None
+    job_title: str | None = None
+    profile_photo_url: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class UpdateProfileBody(BaseModel):
+    display_name: str | None = None
+    phone: str | None = None
+    job_title: str | None = None
 
 
 class WorkspaceItemBase(BaseModel):

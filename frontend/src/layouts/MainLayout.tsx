@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { CommandPalette, Navbar, Sidebar } from '@/components'
+import { BucketProvider } from '@/contexts/BucketContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
 
 const SIDEBAR_OPEN_KEY = 'sidebar-open'
@@ -27,7 +28,7 @@ function MainLayoutContent() {
   const showSidebar = sidebarOpen && !collapseSidebarForInspector
 
   return (
-    <>
+    <BucketProvider>
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       <Navbar
         sidebarOpen={sidebarOpen}
@@ -44,7 +45,7 @@ function MainLayoutContent() {
           <Outlet />
         </main>
       </div>
-    </>
+    </BucketProvider>
   )
 }
 

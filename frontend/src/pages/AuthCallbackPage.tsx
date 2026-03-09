@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserName, setToken } from '@/lib/auth'
+import { setCurrentUserEmail, setCurrentUserName, setToken } from '@/lib/auth'
 
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const token = searchParams.get('token')
   const displayName = searchParams.get('display_name')
+  const email = searchParams.get('email')
   const error = searchParams.get('error')
 
   useEffect(() => {
@@ -17,9 +18,10 @@ export function AuthCallbackPage() {
     if (token) {
       setToken(token)
       if (displayName) setCurrentUserName(displayName)
+      if (email) setCurrentUserEmail(email)
     }
     navigate('/', { replace: true })
-  }, [token, displayName, error, navigate])
+  }, [token, displayName, email, error, navigate])
 
   return (
     <div className="min-h-screen flex items-center justify-center text-gray-600">

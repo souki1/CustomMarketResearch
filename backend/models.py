@@ -14,6 +14,9 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)  # null for Google-only
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     google_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    profile_photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class WorkspaceItem(Base):
