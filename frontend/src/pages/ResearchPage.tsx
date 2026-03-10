@@ -64,7 +64,8 @@ export function ResearchPage() {
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [toolbarActive, setToolbarActive] = useState<'all' | 'selected' | 'deep' | null>('all')
-  const [otherMenuOpen, setOtherMenuOpen] = useState(false)
+  // Removed "Other options" menu
+  // const [otherMenuOpen, setOtherMenuOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
@@ -239,9 +240,7 @@ export function ResearchPage() {
     [setActiveTabData]
   )
 
-  const addColumn = useCallback(() => {
-    setActiveTabData((prev) => (prev.length ? prev.map((row) => [...row, '']) : [['']]))
-  }, [setActiveTabData])
+  // addColumn UI removed with "Other options"
 
   const addRow = useCallback((count: number = 1) => {
     setActiveTabData((prev) => {
@@ -862,47 +861,7 @@ export function ResearchPage() {
           </svg>
           Compare Selected
         </button>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setOtherMenuOpen((o) => !o)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z" />
-            </svg>
-            Other options
-          </button>
-          {otherMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[160px] rounded-xl border border-gray-200 bg-white py-1 shadow-sm">
-              <button
-                type="button"
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => { setOtherMenuOpen(false); addColumn(); }}
-              >
-                Add column
-              </button>
-              <button
-                type="button"
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => {
-                  setOtherMenuOpen(false)
-                  const el = document.querySelector('[data-add-row-footer-btn]') as HTMLElement | null
-                  openAddRowPopover(el)
-                }}
-              >
-                Add row
-              </button>
-              <Link
-                to="/"
-                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => setOtherMenuOpen(false)}
-              >
-                Back to Home
-              </Link>
-            </div>
-          )}
-        </div>
+        {/* Other options removed */}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -1095,7 +1054,7 @@ export function ResearchPage() {
 
       {content && content.length === 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
-          No data. Use &quot;+ Add row&quot; or &quot;Other options &rarr; Add row&quot; to add rows.
+          No data. Use &quot;+ Add row&quot; to add rows.
         </div>
       )}
 
