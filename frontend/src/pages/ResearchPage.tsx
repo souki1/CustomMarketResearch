@@ -83,6 +83,7 @@ export function ResearchPage() {
     y: number
   }>({ open: false, x: 0, y: 0 })
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
@@ -251,6 +252,47 @@ export function ResearchPage() {
       return [...prev, ...rows]
     })
   }, [setActiveTabData])
+
+  const removeSelectedRows = useCallback(() => {
+    if (!content || selectedRows.size === 0) return
+    setDeleteConfirmOpen(true)
+  }, [content, selectedRows.size])
+
+  const confirmDeleteSelectedRows = useCallback(() => {
+    if (!content || selectedRows.size === 0) {
+      setDeleteConfirmOpen(false)
+      return
+    }
+
+    // selectedRows are 0-based indices into data rows; content includes header row at index 0
+    const toRemove = Array.from(selectedRows)
+      .map((i) => i + 1)
+      .sort((a, b) => b - a)
+
+    setActiveTabData((prev) => {
+      if (!prev.length) return prev
+      const next = [...prev]
+      for (const idx of toRemove) {
+        if (idx > 0 && idx < next.length) next.splice(idx, 1)
+      }
+      return next
+    })
+
+    setSelectedRows(new Set())
+    setSelectedRowIndex(null)
+    setIsInspectorOpen(false)
+    setInspectorMaximized(false)
+    setInspectorMode('single')
+    setInspectorMultiRowIndices([])
+    setInspectorCompareSelection(new Set())
+    setCollapseSidebarForInspector(false)
+    setDeleteConfirmOpen(false)
+  }, [
+    content,
+    selectedRows,
+    setActiveTabData,
+    setCollapseSidebarForInspector,
+  ])
 
   const openAddRowPopover = (anchor: HTMLElement | null) => {
     if (!anchor) return
@@ -446,6 +488,43 @@ export function ResearchPage() {
 
   return (
     <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
+      {deleteConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-rows-title"
+          onClick={(e) => e.target === e.currentTarget && setDeleteConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-rows-title" className="text-sm font-semibold text-gray-900">
+              Delete selected row{selectedRows.size === 1 ? '' : 's'}?
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be undone.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteSelectedRows}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {addRowPopover.open && (
         <div
           data-add-row-popover
@@ -947,6 +1026,15 @@ export function ResearchPage() {
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
               >
                 + Add row
+              </button>
+              <button
+                type="button"
+                onClick={removeSelectedRows}
+                disabled={selectedRows.size === 0}
+                title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Delete row
               </button>
               <span className="text-sm text-gray-600">
                 Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows} entries
