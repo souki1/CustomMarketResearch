@@ -84,7 +84,7 @@ export function ComparePage() {
             className="grid gap-6"
             style={{ gridTemplateColumns: `repeat(${items.length}, minmax(240px, 1fr))` }}
           >
-            {items.slice(0, 5).map((item) => (
+            {items.map((item) => (
               <div key={item.id} className="border-b border-gray-200 pb-6">
                 <div className="text-center">
                   <p className="text-sm font-semibold text-gray-900">{item.title || '—'}</p>

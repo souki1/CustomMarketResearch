@@ -77,6 +77,12 @@ export function ResearchPage() {
   const [inspectorMode, setInspectorMode] = useState<'single' | 'multi'>('single')
   const [inspectorMultiRowIndices, setInspectorMultiRowIndices] = useState<number[]>([])
   const [inspectorCompareSelection, setInspectorCompareSelection] = useState<Set<number>>(new Set())
+  const [addRowPopover, setAddRowPopover] = useState<{
+    open: boolean
+    x: number
+    y: number
+  }>({ open: false, x: 0, y: 0 })
+  const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
@@ -236,13 +242,58 @@ export function ResearchPage() {
     setActiveTabData((prev) => (prev.length ? prev.map((row) => [...row, '']) : [['']]))
   }, [setActiveTabData])
 
-  const addRow = useCallback(() => {
+  const addRow = useCallback((count: number = 1) => {
     setActiveTabData((prev) => {
       if (!prev.length) return [['']]
       const numCols = prev[0]?.length ?? 1
-      return [...prev, Array(numCols).fill('')]
+      const safeCount = Number.isFinite(count) ? Math.max(1, Math.min(500, Math.floor(count))) : 1
+      const rows = Array.from({ length: safeCount }, () => Array(numCols).fill(''))
+      return [...prev, ...rows]
     })
   }, [setActiveTabData])
+
+  const openAddRowPopover = (anchor: HTMLElement | null) => {
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    setAddRowCountDraft('1')
+    const POPOVER_H = 170
+    const gap = 6
+    const bottomY = rect.bottom + gap
+    const topY = rect.top - gap - POPOVER_H
+    const openUp = bottomY + POPOVER_H > window.innerHeight - 8 && topY >= 8
+    setAddRowPopover({
+      open: true,
+      x: Math.max(8, rect.left),
+      y: openUp ? topY : bottomY,
+    })
+  }
+
+  const closeAddRowPopover = () => setAddRowPopover((p) => ({ ...p, open: false }))
+
+  const commitAddRows = (n: number) => {
+    if (!n || n < 1) return
+    addRow(n)
+    closeAddRowPopover()
+  }
+
+  useEffect(() => {
+    if (!addRowPopover.open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAddRowPopover()
+    }
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('[data-add-row-popover]')) return
+      closeAddRowPopover()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [addRowPopover.open])
 
   const toggleRowSelection = (rowIndex: number) => {
     setSelectedRows((prev) => {
@@ -395,6 +446,43 @@ export function ResearchPage() {
 
   return (
     <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
+      {addRowPopover.open && (
+        <div
+          data-add-row-popover
+          className="fixed z-50 w-[220px] rounded-xl border border-gray-200 bg-white p-2 shadow-sm"
+          style={{ left: addRowPopover.x, top: addRowPopover.y }}
+        >
+          <p className="px-2 pb-1 text-xs font-semibold text-gray-700">Add rows</p>
+          <div className="flex flex-wrap gap-1 px-1 pb-2">
+            {[1, 5, 10, 25, 50, 100].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => commitAddRows(n)}
+                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 px-1">
+            <input
+              value={addRowCountDraft}
+              onChange={(e) => setAddRowCountDraft(e.target.value)}
+              className="h-8 w-full rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              placeholder="Custom"
+              inputMode="numeric"
+            />
+            <button
+              type="button"
+              onClick={() => commitAddRows(Number(addRowCountDraft))}
+              className="h-8 shrink-0 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
       <div
         className={
           isInspectorOpen
@@ -718,7 +806,11 @@ export function ResearchPage() {
               <button
                 type="button"
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                onClick={() => { setOtherMenuOpen(false); addRow(); }}
+                onClick={() => {
+                  setOtherMenuOpen(false)
+                  const el = document.querySelector('[data-add-row-footer-btn]') as HTMLElement | null
+                  openAddRowPopover(el)
+                }}
               >
                 Add row
               </button>
@@ -850,7 +942,8 @@ export function ResearchPage() {
             <div className="flex items-center gap-4">
               <button
                 type="button"
-                onClick={addRow}
+                onClick={(e) => openAddRowPopover(e.currentTarget)}
+                data-add-row-footer-btn
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
               >
                 + Add row
