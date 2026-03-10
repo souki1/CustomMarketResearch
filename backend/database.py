@@ -47,6 +47,8 @@ async def init_db() -> None:
                 ("phone", "VARCHAR(50)"),
                 ("job_title", "VARCHAR(255)"),
                 ("profile_photo_url", "VARCHAR(512)"),
+                ("profile_photo_content_type", "VARCHAR(128)"),
+                ("profile_photo_data", "BYTEA"),
                 ("password_change_code_hash", "VARCHAR(128)"),
                 ("password_change_code_expires_at", "DATETIME"),
                 ("password_change_code_last_sent_at", "DATETIME"),

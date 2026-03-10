@@ -4,13 +4,12 @@ import secrets
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,9 +31,6 @@ from schemas import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
-_BACKEND_DIR = Path(__file__).resolve().parent.parent
-PROFILE_PHOTO_DIR = _BACKEND_DIR / "uploads" / "profiles"
-PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
 OTP_TTL_MINUTES = 10
 OTP_RESEND_COOLDOWN_SECONDS = 30
@@ -230,19 +226,22 @@ async def upload_profile_photo(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected")
+    from pathlib import Path
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_PHOTO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Allowed formats: " + ", ".join(ALLOWED_PHOTO_EXTENSIONS),
         )
-    safe_name = f"{user.id}_{int(time.time() * 1000)}{ext}"
-    dest = PROFILE_PHOTO_DIR / safe_name
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:  # 5MB
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
-    dest.write_bytes(content)
+    # Store photo bytes and metadata in the database.
+    user.profile_photo_content_type = file.content_type or "application/octet-stream"
+    user.profile_photo_data = content
     # Store URL path the frontend can use (same origin as API)
+    # We keep the existing pattern so the frontend continues to work.
+    safe_name = f"{user.id}_{int(time.time() * 1000)}{ext}"
     user.profile_photo_url = f"/auth/profile-photo/{safe_name}"
     await db.flush()
     await db.refresh(user)
@@ -257,14 +256,19 @@ async def upload_profile_photo(
 
 
 @router.get("/profile-photo/{filename}")
-async def get_profile_photo(filename: str):
-    """Serve uploaded profile photo. Filename must be safe (e.g. userid_timestamp.ext)."""
+async def get_profile_photo(filename: str, db: Annotated[AsyncSession, Depends(get_db)]):
+    """Serve profile photo stored in the database, looked up by URL suffix."""
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    path = PROFILE_PHOTO_DIR / filename
-    if not path.is_file():
+
+    url_path = f"/auth/profile-photo/{filename}"
+    result = await db.execute(select(User).where(User.profile_photo_url == url_path))
+    user = result.scalar_one_or_none()
+    if not user or not user.profile_photo_data:
         raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse(path)
+
+    media_type = user.profile_photo_content_type or "image/png"
+    return Response(content=user.profile_photo_data, media_type=media_type)
 
 
 @router.post("/change-password/request", response_model=PasswordChangeRequestResponse)

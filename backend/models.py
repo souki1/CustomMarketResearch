@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -17,6 +17,8 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     job_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     profile_photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    profile_photo_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    profile_photo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     password_change_code_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     password_change_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_change_code_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
