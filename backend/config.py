@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     google_client_secret: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
     frontend_url: str = Field(default="", validation_alias="FRONTEND_URL")
 
+    # MongoDB (optional, for document storage / analytics, etc.)
+    mongo_url: str = Field(default="", validation_alias="MONGO_URL")
+    mongo_db_name: str = Field(default="", validation_alias="MONGO_DB_NAME")
+
     # Optional email delivery for OTP / verification codes
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
