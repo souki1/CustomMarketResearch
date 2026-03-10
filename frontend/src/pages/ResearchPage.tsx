@@ -55,7 +55,16 @@ export function ResearchPage() {
   const fileIdParam = searchParams.get('fileId')
   const nameFromUrl = searchParams.get('name')
   const folderFromUrl = searchParams.get('folder')
-  const [tabs, setTabs] = useState<TabState[]>(() => [newBlankSheet()])
+  const [tabs, setTabs] = useState<TabState[]>(() => {
+    try {
+      const raw = localStorage.getItem('research-tabs')
+      if (!raw) return [newBlankSheet()]
+      const parsed = JSON.parse(raw) as TabState[]
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [newBlankSheet()]
+    } catch {
+      return [newBlankSheet()]
+    }
+  })
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,6 +102,15 @@ export function ResearchPage() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
+
+  // Persist tabs in localStorage so they survive route changes and reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem('research-tabs', JSON.stringify(tabs))
+    } catch {
+      // ignore quota or serialization errors
+    }
+  }, [tabs])
 
   useEffect(() => {
     if (tabs.length > 0 && (!activeTabId || !tabs.some((t) => t.id === activeTabId))) {
@@ -185,7 +203,6 @@ export function ResearchPage() {
   const closeTab = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation()
-      if (tabs.length <= 1) return
       const idx = tabs.findIndex((t) => t.id === id)
       if (idx < 0) return
       const next = tabs.filter((t) => t.id !== id)
@@ -381,50 +398,24 @@ export function ResearchPage() {
   const endRow = Math.min(startRow + rowsPerPage, totalDataRows)
   const pageRows = content ? content.slice(1 + startRow, 1 + endRow) : []
   const rowIndices = pageRows.map((_, i) => startRow + i)
-
-  if (!content && !loading && !error && tabs.length === 0) {
-    return (
-      <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
-        <p className="max-w-sm text-sm text-gray-500">
-          Open a file from Home or start with a new sheet.
-        </p>
-        <div className="flex gap-2">
-          <Link
-            to="/"
-            className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-          >
-            Go to Home
-          </Link>
-          <button
-            type="button"
-            onClick={addNewTab}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            + New tab
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (!fileIdParam && tabs.length > 0 && !activeTab) {
-    return null
-  }
-
   const numCols = content?.[0]?.length ?? 0
-  const activePathLabel =
-    activeTab && activeTab.name
-      ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
-      : ''
   const headers = content?.[0] ?? []
-  const selectedRowData =
-    selectedRowIndex != null && content
-      ? content[1 + selectedRowIndex] ?? null
-      : null
 
-  // Keep comparison context in sync with currently selected rows,
-  // so sidebar Compare shows the same comparison as top Compare Selected.
+  const closeInspector = useCallback(
+    (e?: React.MouseEvent) => {
+      e?.stopPropagation()
+      setSelectedRowIndex(null)
+      setIsInspectorOpen(false)
+      setInspectorMaximized(false)
+      setInspectorMode('single')
+      setInspectorMultiRowIndices([])
+      setInspectorCompareSelection(new Set())
+      setCollapseSidebarForInspector(false)
+    },
+    [setCollapseSidebarForInspector]
+  )
+
+  // Keep comparison context in sync with currently selected rows
   useEffect(() => {
     if (!content || !effectiveTabId || selectedRows.size === 0) return
     const items = Array.from(selectedRows)
@@ -447,20 +438,6 @@ export function ResearchPage() {
     if (items.length) openComparison(items)
   }, [content, effectiveTabId, headers, selectedRows, openComparison])
 
-  const closeInspector = useCallback(
-    (e?: React.MouseEvent) => {
-      e?.stopPropagation()
-      setSelectedRowIndex(null)
-      setIsInspectorOpen(false)
-      setInspectorMaximized(false)
-      setInspectorMode('single')
-      setInspectorMultiRowIndices([])
-      setInspectorCompareSelection(new Set())
-      setCollapseSidebarForInspector(false)
-    },
-    [setCollapseSidebarForInspector]
-  )
-
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isInspectorOpen) closeInspector()
@@ -469,7 +446,7 @@ export function ResearchPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, closeInspector])
 
-  // Restore inspector state (or checkbox selection) when returning from /compare via Cancel
+  // Restore inspector state when returning from /compare
   useEffect(() => {
     const st = location.state as
       | {
@@ -504,10 +481,48 @@ export function ResearchPage() {
       if (r.page) setPage(r.page)
       if (r.activeTabId) setActiveTabId(r.activeTabId)
       setSelectedRows(new Set(r.selectedRows ?? []))
-      // Do NOT open inspector in this path.
       navigate(location.pathname + location.search, { replace: true })
     }
   }, [location.pathname, location.search, location.state, navigate, setCollapseSidebarForInspector])
+
+  if (!content && !loading && !error && tabs.length === 0) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+        <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
+        <p className="max-w-sm text-sm text-gray-500">
+          Open a file from Home or start with a new sheet.
+        </p>
+        <div className="flex gap-2">
+          <Link
+            to="/"
+            className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+          >
+            Go to Home
+          </Link>
+          <button
+            type="button"
+            onClick={addNewTab}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          >
+            + New tab
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!fileIdParam && tabs.length > 0 && !activeTab) {
+    return null
+  }
+
+  const activePathLabel =
+    activeTab && activeTab.name
+      ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
+      : ''
+  const selectedRowData =
+    selectedRowIndex != null && content
+      ? content[1 + selectedRowIndex] ?? null
+      : null
 
   return (
     <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
