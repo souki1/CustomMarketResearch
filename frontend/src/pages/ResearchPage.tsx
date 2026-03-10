@@ -423,6 +423,30 @@ export function ResearchPage() {
       ? content[1 + selectedRowIndex] ?? null
       : null
 
+  // Keep comparison context in sync with currently selected rows,
+  // so sidebar Compare shows the same comparison as top Compare Selected.
+  useEffect(() => {
+    if (!content || !effectiveTabId || selectedRows.size === 0) return
+    const items = Array.from(selectedRows)
+      .map((rowIndex) => {
+        const row = content[rowIndex + 1]
+        if (!row) return null
+        const title = String(row[0] ?? '')
+        const specs = headers.map((label, i) => ({
+          label: (label || `Column ${i + 1}`).trim(),
+          value: String(row[i] ?? '—'),
+        }))
+        return {
+          id: `${effectiveTabId}-${rowIndex}`,
+          title,
+          imageUrl: null,
+          specs,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+    if (items.length) openComparison(items)
+  }, [content, effectiveTabId, headers, selectedRows, openComparison])
+
   const closeInspector = useCallback(
     (e?: React.MouseEvent) => {
       e?.stopPropagation()
