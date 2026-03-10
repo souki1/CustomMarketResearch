@@ -1,0 +1,18 @@
+.git
+.idea
+.vscode
+.DS_Store
+**/__pycache__
+**/*.pyc
+
+# local env files (never bake secrets)
+.env
+.env.*
+
+# frontend build artifacts
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+
+# backend uploads can be large
+backend/uploads
