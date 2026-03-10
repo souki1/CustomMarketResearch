@@ -50,36 +50,36 @@ function MainLayoutContent() {
       <ComparisonProvider>
         <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
         <Navbar
-          sidebarOpen={showSidebar}
-          onSidebarToggle={handleSidebarToggle}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-        />
-        <div className="flex">
-          <div
-            className="flex shrink-0"
-            onMouseLeave={
-              collapseSidebarForInspector ? () => setSidebarHoverVisible(false) : undefined
-            }
-          >
-            {collapseSidebarForInspector && (
-              <div
-                className="w-3 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] cursor-default hover:bg-gray-50 transition-colors"
-                style={{ minHeight: 'calc(100vh - 3.5rem)' }}
-                onMouseEnter={() => setSidebarHoverVisible(true)}
-                title="Move mouse here to show sidebar"
-                aria-label="Show sidebar on hover"
-              />
-            )}
+        sidebarOpen={showSidebar}
+        onSidebarToggle={handleSidebarToggle}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
+      <div className="flex">
+        <div
+          className="flex shrink-0"
+          onMouseLeave={
+            collapseSidebarForInspector ? () => setSidebarHoverVisible(false) : undefined
+          }
+        >
+          {collapseSidebarForInspector && (
             <div
-              className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-0'}`}
-            >
-              <Sidebar open={showSidebar} />
-            </div>
+              className="w-3 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] cursor-default hover:bg-gray-50 transition-colors"
+              style={{ minHeight: 'calc(100vh - 3.5rem)' }}
+              onMouseEnter={() => setSidebarHoverVisible(true)}
+              title="Move mouse here to show sidebar"
+              aria-label="Show sidebar on hover"
+            />
+          )}
+          <div
+            className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-0'}`}
+          >
+            <Sidebar open={showSidebar} />
           </div>
-          <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
-            <Outlet />
-          </main>
         </div>
+        <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
+          <Outlet />
+        </main>
+      </div>
       </ComparisonProvider>
     </BucketProvider>
   )

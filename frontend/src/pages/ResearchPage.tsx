@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
-import { useBucket, type BucketItem } from '@/contexts/BucketContext'
+import { useBucket } from '@/contexts/BucketContext'
 import { useComparison } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
 
@@ -53,7 +53,6 @@ const DEFAULT_SHEET_COLS = 10
 export function ResearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fileIdParam = searchParams.get('fileId')
-  const navigate = useNavigate()
   const nameFromUrl = searchParams.get('name')
   const folderFromUrl = searchParams.get('folder')
   const [tabs, setTabs] = useState<TabState[]>(() => [newBlankSheet()])
@@ -75,9 +74,13 @@ export function ResearchPage() {
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
+  const [inspectorMode, setInspectorMode] = useState<'single' | 'multi'>('single')
+  const [inspectorMultiRowIndices, setInspectorMultiRowIndices] = useState<number[]>([])
+  const [inspectorCompareSelection, setInspectorCompareSelection] = useState<Set<number>>(new Set())
+  const navigate = useNavigate()
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
-  const { openWithItems: openComparisonModal } = useComparison()
+  const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -256,10 +259,16 @@ export function ResearchPage() {
         setSelectedRowIndex(null)
         setIsInspectorOpen(false)
         setInspectorMaximized(false)
+        setInspectorMode('single')
+        setInspectorMultiRowIndices([])
+        setInspectorCompareSelection(new Set())
         setCollapseSidebarForInspector(false)
       } else {
         setSelectedRowIndex(dataRowIndex)
         setIsInspectorOpen(true)
+        setInspectorMode('single')
+        setInspectorMultiRowIndices([])
+        setInspectorCompareSelection(new Set([dataRowIndex]))
         setCollapseSidebarForInspector(true)
       }
     },
@@ -327,6 +336,9 @@ export function ResearchPage() {
       setSelectedRowIndex(null)
       setIsInspectorOpen(false)
       setInspectorMaximized(false)
+      setInspectorMode('single')
+      setInspectorMultiRowIndices([])
+      setInspectorCompareSelection(new Set())
       setCollapseSidebarForInspector(false)
     },
     [setCollapseSidebarForInspector]
@@ -579,6 +591,10 @@ export function ResearchPage() {
             const first = Math.min(...selectedRows)
             setSelectedRowIndex(first)
             setIsInspectorOpen(true)
+            setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
+            const all = Array.from(selectedRows).sort((a, b) => a - b)
+            setInspectorMultiRowIndices(all)
+            setInspectorCompareSelection(new Set(all))
             setCollapseSidebarForInspector(true)
           }}
           disabled={selectedRows.size === 0}
@@ -595,21 +611,27 @@ export function ResearchPage() {
           type="button"
           onClick={() => {
             if (selectedRows.size === 0 || !content || !effectiveTabId) return
-            const comparisonItems: BucketItem[] = Array.from(selectedRows)
+            clearComparison()
+            const comparisonItems = Array.from(selectedRows)
               .map((rowIndex) => {
                 const row = content[rowIndex + 1]
                 if (!row) return null
+                const title = String(row[0] ?? '')
+                const specs = headers.map((label, i) => ({
+                  label: (label || `Column ${i + 1}`).trim(),
+                  value: String(row[i] ?? '—'),
+                }))
+                const imageUrl = null
                 return {
                   id: `${effectiveTabId}-${rowIndex}`,
-                  title: String(row[0] ?? ''),
-                  manufacturer: String(row[1] ?? ''),
-                  price: String(row[2] ?? ''),
-                  rowIndex,
-                  tabId: effectiveTabId,
-                } as BucketItem
+                  title,
+                  imageUrl,
+                  specs,
+                }
               })
-              .filter((x): x is BucketItem => x != null)
-            openComparisonModal(comparisonItems)
+              .filter((x): x is NonNullable<typeof x> => x != null)
+            openComparison(comparisonItems)
+            showToast('Opened comparison')
             navigate('/compare')
           }}
           disabled={selectedRows.size === 0}
@@ -906,41 +928,134 @@ export function ResearchPage() {
             </button>
           </header>
           <div className="flex-1 overflow-auto p-4">
-            {selectedRowData ? (
+            {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
               <div className="space-y-4">
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Item
-                  </h3>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {headers[0] ? `${headers[0]}: ${selectedRowData[0] ?? '—'}` : selectedRowData[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
-                  </p>
-                </div>
-                {selectedRowData[1] != null && String(selectedRowData[1]).trim() !== '' && (
+                {inspectorMode === 'multi' ? (
                   <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                      Description
-                    </h3>
-                    <p className="text-sm text-gray-700">
-                      {headers[1] ? `${headers[1]}: ${selectedRowData[1]}` : String(selectedRowData[1])}
-                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Selected rows</h3>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          Pick which items to compare, then click Compare.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!content || !effectiveTabId) return
+                          const chosen = Array.from(inspectorCompareSelection).sort((a, b) => a - b)
+                          if (chosen.length === 0) {
+                            showToast('Select at least one item to compare')
+                            return
+                          }
+                          clearComparison()
+                          const comparisonItems = chosen
+                            .map((rowIndex) => {
+                              const row = content[rowIndex + 1]
+                              if (!row) return null
+                              return {
+                                id: `${effectiveTabId}-${rowIndex}`,
+                                title: String(row[0] ?? ''),
+                                imageUrl: null,
+                                specs: headers.map((label, i) => ({
+                                  label: (label || `Column ${i + 1}`).trim(),
+                                  value: String(row[i] ?? '—'),
+                                })),
+                              }
+                            })
+                            .filter((x): x is NonNullable<typeof x> => x != null)
+                          openComparison(comparisonItems)
+                          navigate('/compare')
+                        }}
+                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                      >
+                        Compare ({inspectorCompareSelection.size})
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {inspectorMultiRowIndices.map((rowIndex) => {
+                        const row = content?.[rowIndex + 1] ?? []
+                        const title = String(row[0] ?? `Row ${rowIndex + 1}`)
+                        const sub = String(row[1] ?? '').trim()
+                        const checked = inspectorCompareSelection.has(rowIndex)
+                        return (
+                          <label
+                            key={rowIndex}
+                            className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer ${
+                              checked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-4 w-4"
+                              checked={checked}
+                              onChange={() => {
+                                setInspectorCompareSelection((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(rowIndex)) next.delete(rowIndex)
+                                  else next.add(rowIndex)
+                                  return next
+                                })
+                              }}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{title || '—'}</p>
+                              {sub && <p className="text-xs text-gray-600 truncate">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
+                            </div>
+                            <button
+                              type="button"
+                              className="ml-auto text-xs font-medium text-gray-600 hover:text-gray-900"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setSelectedRowIndex(rowIndex)
+                              }}
+                            >
+                              View
+                            </button>
+                          </label>
+                        )
+                      })}
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Item
+                      </h3>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {headers[0] ? `${headers[0]}: ${selectedRowData?.[0] ?? '—'}` : selectedRowData?.[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
+                      </p>
+                    </div>
+                    {selectedRowData?.[1] != null && String(selectedRowData?.[1]).trim() !== '' && (
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Description
+                        </h3>
+                        <p className="text-sm text-gray-700">
+                          {headers[1] ? `${headers[1]}: ${selectedRowData?.[1]}` : String(selectedRowData?.[1])}
+                        </p>
+                      </div>
+                    )}
+                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Key attributes
+                      </h3>
+                      <ul className="space-y-2">
+                        {headers.map((label, i) => (
+                          <li key={i} className="flex justify-between gap-2 text-sm">
+                            <span className="text-gray-500">{label || `Column ${i + 1}`}</span>
+                            <span className="min-w-0 truncate text-right font-medium text-gray-900">
+                              {selectedRowData?.[i] ?? '—'}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
                 )}
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Key attributes
-                  </h3>
-                  <ul className="space-y-2">
-                    {headers.map((label, i) => (
-                      <li key={i} className="flex justify-between gap-2 text-sm">
-                        <span className="text-gray-500">{label || `Column ${i + 1}`}</span>
-                        <span className="min-w-0 truncate text-right font-medium text-gray-900">
-                          {selectedRowData[i] ?? '—'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
                     Metadata
@@ -953,16 +1068,22 @@ export function ResearchPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (selectedRowIndex == null || !effectiveTabId) return
-                      const item = {
-                        id: `${effectiveTabId}-${selectedRowIndex}`,
-                        title: String(selectedRowData[0] ?? ''),
-                        manufacturer: String(selectedRowData[1] ?? ''),
-                        price: String(selectedRowData[2] ?? ''),
-                        rowIndex: selectedRowIndex,
-                        tabId: effectiveTabId,
-                      }
-                      openComparisonModal([item as BucketItem])
+                      if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                      clearComparison()
+                      const title = String(selectedRowData[0] ?? '')
+                      const specs = headers.map((label, i) => ({
+                        label: (label || `Column ${i + 1}`).trim(),
+                        value: String(selectedRowData[i] ?? '—'),
+                      }))
+                      openComparison([
+                        {
+                          id: `${effectiveTabId}-${selectedRowIndex}`,
+                          title,
+                          imageUrl: null,
+                          specs,
+                        },
+                      ])
+                      showToast('Opened comparison')
                       navigate('/compare')
                     }}
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
@@ -972,7 +1093,7 @@ export function ResearchPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (selectedRowIndex == null || !effectiveTabId) return
+                      if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
                       const id = `${effectiveTabId}-${selectedRowIndex}`
                       const title = selectedRowData[0] ?? ''
                       const manufacturer = selectedRowData[1] ?? ''

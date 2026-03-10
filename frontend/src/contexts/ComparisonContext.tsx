@@ -5,34 +5,40 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { BucketItem } from '@/contexts/BucketContext'
+
+export type ComparisonSpec = {
+  label: string
+  value: string
+}
+
+export type ComparisonItem = {
+  id: string
+  title: string
+  imageUrl?: string | null
+  specs: ComparisonSpec[]
+}
 
 type ComparisonContextValue = {
-  items: BucketItem[]
-  isOpen: boolean
-  openWithItems: (items: BucketItem[]) => void
+  items: ComparisonItem[]
+  openWithItems: (items: ComparisonItem[]) => void
   closeAndClear: () => void
 }
 
 const ComparisonContext = createContext<ComparisonContextValue | null>(null)
 
 export function ComparisonProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<BucketItem[]>([])
-  const [isOpen, setIsOpen] = useState(false)
+  const [items, setItems] = useState<ComparisonItem[]>([])
 
-  const openWithItems = useCallback((newItems: BucketItem[]) => {
+  const openWithItems = useCallback((newItems: ComparisonItem[]) => {
     setItems(newItems)
-    setIsOpen(true)
   }, [])
 
   const closeAndClear = useCallback(() => {
     setItems([])
-    setIsOpen(false)
   }, [])
 
   const value: ComparisonContextValue = {
     items,
-    isOpen,
     openWithItems,
     closeAndClear,
   }

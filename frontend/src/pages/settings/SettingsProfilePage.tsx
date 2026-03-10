@@ -314,6 +314,50 @@ export function SettingsProfilePage() {
       <Card className={SETTINGS_CARD_CLASS}>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
+            <label className={SETTINGS_LABEL_CLASS}>Profile photo</label>
+            <div className="mt-1.5 flex items-center gap-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100">
+                {photoPreviewUrl ? (
+                  <img
+                    src={photoPreviewUrl}
+                    alt="Profile preview"
+                    className="h-full w-full object-cover"
+                  />
+                ) : profilePhotoUrlState ? (
+                  <img
+                    src={profilePhotoUrl(profilePhotoUrlState) ?? ''}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">
+                    Add photo
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={saving || uploadingPhoto}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploadingPhoto ? 'Uploading…' : profilePhotoUrlState ? 'Change photo' : 'Add photo'}
+                </button>
+                <p className="mt-1 text-xs text-gray-500">
+                  {pendingPhotoFile ? 'Photo selected. Click “Save Changes” to upload.' : 'JPG, PNG, GIF or WebP. Max 5MB.'}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="sm:col-span-2">
             <label className={SETTINGS_LABEL_CLASS} htmlFor="profile-full-name">Full name</label>
             <input
               id="profile-full-name"
@@ -349,44 +393,6 @@ export function SettingsProfilePage() {
               value={jobTitle}
               onChange={(e) => setJobTitle(e.target.value)}
             />
-          </div>
-          <div>
-            <label className={SETTINGS_LABEL_CLASS}>Profile photo</label>
-            <div className="mt-1.5 flex items-center gap-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100">
-                {photoPreviewUrl ? (
-                  <img
-                    src={photoPreviewUrl}
-                    alt="Profile preview"
-                    className="h-full w-full object-cover"
-                  />
-                ) : profilePhotoUrlState ? (
-                  <img
-                    src={profilePhotoUrl(profilePhotoUrlState) ?? ''}
-                    alt="Profile"
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </div>
-              <div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoChange}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={saving || uploadingPhoto}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  {uploadingPhoto ? 'Uploading…' : 'Choose image'}
-                </button>
-                <p className="mt-1 text-xs text-gray-500">Select an image from your device. JPG, PNG, GIF or WebP. Max 5MB.</p>
-              </div>
-            </div>
           </div>
           <div className="flex flex-col gap-4">
             <button
