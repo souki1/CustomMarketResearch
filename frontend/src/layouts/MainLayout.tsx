@@ -67,22 +67,21 @@ function MainLayoutContent() {
       />
       <div className="flex">
         <div
-          className="flex shrink-0"
+          className="sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0"
           onMouseLeave={
             collapseSidebarForInspector ? () => setSidebarHoverVisible(false) : undefined
           }
         >
           {collapseSidebarForInspector && (
             <div
-              className="w-3 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] cursor-default hover:bg-gray-50 transition-colors"
-              style={{ minHeight: 'calc(100vh - 3.5rem)' }}
+              className="w-3 shrink-0 border-r border-gray-200 bg-white cursor-default hover:bg-gray-50 transition-colors"
               onMouseEnter={() => setSidebarHoverVisible(true)}
               title="Move mouse here to show sidebar"
               aria-label="Show sidebar on hover"
             />
           )}
           <div
-            className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-0'}`}
+            className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-0'} h-full`}
           >
             <Sidebar open={showSidebar} />
           </div>
