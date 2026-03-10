@@ -7,10 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_utils import decode_access_token
+from config import get_settings
 from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
-from schemas import DataSheetSelectionCreate, DataSheetSelectionResponse
+from schemas import (
+    DataSheetSelectionCreate,
+    DataSheetSelectionResponse,
+    ResearchSearchResponse,
+)
+from data.serper_client import extract_organic_results_from_serper_response, search_serper
 
 
 router = APIRouter(prefix="/datasheet", tags=["datasheet"])
@@ -49,6 +55,11 @@ async def save_selection(
             status_code=400,
             detail="Each row must have the same number of values as headers",
         )
+    if payload.row_indices is not None and len(payload.row_indices) != len(payload.rows):
+        raise HTTPException(
+            status_code=400,
+            detail="row_indices length must match rows length",
+        )
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "data_sheet_selections")
@@ -57,6 +68,7 @@ async def save_selection(
         "owner_id": user.id,
         "headers": payload.headers,
         "rows": payload.rows,
+        "row_indices": payload.row_indices or list(range(len(payload.rows))),
         "sheet_name": payload.sheet_name,
         "file_id": payload.file_id,
         "tab_id": payload.tab_id,
@@ -132,5 +144,196 @@ async def list_selections(
             tab_id=d.get("tab_id"),
             created_at=d["created_at"],
         )
+        for d in docs
+    ]
+
+
+@router.post("/selections/{selection_id}/search", response_model=ResearchSearchResponse)
+async def search_selection_and_store_urls(
+    selection_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)],
+):
+    """
+    For each row in the selection, search via Serper.dev using column values
+    and store the URLs in the research_urls collection.
+    """
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    settings = get_settings()
+    if not settings.serper_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="SERPER_API_KEY is not configured. Add it to .env.development",
+        )
+
+    selection = await mongo_db["data_sheet_selections"].find_one(
+        {"id": selection_id, "owner_id": user.id}
+    )
+    if not selection:
+        raise HTTPException(status_code=404, detail="Selection not found")
+
+    headers = selection.get("headers") or []
+    rows = selection.get("rows") or []
+    row_indices = selection.get("row_indices") or list(range(len(rows)))
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="Selection has no rows to search")
+
+    research_url_ids: list[int] = []
+    total_urls = 0
+
+    for row_index, row_data in enumerate(rows):
+        row_values = [str(v).strip() for v in row_data if v]
+        if not row_values:
+            continue
+
+        # Format as "value1"+"value2" for exact phrase search in Serper/Google
+        search_query = "+".join(f'"{v}"' for v in row_values)
+
+        try:
+            result = await search_serper(
+                settings.serper_api_key, search_query, num=10
+            )
+            organic_results = extract_organic_results_from_serper_response(result)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Serper API error for row {row_index + 1}: {e!s}",
+            )
+
+        urls = [r["link"] for r in organic_results]
+        table_row_index = row_indices[row_index] if row_index < len(row_indices) else row_index
+        now = datetime.utcnow()
+        new_id = await get_next_sequence(mongo_db, "research_urls")
+        doc = {
+            "id": new_id,
+            "owner_id": user.id,
+            "selection_id": selection_id,
+            "row_index": row_index,
+            "table_row_index": table_row_index,
+            "tab_id": selection.get("tab_id"),
+            "file_id": selection.get("file_id"),
+            "search_query": search_query,
+            "urls": urls,
+            "results": organic_results,
+            "headers": headers,
+            "row_data": row_data,
+            "created_at": now,
+        }
+        await mongo_db["research_urls"].insert_one(doc)
+        research_url_ids.append(new_id)
+        total_urls += len(urls)
+
+    return ResearchSearchResponse(
+        selection_id=selection_id,
+        rows_searched=len(research_url_ids),
+        total_urls=total_urls,
+        research_url_ids=research_url_ids,
+    )
+
+
+@router.get("/research-urls")
+async def list_research_urls(
+    selection_id: int | None = None,
+    tab_id: str | None = None,
+    file_id: int | None = None,
+    table_row_index: int | None = None,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    """List research URLs. Filter by selection_id, or by file_id/tab_id+table_row_index to fetch from MongoDB."""
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    if table_row_index is not None and (file_id is not None or tab_id is not None):
+        query: dict = {"owner_id": user.id, "table_row_index": table_row_index}
+        if file_id is not None:
+            query["file_id"] = file_id
+        elif tab_id is not None:
+            query["tab_id"] = tab_id
+        doc = await mongo_db["research_urls"].find_one(
+            query,
+            sort=[("created_at", -1)],
+        )
+        if doc:
+            return [
+                {
+                    "id": doc["id"],
+                    "selection_id": doc["selection_id"],
+                    "row_index": doc["row_index"],
+                    "table_row_index": doc.get("table_row_index"),
+                    "search_query": doc["search_query"],
+                    "urls": doc.get("urls", []),
+                    "results": doc.get("results", []),
+                    "headers": doc.get("headers", []),
+                    "row_data": doc.get("row_data", []),
+                    "created_at": doc["created_at"],
+                }
+            ]
+        if file_id is not None:
+            selection = await mongo_db["data_sheet_selections"].find_one(
+                {"owner_id": user.id, "file_id": file_id},
+                sort=[("created_at", -1)],
+            )
+        else:
+            selection = await mongo_db["data_sheet_selections"].find_one(
+                {"owner_id": user.id, "tab_id": tab_id},
+                sort=[("created_at", -1)],
+            )
+        if selection:
+            row_indices = selection.get("row_indices") or list(
+                range(len(selection.get("rows") or []))
+            )
+            try:
+                row_index = row_indices.index(table_row_index)
+            except ValueError:
+                row_index = None
+            if row_index is not None:
+                doc = await mongo_db["research_urls"].find_one(
+                    {
+                        "owner_id": user.id,
+                        "selection_id": selection["id"],
+                        "row_index": row_index,
+                    },
+                    sort=[("created_at", -1)],
+                )
+                if doc:
+                    return [
+                        {
+                            "id": doc["id"],
+                            "selection_id": doc["selection_id"],
+                            "row_index": doc["row_index"],
+                            "table_row_index": doc.get("table_row_index"),
+                            "search_query": doc["search_query"],
+                            "urls": doc.get("urls", []),
+                            "results": doc.get("results", []),
+                            "headers": doc.get("headers", []),
+                            "row_data": doc.get("row_data", []),
+                            "created_at": doc["created_at"],
+                        }
+                    ]
+        return []
+
+    query = {"owner_id": user.id}
+    if selection_id is not None:
+        query["selection_id"] = selection_id
+
+    cursor = mongo_db["research_urls"].find(query).sort("created_at", -1)
+    docs = await cursor.to_list(length=200)
+    return [
+        {
+            "id": d["id"],
+            "selection_id": d["selection_id"],
+            "row_index": d["row_index"],
+            "table_row_index": d.get("table_row_index"),
+            "search_query": d["search_query"],
+            "urls": d.get("urls", []),
+            "results": d.get("results", []),
+            "headers": d.get("headers", []),
+            "row_data": d.get("row_data", []),
+            "created_at": d["created_at"],
+        }
         for d in docs
     ]

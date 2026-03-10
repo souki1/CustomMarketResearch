@@ -87,6 +87,7 @@ class DataSheetSelectionCreate(BaseModel):
 
     headers: list[str]
     rows: list[list[str]]
+    row_indices: list[int] | None = None
     sheet_name: str | None = None
     file_id: int | None = None
     tab_id: str | None = None
@@ -100,3 +101,20 @@ class DataSheetSelectionResponse(BaseModel):
     file_id: int | None
     tab_id: str | None
     created_at: datetime
+
+
+class ResearchUrlItem(BaseModel):
+    selection_id: int
+    row_index: int
+    search_query: str
+    urls: list[str]
+    headers: list[str]
+    row_data: list[str]
+    created_at: datetime
+
+
+class ResearchSearchResponse(BaseModel):
+    selection_id: int
+    rows_searched: int
+    total_urls: int
+    research_url_ids: list[int]

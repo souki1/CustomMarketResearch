@@ -189,6 +189,7 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
 export type DataSheetSelectionPayload = {
   headers: string[]
   rows: string[][]
+  row_indices?: number[] | null
   sheet_name?: string | null
   file_id?: number | null
   tab_id?: string | null
@@ -217,6 +218,60 @@ export async function saveDataSheetSelection(
 
 export async function listDataSheetSelections(token: string): Promise<DataSheetSelection[]> {
   return request<DataSheetSelection[]>('/datasheet/selections', { token })
+}
+
+export type ResearchSearchResult = {
+  selection_id: number
+  rows_searched: number
+  total_urls: number
+  research_url_ids: number[]
+}
+
+export async function searchSelectionAndStoreUrls(
+  selectionId: number,
+  token: string
+): Promise<ResearchSearchResult> {
+  return request<ResearchSearchResult>(
+    `/datasheet/selections/${selectionId}/search`,
+    { method: 'POST', token }
+  )
+}
+
+export type ResearchUrlResult = {
+  title: string
+  link: string
+  snippet: string
+  position?: number
+}
+
+export type ResearchUrlItem = {
+  id: number
+  selection_id: number
+  row_index: number
+  search_query: string
+  urls: string[]
+  results: ResearchUrlResult[]
+  headers: string[]
+  row_data: string[]
+  created_at: string
+}
+
+export async function listResearchUrls(
+  token: string,
+  options?: {
+    selectionId?: number | null
+    tabId?: string | null
+    fileId?: number | null
+    tableRowIndex?: number | null
+  }
+): Promise<ResearchUrlItem[]> {
+  const params = new URLSearchParams()
+  if (options?.selectionId != null) params.set('selection_id', String(options.selectionId))
+  if (options?.tabId != null) params.set('tab_id', options.tabId)
+  if (options?.fileId != null) params.set('file_id', String(options.fileId))
+  if (options?.tableRowIndex != null) params.set('table_row_index', String(options.tableRowIndex))
+  const search = params.toString() ? `?${params}` : ''
+  return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
 }
 
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
-import { getWorkspaceFileContent, listWorkspaceItems, saveDataSheetSelection } from '@/lib/api'
+import {
+  getWorkspaceFileContent,
+  listResearchUrls,
+  listWorkspaceItems,
+  saveDataSheetSelection,
+  searchSelectionAndStoreUrls,
+  type ResearchUrlResult,
+} from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
@@ -50,6 +57,26 @@ function newBlankSheet(): TabState {
 const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
 const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
+const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
+
+const INSPECTOR_MIN_WIDTH = 280
+const INSPECTOR_MAX_WIDTH = 900
+const INSPECTOR_DEFAULT_WIDTH = 450
+
+type PersistedResearchState = {
+  activeTabId: string | null
+  selectedRows: number[]
+  selectedColumns: number[]
+  rowsPerPage: number
+  page: number
+  selectedRowIndex: number | null
+  isInspectorOpen: boolean
+  inspectorMaximized: boolean
+  inspectorWidth: number
+  inspectorMode: 'single' | 'multi'
+  inspectorMultiRowIndices: number[]
+  inspectorCompareSelection: number[]
+}
 
 export function ResearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -85,6 +112,8 @@ export function ResearchPage() {
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
+  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
+  const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [inspectorMode, setInspectorMode] = useState<'single' | 'multi'>('single')
   const [inspectorMultiRowIndices, setInspectorMultiRowIndices] = useState<number[]>([])
   const [inspectorCompareSelection, setInspectorCompareSelection] = useState<Set<number>>(new Set())
@@ -96,12 +125,16 @@ export function ResearchPage() {
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
+  const [researchVersion, setResearchVersion] = useState(0)
+  const [previewResults, setPreviewResults] = useState<ResearchUrlResult[]>([])
+  const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
   const lastClosedFileIdRef = useRef<number | null>(null)
+  const hasRestoredPageStateRef = useRef(false)
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -114,6 +147,83 @@ export function ResearchPage() {
       // ignore quota or serialization errors
     }
   }, [tabs])
+
+  // Restore Research page state when returning from another page (skip if returning from Compare with restore state)
+  useEffect(() => {
+    if (hasRestoredPageStateRef.current) return
+    const st = location.state as { restoreResearchSelection?: unknown; restoreInspector?: unknown } | undefined
+    if (st?.restoreResearchSelection || st?.restoreInspector) return
+
+    hasRestoredPageStateRef.current = true
+    try {
+      const raw = localStorage.getItem(RESEARCH_PAGE_STATE_KEY)
+      if (!raw) return
+      const data = JSON.parse(raw) as Partial<PersistedResearchState>
+      if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
+        setActiveTabId(data.activeTabId)
+      }
+      if (Array.isArray(data.selectedRows)) setSelectedRows(new Set(data.selectedRows))
+      if (Array.isArray(data.selectedColumns)) setSelectedColumns(new Set(data.selectedColumns))
+      if (typeof data.rowsPerPage === 'number') setRowsPerPage(data.rowsPerPage)
+      if (typeof data.page === 'number') setPage(data.page)
+      if (data.selectedRowIndex !== undefined) setSelectedRowIndex(data.selectedRowIndex)
+      if (typeof data.isInspectorOpen === 'boolean') {
+        setIsInspectorOpen(data.isInspectorOpen)
+        if (data.isInspectorOpen) setCollapseSidebarForInspector(true)
+      }
+      if (typeof data.inspectorMaximized === 'boolean') setInspectorMaximized(data.inspectorMaximized)
+      if (
+        typeof data.inspectorWidth === 'number' &&
+        data.inspectorWidth >= INSPECTOR_MIN_WIDTH &&
+        data.inspectorWidth <= INSPECTOR_MAX_WIDTH
+      ) {
+        setInspectorWidth(data.inspectorWidth)
+      }
+      if (data.inspectorMode === 'single' || data.inspectorMode === 'multi') setInspectorMode(data.inspectorMode)
+      if (Array.isArray(data.inspectorMultiRowIndices)) setInspectorMultiRowIndices(data.inspectorMultiRowIndices)
+      if (Array.isArray(data.inspectorCompareSelection)) {
+        setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [location.state, tabs])
+
+  // Persist Research page state so it survives navigation to other pages
+  useEffect(() => {
+    try {
+      const data: PersistedResearchState = {
+        activeTabId,
+        selectedRows: Array.from(selectedRows),
+        selectedColumns: Array.from(selectedColumns),
+        rowsPerPage,
+        page,
+        selectedRowIndex,
+        isInspectorOpen,
+        inspectorMaximized,
+        inspectorWidth,
+        inspectorMode,
+        inspectorMultiRowIndices,
+        inspectorCompareSelection: Array.from(inspectorCompareSelection),
+      }
+      localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
+    } catch {
+      // ignore quota or serialization errors
+    }
+  }, [
+    activeTabId,
+    selectedRows,
+    selectedColumns,
+    rowsPerPage,
+    page,
+    selectedRowIndex,
+    isInspectorOpen,
+    inspectorMaximized,
+    inspectorWidth,
+    inspectorMode,
+    inspectorMultiRowIndices,
+    inspectorCompareSelection,
+  ])
 
   useEffect(() => {
     if (tabs.length > 0 && (!activeTabId || !tabs.some((t) => t.id === activeTabId))) {
@@ -150,6 +260,40 @@ export function ResearchPage() {
       .catch((err) => setFilePickerError(err instanceof Error ? err.message : 'Failed to load files'))
       .finally(() => setFilePickerLoading(false))
   }, [filePickerOpen])
+
+  // Fetch research URLs for the selected row from MongoDB when preview is open
+  useEffect(() => {
+    if (selectedRowIndex == null || !isInspectorOpen) {
+      setPreviewResults([])
+      return
+    }
+    const token = getToken()
+    if (!token) {
+      setPreviewResults([])
+      return
+    }
+    const fileId = activeTab?.fileId ?? null
+    const tabId = effectiveTabId ?? null
+    if (!fileId && !tabId) {
+      setPreviewResults([])
+      return
+    }
+    setPreviewResultsLoading(true)
+    listResearchUrls(token, {
+      fileId: fileId ?? undefined,
+      tabId: fileId ? undefined : tabId ?? undefined,
+      tableRowIndex: selectedRowIndex,
+    })
+      .then((items) => {
+        const item = items[0]
+        const results = item?.results ?? []
+        const urls = item?.urls ?? []
+        const fallback = urls.map((url) => ({ title: url, link: url, snippet: '' }))
+        setPreviewResults(results.length > 0 ? results : fallback)
+      })
+      .catch(() => setPreviewResults([]))
+      .finally(() => setPreviewResultsLoading(false))
+  }, [selectedRowIndex, effectiveTabId, activeTab?.fileId, researchVersion, isInspectorOpen])
 
   useEffect(() => {
     if (!fileIdParam) return
@@ -466,6 +610,31 @@ export function ResearchPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, closeInspector])
 
+  // Inspector resize drag
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const res = inspectorResizeRef.current
+      if (!res) return
+      const delta = res.startX - e.clientX
+      const next = Math.min(
+        INSPECTOR_MAX_WIDTH,
+        Math.max(INSPECTOR_MIN_WIDTH, res.startWidth + delta)
+      )
+      setInspectorWidth(next)
+    }
+    const onMouseUp = () => {
+      inspectorResizeRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
+
   // Restore inspector state when returning from /compare
   useEffect(() => {
     const st = location.state as
@@ -721,19 +890,24 @@ export function ResearchPage() {
             })
             setStoreSelectionLoading(true)
             try {
-              await saveDataSheetSelection(
+              const saved = await saveDataSheetSelection(
                 {
                   headers,
                   rows,
+                  row_indices: rowIndices,
                   sheet_name: activeTab?.name ?? null,
                   file_id: activeTab?.fileId ?? null,
                   tab_id: effectiveTabId ?? null,
                 },
                 token
               )
-              showToast(`${rows.length} row${rows.length !== 1 ? 's' : ''} and ${headers.length} column${headers.length !== 1 ? 's' : ''} saved for research`)
+              const searchResult = await searchSelectionAndStoreUrls(saved.id, token)
+              setResearchVersion((v) => v + 1)
+              showToast(
+                `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and stored ${searchResult.total_urls} URLs.`
+              )
             } catch (e) {
-              showToast(e instanceof Error ? e.message : 'Failed to save selection')
+              showToast(e instanceof Error ? e.message : 'Failed to save or search')
             } finally {
               setStoreSelectionLoading(false)
             }
@@ -1041,20 +1215,40 @@ export function ResearchPage() {
       </div>
 
       {isInspectorOpen && (
-        <aside
-          className={
-            inspectorMaximized
-              ? 'fixed inset-0 z-50 flex flex-col bg-white shadow-xl'
-              : 'flex w-3/4 min-w-[320px] max-w-[900px] shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
-          }
-          style={
-            inspectorMaximized
-              ? undefined
-              : { boxShadow: '-2px 0 10px rgba(0,0,0,0.08)' }
-          }
-          role="complementary"
-          aria-label="Row preview"
-        >
+        <>
+          {!inspectorMaximized && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize preview panel"
+              title="Drag to resize"
+              className="shrink-0 w-1.5 cursor-col-resize border-l border-gray-200 bg-gray-100 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                document.body.style.cursor = 'col-resize'
+                document.body.style.userSelect = 'none'
+                inspectorResizeRef.current = { startX: e.clientX, startWidth: inspectorWidth }
+              }}
+            />
+          )}
+          <aside
+            className={
+              inspectorMaximized
+                ? 'fixed inset-0 z-50 flex flex-col bg-white shadow-xl'
+                : 'flex shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+            }
+            style={
+              inspectorMaximized
+                ? undefined
+                : {
+                    width: inspectorWidth,
+                    minWidth: inspectorWidth,
+                    boxShadow: '-2px 0 10px rgba(0,0,0,0.08)',
+                  }
+            }
+            role="complementary"
+            aria-label="Row preview"
+          >
           <style>{`
             @keyframes slideInRight {
               from { transform: translateX(100%); opacity: 0; }
@@ -1187,6 +1381,7 @@ export function ResearchPage() {
                                 e.preventDefault()
                                 e.stopPropagation()
                                 setSelectedRowIndex(rowIndex)
+                                setInspectorMode('single')
                               }}
                             >
                               View
@@ -1230,6 +1425,34 @@ export function ResearchPage() {
                           </li>
                         ))}
                       </ul>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Research results
+                      </h3>
+                      {previewResultsLoading ? (
+                        <p className="text-sm text-gray-500">Loading…</p>
+                      ) : previewResults.length > 0 ? (
+                        <ul className="space-y-1.5">
+                          {previewResults.map((r, i) => (
+                            <li key={i}>
+                              <a
+                                href={r.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block truncate text-sm text-blue-600 hover:underline"
+                                title={r.link}
+                              >
+                                {r.link}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          No results yet. Run &quot;Research Selected&quot; first.
+                        </p>
+                      )}
                     </div>
                   </>
                 )}
@@ -1317,6 +1540,7 @@ export function ResearchPage() {
             )}
           </div>
         </aside>
+        </>
       )}
     </div>
   )
