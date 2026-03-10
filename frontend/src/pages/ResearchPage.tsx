@@ -7,7 +7,6 @@ import {
   listWorkspaceItems,
   saveDataSheetSelection,
   searchSelectionAndStoreUrls,
-  type ResearchUrlResult,
 } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison } from '@/contexts/ComparisonContext'
@@ -39,6 +38,18 @@ function parseCsv(text: string): string[][] {
     row.push(cell.trim())
     return row
   })
+}
+
+function isImageUrl(val: unknown): boolean {
+  if (typeof val !== 'string' || !val.trim()) return false
+  const s = val.trim().toLowerCase()
+  if (!s.startsWith('http://') && !s.startsWith('https://')) return false
+  return /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(s) || /\/media\/|\/catalog\/|\/images?\//i.test(s)
+}
+
+function isImageKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/_/g, '')
+  return /image|img|photo|picture|thumbnail/.test(k)
 }
 
 function newBlankSheet(): TabState {
@@ -124,9 +135,13 @@ export function ResearchPage() {
   }>({ open: false, x: 0, y: 0 })
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
+  const [researchAiQueryInput, setResearchAiQueryInput] = useState('')
   const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
   const [researchVersion, setResearchVersion] = useState(0)
-  const [previewResults, setPreviewResults] = useState<ResearchUrlResult[]>([])
+  const [previewScrapedData, setPreviewScrapedData] = useState<
+    Array<{ url: string; data: Record<string, unknown> }> | null
+  >(null)
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
@@ -264,18 +279,21 @@ export function ResearchPage() {
   // Fetch research URLs for the selected row from MongoDB when preview is open
   useEffect(() => {
     if (selectedRowIndex == null || !isInspectorOpen) {
-      setPreviewResults([])
+      setPreviewScrapedData(null)
+      setPreviewResultsLoading(false)
       return
     }
     const token = getToken()
     if (!token) {
-      setPreviewResults([])
+      setPreviewScrapedData(null)
+      setPreviewResultsLoading(false)
       return
     }
     const fileId = activeTab?.fileId ?? null
     const tabId = effectiveTabId ?? null
     if (!fileId && !tabId) {
-      setPreviewResults([])
+      setPreviewScrapedData(null)
+      setPreviewResultsLoading(false)
       return
     }
     setPreviewResultsLoading(true)
@@ -286,14 +304,18 @@ export function ResearchPage() {
     })
       .then((items) => {
         const item = items[0]
-        const results = item?.results ?? []
-        const urls = item?.urls ?? []
-        const fallback = urls.map((url) => ({ title: url, link: url, snippet: '' }))
-        setPreviewResults(results.length > 0 ? results : fallback)
+        setPreviewScrapedData(item?.scraped_data ?? null)
       })
-      .catch(() => setPreviewResults([]))
+      .catch(() => setPreviewScrapedData(null))
       .finally(() => setPreviewResultsLoading(false))
   }, [selectedRowIndex, effectiveTabId, activeTab?.fileId, researchVersion, isInspectorOpen])
+
+  // Show loading in preview while research is running (until all rows scraped)
+  useEffect(() => {
+    if (storeSelectionLoading && isInspectorOpen && selectedRowIndex != null) {
+      setPreviewResultsLoading(true)
+    }
+  }, [storeSelectionLoading, isInspectorOpen, selectedRowIndex])
 
   useEffect(() => {
     if (!fileIdParam) return
@@ -752,6 +774,97 @@ export function ResearchPage() {
           </div>
         </div>
       )}
+      {researchFieldsPopupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="research-fields-title"
+          onClick={(e) => e.target === e.currentTarget && setResearchFieldsPopupOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="research-fields-title" className="text-sm font-semibold text-gray-900">
+              AI extraction query
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Describe in natural language what you want to extract from each search result.
+            </p>
+            <textarea
+              value={researchAiQueryInput}
+              onChange={(e) => setResearchAiQueryInput(e.target.value)}
+              placeholder="e.g. Extract product name, price, sku, and availability from this page"
+              rows={3}
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setResearchFieldsPopupOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={storeSelectionLoading || !researchAiQueryInput.trim()}
+                onClick={async () => {
+                  if (!content || selectedColumns.size === 0) return
+                  const token = getToken()
+                  if (!token) {
+                    showToast('Sign in to research selected')
+                    return
+                  }
+                  const aiQuery = researchAiQueryInput.trim()
+                  if (!aiQuery) {
+                    showToast('Enter an AI extraction query')
+                    return
+                  }
+                  const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
+                  const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
+                  const rowIndices =
+                    selectedRows.size > 0
+                      ? Array.from(selectedRows).sort((a, b) => a - b)
+                      : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
+                  const rows = rowIndices.map((rowIdx) => {
+                    const row = content[rowIdx + 1] ?? []
+                    return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+                  })
+                  setStoreSelectionLoading(true)
+                  setResearchFieldsPopupOpen(false)
+                  try {
+                    const saved = await saveDataSheetSelection(
+                      {
+                        headers,
+                        rows,
+                        row_indices: rowIndices,
+                        sheet_name: activeTab?.name ?? null,
+                        file_id: activeTab?.fileId ?? null,
+                        tab_id: effectiveTabId ?? null,
+                      },
+                      token
+                    )
+                    const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery)
+                    setResearchVersion((v) => v + 1)
+                    showToast(
+                      `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
+                    )
+                  } catch (e) {
+                    showToast(e instanceof Error ? e.message : 'Failed to save or search')
+                  } finally {
+                    setStoreSelectionLoading(false)
+                  }
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {storeSelectionLoading ? 'Researching…' : 'Start Research'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {addRowPopover.open && (
         <div
           data-add-row-popover
@@ -867,50 +980,20 @@ export function ResearchPage() {
         </button>
         <button
           type="button"
-          onClick={async () => {
+          onClick={() => {
             setToolbarActive('selected')
             if (!content || selectedColumns.size === 0) {
               showToast('Select at least one column first')
               return
             }
-            const token = getToken()
-            if (!token) {
-              showToast('Sign in to research selected')
-              return
-            }
             const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
             const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
-            const rowIndices =
-              selectedRows.size > 0
-                ? Array.from(selectedRows).sort((a, b) => a - b)
-                : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
-            const rows = rowIndices.map((rowIdx) => {
-              const row = content[rowIdx + 1] ?? []
-              return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
-            })
-            setStoreSelectionLoading(true)
-            try {
-              const saved = await saveDataSheetSelection(
-                {
-                  headers,
-                  rows,
-                  row_indices: rowIndices,
-                  sheet_name: activeTab?.name ?? null,
-                  file_id: activeTab?.fileId ?? null,
-                  tab_id: effectiveTabId ?? null,
-                },
-                token
-              )
-              const searchResult = await searchSelectionAndStoreUrls(saved.id, token)
-              setResearchVersion((v) => v + 1)
-              showToast(
-                `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and stored ${searchResult.total_urls} URLs.`
-              )
-            } catch (e) {
-              showToast(e instanceof Error ? e.message : 'Failed to save or search')
-            } finally {
-              setStoreSelectionLoading(false)
-            }
+            setResearchAiQueryInput(
+              headers.length > 0
+                ? `Extract ${headers.join(', ')} from this page`
+                : ''
+            )
+            setResearchFieldsPopupOpen(true)
           }}
           disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
           title={
@@ -1428,29 +1511,82 @@ export function ResearchPage() {
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                       <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                        Research results
+                        Structured data
                       </h3>
                       {previewResultsLoading ? (
                         <p className="text-sm text-gray-500">Loading…</p>
-                      ) : previewResults.length > 0 ? (
-                        <ul className="space-y-1.5">
-                          {previewResults.map((r, i) => (
-                            <li key={i}>
-                              <a
-                                href={r.link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block truncate text-sm text-blue-600 hover:underline"
-                                title={r.link}
-                              >
-                                {r.link}
-                              </a>
-                            </li>
+                      ) : previewScrapedData && previewScrapedData.length > 0 ? (
+                        <div className="space-y-4">
+                          {previewScrapedData.map((item, idx) => (
+                            <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                              {item.url && (
+                                <p className="mb-2 truncate text-xs text-gray-500" title={item.url}>
+                                  Source {idx + 1}: {item.url}
+                                </p>
+                              )}
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full text-sm">
+                                  <tbody className="divide-y divide-gray-200">
+                                    {Object.entries(item.data).map(([key, val]) => {
+                                      const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
+                                      const imageUrls = Array.isArray(val)
+                                        ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+                                        : isImageUrl(val)
+                                          ? [String(val)]
+                                          : []
+                                      const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                                      return (
+                                        <tr key={key}>
+                                          <td className="py-1 pr-4 font-medium text-gray-500 align-top">
+                                            {key.replace(/_/g, ' ')}
+                                          </td>
+                                          <td className="py-1 text-gray-900">
+                                            {showAsImage ? (
+                                              <span className="inline-flex flex-wrap gap-2">
+                                                {imageUrls.map((imgSrc, i) => (
+                                                  <span key={i} className="relative">
+                                                    <img
+                                                      src={imgSrc}
+                                                      alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                                                      className="max-h-24 rounded border border-gray-200 object-contain"
+                                                      loading="lazy"
+                                                      onError={(e) => {
+                                                        const el = e.currentTarget
+                                                        el.style.display = 'none'
+                                                        const fallback = el.nextElementSibling
+                                                        if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+                                                      }}
+                                                    />
+                                                    <a
+                                                      href={imgSrc}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
+                                                      title={imgSrc}
+                                                    >
+                                                      {imgSrc}
+                                                    </a>
+                                                  </span>
+                                                ))}
+                                              </span>
+                                            ) : (
+                                              typeof val === 'object' && val !== null
+                                                ? strVal
+                                                : String(val ?? '')
+                                            )}
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       ) : (
                         <p className="text-sm text-gray-500">
-                          No results yet. Run &quot;Research Selected&quot; first.
+                          No data yet. Run &quot;Research Selected&quot; first.
                         </p>
                       )}
                     </div>

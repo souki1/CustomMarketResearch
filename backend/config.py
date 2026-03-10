@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Serper.dev Google Search API
     serper_api_key: str = Field(default="", validation_alias="SERPER_API_KEY")
 
+    # ScrapingBee web scraping API
+    scrapingbee_api_key: str = Field(default="", validation_alias="SCRAPINGBEE_API_KEY")
+
     # Optional email delivery for OTP / verification codes
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")

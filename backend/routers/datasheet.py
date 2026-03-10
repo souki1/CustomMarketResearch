@@ -1,7 +1,8 @@
+import asyncio
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +15,10 @@ from mongo import get_mongo_db, get_next_sequence
 from schemas import (
     DataSheetSelectionCreate,
     DataSheetSelectionResponse,
+    ResearchSearchBody,
     ResearchSearchResponse,
 )
+from data.scrapingbee_client import scrape_url_with_ai_extraction
 from data.serper_client import extract_organic_results_from_serper_response, search_serper
 
 
@@ -151,8 +154,9 @@ async def list_selections(
 @router.post("/selections/{selection_id}/search", response_model=ResearchSearchResponse)
 async def search_selection_and_store_urls(
     selection_id: int,
-    user: Annotated[User, Depends(get_current_user)],
-    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)],
+    body: ResearchSearchBody = Body(default_factory=lambda: ResearchSearchBody()),
+    user: Annotated[User, Depends(get_current_user)] = ...,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = ...,
 ):
     """
     For each row in the selection, search via Serper.dev using column values
@@ -223,6 +227,33 @@ async def search_selection_and_store_urls(
             "created_at": now,
         }
         await mongo_db["research_urls"].insert_one(doc)
+        ai_query = (body.ai_query if body else None) or ""
+        if urls and settings.scrapingbee_api_key and ai_query.strip():
+            sem = asyncio.Semaphore(5)
+
+            async def scrape_one(u: str):
+                async with sem:
+                    data = await scrape_url_with_ai_extraction(
+                        settings.scrapingbee_api_key,
+                        u,
+                        ai_query,
+                    )
+                    return (u, data) if (data and isinstance(data, dict) and len(data) > 0) else None
+
+            results = await asyncio.gather(*[scrape_one(u) for u in urls])
+            for item in results:
+                if item:
+                    scraped_url, scraped = item
+                    scraped_id = await get_next_sequence(mongo_db, "research_scraped_data")
+                    scraped_doc = {
+                        "id": scraped_id,
+                        "owner_id": user.id,
+                        "research_url_id": new_id,
+                        "url": scraped_url,
+                        "data": scraped,
+                        "created_at": datetime.utcnow(),
+                    }
+                    await mongo_db["research_scraped_data"].insert_one(scraped_doc)
         research_url_ids.append(new_id)
         total_urls += len(urls)
 
@@ -258,6 +289,13 @@ async def list_research_urls(
             sort=[("created_at", -1)],
         )
         if doc:
+            scraped_cursor = mongo_db["research_scraped_data"].find(
+                {"research_url_id": doc["id"], "owner_id": user.id}
+            ).sort("created_at", 1)
+            scraped_docs = await scraped_cursor.to_list(length=20)
+            scraped_data = [{"url": s["url"], "data": s["data"]} for s in scraped_docs]
+            if not scraped_data and doc.get("scraped_data"):
+                scraped_data = [{"url": "", "data": doc["scraped_data"]}]
             return [
                 {
                     "id": doc["id"],
@@ -267,6 +305,7 @@ async def list_research_urls(
                     "search_query": doc["search_query"],
                     "urls": doc.get("urls", []),
                     "results": doc.get("results", []),
+                    "scraped_data": scraped_data,
                     "headers": doc.get("headers", []),
                     "row_data": doc.get("row_data", []),
                     "created_at": doc["created_at"],
@@ -300,6 +339,13 @@ async def list_research_urls(
                     sort=[("created_at", -1)],
                 )
                 if doc:
+                    scraped_cursor = mongo_db["research_scraped_data"].find(
+                        {"research_url_id": doc["id"], "owner_id": user.id}
+                    ).sort("created_at", 1)
+                    scraped_docs = await scraped_cursor.to_list(length=20)
+                    scraped_data = [{"url": s["url"], "data": s["data"]} for s in scraped_docs]
+                    if not scraped_data and doc.get("scraped_data"):
+                        scraped_data = [{"url": "", "data": doc["scraped_data"]}]
                     return [
                         {
                             "id": doc["id"],
@@ -309,6 +355,7 @@ async def list_research_urls(
                             "search_query": doc["search_query"],
                             "urls": doc.get("urls", []),
                             "results": doc.get("results", []),
+                            "scraped_data": scraped_data,
                             "headers": doc.get("headers", []),
                             "row_data": doc.get("row_data", []),
                             "created_at": doc["created_at"],
@@ -322,8 +369,23 @@ async def list_research_urls(
 
     cursor = mongo_db["research_urls"].find(query).sort("created_at", -1)
     docs = await cursor.to_list(length=200)
-    return [
-        {
+    ids = [d["id"] for d in docs]
+    scraped_cursor = mongo_db["research_scraped_data"].find(
+        {"research_url_id": {"$in": ids}, "owner_id": user.id}
+    ).sort([("research_url_id", 1), ("created_at", 1)])
+    scraped_list = await scraped_cursor.to_list(length=len(ids) * 20)
+    scraped_by_url: dict[int, list] = {}
+    for s in scraped_list:
+        rid = s["research_url_id"]
+        if rid not in scraped_by_url:
+            scraped_by_url[rid] = []
+        scraped_by_url[rid].append({"url": s["url"], "data": s["data"]})
+    result = []
+    for d in docs:
+        scraped_data = scraped_by_url.get(d["id"])
+        if not scraped_data and d.get("scraped_data"):
+            scraped_data = [{"url": "", "data": d["scraped_data"]}]
+        result.append({
             "id": d["id"],
             "selection_id": d["selection_id"],
             "row_index": d["row_index"],
@@ -331,9 +393,9 @@ async def list_research_urls(
             "search_query": d["search_query"],
             "urls": d.get("urls", []),
             "results": d.get("results", []),
+            "scraped_data": scraped_data or [],
             "headers": d.get("headers", []),
             "row_data": d.get("row_data", []),
             "created_at": d["created_at"],
-        }
-        for d in docs
-    ]
+        })
+    return result

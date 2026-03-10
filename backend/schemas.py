@@ -118,3 +118,9 @@ class ResearchSearchResponse(BaseModel):
     rows_searched: int
     total_urls: int
     research_url_ids: list[int]
+
+
+class ResearchSearchBody(BaseModel):
+    """Optional body for search endpoint to enable scraping."""
+
+    ai_query: str | None = None

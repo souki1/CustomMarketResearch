@@ -229,11 +229,17 @@ export type ResearchSearchResult = {
 
 export async function searchSelectionAndStoreUrls(
   selectionId: number,
-  token: string
+  token: string,
+  aiQuery?: string | null
 ): Promise<ResearchSearchResult> {
+  const body = aiQuery?.trim() ? { ai_query: aiQuery.trim() } : {}
   return request<ResearchSearchResult>(
     `/datasheet/selections/${selectionId}/search`,
-    { method: 'POST', token }
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify(body),
+    }
   )
 }
 
@@ -244,6 +250,8 @@ export type ResearchUrlResult = {
   position?: number
 }
 
+export type ScrapedDataItem = { url: string; data: Record<string, unknown> }
+
 export type ResearchUrlItem = {
   id: number
   selection_id: number
@@ -251,6 +259,7 @@ export type ResearchUrlItem = {
   search_query: string
   urls: string[]
   results: ResearchUrlResult[]
+  scraped_data?: ScrapedDataItem[] | null
   headers: string[]
   row_data: string[]
   created_at: string
