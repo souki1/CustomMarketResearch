@@ -36,8 +36,13 @@ async def get_db() -> AsyncSession:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
         # Add new User columns if missing (e.g. phone, job_title, profile_photo_url)
+        # Each ALTER TABLE runs inside its own SAVEPOINT so that a failure for an
+        # existing column doesn't leave the whole transaction in "aborted" state.
         def add_user_columns(sync_conn):
+            sa_text = __import__("sqlalchemy").text
+
             for col, spec in [
                 ("phone", "VARCHAR(50)"),
                 ("job_title", "VARCHAR(255)"),
@@ -47,13 +52,16 @@ async def init_db() -> None:
                 ("password_change_code_last_sent_at", "DATETIME"),
                 ("password_change_code_attempts", "INTEGER DEFAULT 0"),
             ]:
+                # Use a nested transaction (SAVEPOINT) per column so that a
+                # single failure doesn't abort the entire connection transaction.
+                nested = sync_conn.begin_nested()
                 try:
                     sync_conn.execute(
-                        __import__("sqlalchemy").text(
-                            f"ALTER TABLE users ADD COLUMN {col} {spec}"
-                        )
+                        sa_text(f"ALTER TABLE users ADD COLUMN {col} {spec}")
                     )
+                    nested.commit()
                 except Exception:
-                    pass  # column already exists
+                    # Column probably already exists – rollback this SAVEPOINT only.
+                    nested.rollback()
 
         await conn.run_sync(add_user_columns)
