@@ -16,6 +16,7 @@ function MainLayoutContent() {
     }
   })
   const [sidebarHoverVisible, setSidebarHoverVisible] = useState(false)
+  const [sidebarOpenBeforeInspector, setSidebarOpenBeforeInspector] = useState<boolean | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const { collapseSidebarForInspector, setCollapseSidebarForInspector } = useLayout()
 
@@ -28,8 +29,18 @@ function MainLayoutContent() {
   }, [sidebarOpen])
 
   useEffect(() => {
-    if (!collapseSidebarForInspector) setSidebarHoverVisible(false)
-  }, [collapseSidebarForInspector])
+    // Hover-reveal should ONLY apply while inspector is open.
+    if (!collapseSidebarForInspector) {
+      setSidebarHoverVisible(false)
+      if (sidebarOpenBeforeInspector != null) {
+        setSidebarOpen(sidebarOpenBeforeInspector)
+        setSidebarOpenBeforeInspector(null)
+      }
+    } else {
+      // Record the user's sidebar state before collapsing for inspector.
+      if (sidebarOpenBeforeInspector == null) setSidebarOpenBeforeInspector(sidebarOpen)
+    }
+  }, [collapseSidebarForInspector, sidebarOpenBeforeInspector, sidebarOpen])
 
   const showSidebar =
     (sidebarOpen && !collapseSidebarForInspector) ||
