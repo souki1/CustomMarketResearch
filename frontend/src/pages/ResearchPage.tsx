@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
@@ -78,6 +78,7 @@ export function ResearchPage() {
   const [inspectorMultiRowIndices, setInspectorMultiRowIndices] = useState<number[]>([])
   const [inspectorCompareSelection, setInspectorCompareSelection] = useState<Set<number>>(new Set())
   const navigate = useNavigate()
+  const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
@@ -352,6 +353,46 @@ export function ResearchPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, closeInspector])
 
+  // Restore inspector state (or checkbox selection) when returning from /compare via Cancel
+  useEffect(() => {
+    const st = location.state as
+      | {
+          restoreResearchSelection?: {
+            selectedRows: number[]
+            activeTabId: string | null
+            page: number
+            rowsPerPage: number
+          }
+          restoreInspector?: {
+            mode: 'single' | 'multi'
+            selectedRowIndex: number | null
+            multiRowIndices: number[]
+            compareSelection: number[]
+          }
+        }
+      | undefined
+    if (st?.restoreInspector) {
+      const r = st.restoreInspector
+      setInspectorMode(r.mode)
+      setSelectedRowIndex(r.selectedRowIndex)
+      setInspectorMultiRowIndices(r.multiRowIndices ?? [])
+      setInspectorCompareSelection(new Set(r.compareSelection ?? []))
+      setIsInspectorOpen(true)
+      setCollapseSidebarForInspector(true)
+      navigate(location.pathname + location.search, { replace: true })
+      return
+    }
+    if (st?.restoreResearchSelection) {
+      const r = st.restoreResearchSelection
+      if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
+      if (r.page) setPage(r.page)
+      if (r.activeTabId) setActiveTabId(r.activeTabId)
+      setSelectedRows(new Set(r.selectedRows ?? []))
+      // Do NOT open inspector in this path.
+      navigate(location.pathname + location.search, { replace: true })
+    }
+  }, [location.pathname, location.search, location.state, navigate, setCollapseSidebarForInspector])
+
   return (
     <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
       <div
@@ -594,7 +635,8 @@ export function ResearchPage() {
             setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
             const all = Array.from(selectedRows).sort((a, b) => a - b)
             setInspectorMultiRowIndices(all)
-            setInspectorCompareSelection(new Set(all))
+            // Start unchecked so user explicitly chooses what to compare
+            setInspectorCompareSelection(new Set())
             setCollapseSidebarForInspector(true)
           }}
           disabled={selectedRows.size === 0}
@@ -632,7 +674,17 @@ export function ResearchPage() {
               .filter((x): x is NonNullable<typeof x> => x != null)
             openComparison(comparisonItems)
             showToast('Opened comparison')
-            navigate('/compare')
+            navigate('/compare', {
+              state: {
+                returnTo: '/research',
+                restoreResearchSelection: {
+                  selectedRows: Array.from(selectedRows),
+                  activeTabId: effectiveTabId,
+                  page: currentPage,
+                  rowsPerPage,
+                },
+              },
+            })
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
@@ -965,7 +1017,17 @@ export function ResearchPage() {
                             })
                             .filter((x): x is NonNullable<typeof x> => x != null)
                           openComparison(comparisonItems)
-                          navigate('/compare')
+                          navigate('/compare', {
+                            state: {
+                              returnTo: '/research',
+                              restoreInspector: {
+                                mode: 'multi',
+                                selectedRowIndex,
+                                multiRowIndices: inspectorMultiRowIndices,
+                                compareSelection: chosen,
+                              },
+                            },
+                          })
                         }}
                         className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                       >
@@ -1064,62 +1126,74 @@ export function ResearchPage() {
                     Row {selectedRowIndex != null ? selectedRowIndex + 1 : ''} of {content ? content.length - 1 : 0}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                      clearComparison()
-                      const title = String(selectedRowData[0] ?? '')
-                      const specs = headers.map((label, i) => ({
-                        label: (label || `Column ${i + 1}`).trim(),
-                        value: String(selectedRowData[i] ?? '—'),
-                      }))
-                      openComparison([
-                        {
-                          id: `${effectiveTabId}-${selectedRowIndex}`,
-                          title,
-                          imageUrl: null,
-                          specs,
-                        },
-                      ])
-                      showToast('Opened comparison')
-                      navigate('/compare')
-                    }}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                  >
-                    Compare
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                      const id = `${effectiveTabId}-${selectedRowIndex}`
-                      const title = selectedRowData[0] ?? ''
-                      const manufacturer = selectedRowData[1] ?? ''
-                      const price = selectedRowData[2] ?? ''
-                      const result = addItem({
-                        id,
-                        title: String(title),
-                        manufacturer: String(manufacturer),
-                        price: String(price),
-                        rowIndex: selectedRowIndex,
-                        tabId: effectiveTabId,
-                      })
-                      if (result.added) showToast('Item added to Bucket')
-                      else showToast('Item already in Bucket')
-                    }}
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    Add to Bucket
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    Copy row
-                  </button>
-                </div>
+                {inspectorMode !== 'multi' && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                        clearComparison()
+                        const title = String(selectedRowData[0] ?? '')
+                        const specs = headers.map((label, i) => ({
+                          label: (label || `Column ${i + 1}`).trim(),
+                          value: String(selectedRowData[i] ?? '—'),
+                        }))
+                        openComparison([
+                          {
+                            id: `${effectiveTabId}-${selectedRowIndex}`,
+                            title,
+                            imageUrl: null,
+                            specs,
+                          },
+                        ])
+                        showToast('Opened comparison')
+                        navigate('/compare', {
+                          state: {
+                            returnTo: '/research',
+                            restoreInspector: {
+                              mode: 'single',
+                              selectedRowIndex,
+                              multiRowIndices: [],
+                              compareSelection: [],
+                            },
+                          },
+                        })
+                      }}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    >
+                      Compare
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                        const id = `${effectiveTabId}-${selectedRowIndex}`
+                        const title = selectedRowData[0] ?? ''
+                        const manufacturer = selectedRowData[1] ?? ''
+                        const price = selectedRowData[2] ?? ''
+                        const result = addItem({
+                          id,
+                          title: String(title),
+                          manufacturer: String(manufacturer),
+                          price: String(price),
+                          rowIndex: selectedRowIndex,
+                          tabId: effectiveTabId,
+                        })
+                        if (result.added) showToast('Item added to Bucket')
+                        else showToast('Item already in Bucket')
+                      }}
+                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                    >
+                      Add to Bucket
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                    >
+                      Copy row
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">

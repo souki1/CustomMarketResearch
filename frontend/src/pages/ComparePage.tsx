@@ -1,12 +1,44 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useComparison } from '@/contexts/ComparisonContext'
+
+type CompareNavState =
+  | {
+      returnTo?: '/research'
+      restoreResearchSelection?: {
+        selectedRows: number[]
+        activeTabId: string | null
+        page: number
+        rowsPerPage: number
+      }
+      restoreInspector?: {
+        mode: 'single' | 'multi'
+        selectedRowIndex: number | null
+        multiRowIndices: number[]
+        compareSelection: number[]
+      }
+    }
+  | undefined
 
 export function ComparePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { items, closeAndClear } = useComparison()
 
   const handleCancel = () => {
     closeAndClear()
+    const state = (location.state as CompareNavState) ?? undefined
+    if (state?.restoreInspector) {
+      navigate('/research', { state, replace: true })
+      return
+    }
+    if (state?.restoreResearchSelection) {
+      navigate('/research', { state, replace: true })
+      return
+    }
+    if (state?.returnTo === '/research') {
+      navigate(-1)
+      return
+    }
     navigate('/research')
   }
 
