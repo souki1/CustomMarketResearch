@@ -564,11 +564,12 @@ export function ResearchPage() {
       <div
         className={
           isInspectorOpen
-            ? 'flex-1 min-w-0 overflow-auto px-6 py-6'
-            : 'px-6 py-6'
+            ? 'flex-1 min-w-0 overflow-hidden px-4 py-3 flex flex-col h-[calc(100vh-3.5rem)]'
+            : 'px-4 py-3 overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]'
         }
       >
-      <h2 className="mb-2 text-lg font-semibold text-gray-900">Data Research</h2>
+      <div className="shrink-0">
+        <h2 className="mb-1 text-lg font-semibold text-gray-900">Data Research</h2>
 
       {/* Tab bar */}
       <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
@@ -890,12 +891,14 @@ export function ResearchPage() {
           Filter options (placeholder). Configure filters per column.
         </div>
       )}
+      </div>
 
       {content && content.length > 0 && (
         <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="h-full overflow-auto rounded-lg border border-gray-200 shadow-sm">
             <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-              <thead className="bg-gray-50">
+              <thead className="sticky top-0 z-10 bg-gray-50">
                 <tr>
                   <th className="w-10 px-2 py-3 border-r border-gray-200">
                     <input
@@ -974,9 +977,10 @@ export function ResearchPage() {
               </tbody>
             </table>
           </div>
+          </div>
 
           {/* Footer: Add row + pagination */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-4 border-t border-gray-200 pt-3">
+          <div className="shrink-0 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-2">
             <div className="flex items-center gap-4">
               <button
                 type="button"
