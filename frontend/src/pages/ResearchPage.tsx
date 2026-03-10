@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
-import { useBucket } from '@/contexts/BucketContext'
+import { useBucket, type BucketItem } from '@/contexts/BucketContext'
+import { useComparison } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
 
 type TabState = {
@@ -52,6 +53,7 @@ const DEFAULT_SHEET_COLS = 10
 export function ResearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fileIdParam = searchParams.get('fileId')
+  const navigate = useNavigate()
   const nameFromUrl = searchParams.get('name')
   const folderFromUrl = searchParams.get('folder')
   const [tabs, setTabs] = useState<TabState[]>(() => [newBlankSheet()])
@@ -75,6 +77,7 @@ export function ResearchPage() {
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
+  const { openWithItems: openComparisonModal } = useComparison()
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -588,6 +591,36 @@ export function ResearchPage() {
           </svg>
           Preview Selected
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedRows.size === 0 || !content || !effectiveTabId) return
+            const comparisonItems: BucketItem[] = Array.from(selectedRows)
+              .map((rowIndex) => {
+                const row = content[rowIndex + 1]
+                if (!row) return null
+                return {
+                  id: `${effectiveTabId}-${rowIndex}`,
+                  title: String(row[0] ?? ''),
+                  manufacturer: String(row[1] ?? ''),
+                  price: String(row[2] ?? ''),
+                  rowIndex,
+                  tabId: effectiveTabId,
+                } as BucketItem
+              })
+              .filter((x): x is BucketItem => x != null)
+            openComparisonModal(comparisonItems)
+            navigate('/compare')
+          }}
+          disabled={selectedRows.size === 0}
+          title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+          Compare Selected
+        </button>
         <div className="relative">
           <button
             type="button"
@@ -823,7 +856,7 @@ export function ResearchPage() {
           className={
             inspectorMaximized
               ? 'fixed inset-0 z-50 flex flex-col bg-white shadow-xl'
-              : 'flex w-[38%] min-w-[280px] max-w-[560px] shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+              : 'flex w-3/4 min-w-[320px] max-w-[900px] shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
           }
           style={
             inspectorMaximized
@@ -919,9 +952,22 @@ export function ResearchPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
+                    onClick={() => {
+                      if (selectedRowIndex == null || !effectiveTabId) return
+                      const item = {
+                        id: `${effectiveTabId}-${selectedRowIndex}`,
+                        title: String(selectedRowData[0] ?? ''),
+                        manufacturer: String(selectedRowData[1] ?? ''),
+                        price: String(selectedRowData[2] ?? ''),
+                        rowIndex: selectedRowIndex,
+                        tabId: effectiveTabId,
+                      }
+                      openComparisonModal([item as BucketItem])
+                      navigate('/compare')
+                    }}
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                   >
-                    Research this row
+                    Compare
                   </button>
                   <button
                     type="button"

@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 
 import { MainLayout } from '@/layouts'
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
+import { ComparePage } from '@/pages/ComparePage'
 import { HomePage } from '@/pages/HomePage'
 import { ResearchPage } from '@/pages/ResearchPage'
 import { SettingsLayout } from '@/pages/SettingsLayout'
@@ -20,6 +21,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'research', element: <ResearchPage /> },
+      { path: 'compare', element: <ComparePage /> },
       {
         path: 'settings',
         element: <SettingsLayout />,

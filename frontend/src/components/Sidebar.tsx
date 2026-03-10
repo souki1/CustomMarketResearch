@@ -14,6 +14,13 @@ function ResearchIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+function CompareIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+    </svg>
+  )
+}
 function SettingsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -32,6 +39,7 @@ export function Sidebar({ open }: SidebarProps) {
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
+  const isCompare = location.pathname === '/compare'
   const isSettings = location.pathname.startsWith('/settings')
 
   return (
@@ -57,6 +65,14 @@ export function Sidebar({ open }: SidebarProps) {
           >
             <ResearchIcon className={iconClass} />
             <span>Research</span>
+          </Link>
+          <Link
+            to="/compare"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${isCompare ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
+            title="Compare"
+          >
+            <CompareIcon className={iconClass} />
+            <span>Compare</span>
           </Link>
           <Link
             to="/settings"

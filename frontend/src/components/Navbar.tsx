@@ -635,7 +635,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
         onRemove={removeItem}
         onClose={() => setDrawerOpen(false)}
         onViewDetails={() => { setDrawerOpen(false); navigate('/research'); }}
-        onCompare={() => { setDrawerOpen(false); navigate('/research'); }}
+        onCompare={() => { setDrawerOpen(false); navigate('/compare'); }}
       />
     )}
     </>
