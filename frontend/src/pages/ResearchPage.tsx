@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
-import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
+import { getWorkspaceFileContent, listWorkspaceItems, saveDataSheetSelection } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
+import { ResearchTabs } from '@/components/research/ResearchTabs'
 
 type TabState = {
   id: string
@@ -94,11 +95,13 @@ export function ResearchPage() {
   }>({ open: false, x: 0, y: 0 })
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
+  const lastClosedFileIdRef = useRef<number | null>(null)
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -156,6 +159,14 @@ export function ResearchPage() {
       return
     }
     const numericId = Number(fileIdParam)
+
+    // If this fileId was just closed, ignore once and clear params
+    if (lastClosedFileIdRef.current != null && lastClosedFileIdRef.current === numericId) {
+      lastClosedFileIdRef.current = null
+      setSearchParams({}, { replace: true })
+      return
+    }
+
     const existing = tabs.find((t) => t.fileId === numericId)
     if (existing) {
       setActiveTabId(existing.id)
@@ -190,7 +201,7 @@ export function ResearchPage() {
         setError(err instanceof Error ? err.message : 'Failed to load file')
       })
       .finally(() => setLoading(false))
-  }, [fileIdParam, nameFromUrl, folderFromUrl, tabs])
+  }, [fileIdParam, nameFromUrl, folderFromUrl, tabs, setSearchParams])
 
   const addNewTab = useCallback(() => {
     const tab = newBlankSheet()
@@ -205,14 +216,23 @@ export function ResearchPage() {
       e.stopPropagation()
       const idx = tabs.findIndex((t) => t.id === id)
       if (idx < 0) return
+
+      const tab = tabs[idx]
       const next = tabs.filter((t) => t.id !== id)
       setTabs(next)
+
+      // If this tab was backed by a workspace file, clear any file-related URL params
+      if (tab.fileId != null) {
+        lastClosedFileIdRef.current = tab.fileId
+        setSearchParams({}, { replace: true })
+      }
+
       if (activeTabId === id) {
         const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
         setActiveTabId(nextActive?.id ?? null)
       }
     },
-    [tabs, activeTabId]
+    [tabs, activeTabId, setSearchParams]
   )
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
@@ -610,177 +630,44 @@ export function ResearchPage() {
       <div className="shrink-0">
         <h2 className="mb-1 text-lg font-semibold text-gray-900">Data Research</h2>
 
-      {/* Tab bar */}
-      <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tab"
-            aria-selected={tab.id === activeTabId}
-            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-              tab.id === activeTabId
-                ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {editingTabId === tab.id ? (
-              <input
-                type="text"
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onBlur={() => renameTab(tab.id, editingName)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') renameTab(tab.id, editingName)
-                  if (e.key === 'Escape') {
-                    setEditingTabId(null)
-                    setEditingName('')
-                  }
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                autoFocus
-                aria-label="Rename tab"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setActiveTabId(tab.id)}
-                onDoubleClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  startEditingTab(tab)
-                }}
-                className="font-medium"
-              >
-                {tab.name}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(e) => closeTab(e, tab.id)}
-              className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
-              aria-label="Close tab"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        ))}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setNewTabMenuOpen((o) => !o)}
-            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            title="New tab"
-          >
-            + New tab
-          </button>
-          {newTabMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTabMenuOpen(false)
-                  addNewTab()
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">+</span>
-                New sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTabMenuOpen(false)
-                  setFilePickerOpen(true)
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">↺</span>
-                Open file…
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Open file picker modal */}
-      {filePickerOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setFilePickerOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="file-picker-title"
-        >
-          <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 id="file-picker-title" className="text-base font-semibold text-gray-900">
-                Open file
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Close"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              {filePickerLoading && (
-                <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
-              )}
-              {filePickerError && (
-                <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
-                <p className="py-8 text-center text-sm text-gray-500">No files in workspace.</p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
-                <ul className="space-y-0.5">
-                  {filePickerFiles.map((file) => (
-                    <li key={file.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const params = new URLSearchParams()
-                          params.set('fileId', String(file.id))
-                          params.set('name', file.name)
-                          if (file.folderPath) params.set('folder', file.folderPath)
-                          setSearchParams(params, { replace: true })
-                          setFilePickerOpen(false)
-                        }}
-                        className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
-                      >
-                        <span className="truncate w-full font-medium">{file.name}</span>
-                        {file.folderPath && (
-                          <span className="truncate w-full text-xs text-gray-500">{file.folderPath}</span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="border-t border-gray-200 px-4 py-2">
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        <ResearchTabs
+          tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
+          activeTabId={activeTabId}
+          editingTabId={editingTabId}
+          editingName={editingName}
+          newTabMenuOpen={newTabMenuOpen}
+          filePickerOpen={filePickerOpen}
+          filePickerFiles={filePickerFiles}
+          filePickerLoading={filePickerLoading}
+          filePickerError={filePickerError}
+          onTabClick={(id) => setActiveTabId(id)}
+          onTabClose={(id, e) => closeTab(e, id)}
+          onStartRename={(tab) => startEditingTab({ id: tab.id, name: tab.name, data: [[]], fileId: tab.fileId, folderPath: tab.folderPath ?? null })}
+          onRenameChange={setEditingName}
+          onRenameCommit={(id, name) => renameTab(id, name)}
+          onRenameCancel={() => {
+            setEditingTabId(null)
+            setEditingName('')
+          }}
+          onToggleNewTabMenu={() => setNewTabMenuOpen((o) => !o)}
+          onNewSheet={() => {
+            setNewTabMenuOpen(false)
+            addNewTab()
+          }}
+          onOpenFilePicker={() => {
+            setNewTabMenuOpen(false)
+            setFilePickerOpen(true)
+          }}
+          onCloseFilePicker={() => setFilePickerOpen(false)}
+          onFilePickerFileClick={(file) => {
+            const params = new URLSearchParams()
+            params.set('fileId', String(file.id))
+            params.set('name', file.name)
+            if (file.folderPath) params.set('folder', file.folderPath)
+            setSearchParams(params, { replace: true })
+            setFilePickerOpen(false)
+          }}
+        />
 
       {activePathLabel && (
         <p className="mb-1 text-xs font-medium text-gray-500 truncate">
@@ -811,15 +698,60 @@ export function ResearchPage() {
         </button>
         <button
           type="button"
-          onClick={() => setToolbarActive('selected')}
+          onClick={async () => {
+            setToolbarActive('selected')
+            if (!content || selectedColumns.size === 0) {
+              showToast('Select at least one column first')
+              return
+            }
+            const token = getToken()
+            if (!token) {
+              showToast('Sign in to research selected')
+              return
+            }
+            const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
+            const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
+            const rowIndices =
+              selectedRows.size > 0
+                ? Array.from(selectedRows).sort((a, b) => a - b)
+                : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
+            const rows = rowIndices.map((rowIdx) => {
+              const row = content[rowIdx + 1] ?? []
+              return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+            })
+            setStoreSelectionLoading(true)
+            try {
+              await saveDataSheetSelection(
+                {
+                  headers,
+                  rows,
+                  sheet_name: activeTab?.name ?? null,
+                  file_id: activeTab?.fileId ?? null,
+                  tab_id: effectiveTabId ?? null,
+                },
+                token
+              )
+              showToast(`${rows.length} row${rows.length !== 1 ? 's' : ''} and ${headers.length} column${headers.length !== 1 ? 's' : ''} saved for research`)
+            } catch (e) {
+              showToast(e instanceof Error ? e.message : 'Failed to save selection')
+            } finally {
+              setStoreSelectionLoading(false)
+            }
+          }}
+          disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
+          title={
+            selectedColumns.size === 0
+              ? 'Select column(s) first'
+              : 'Research selected headers and rows'
+          }
           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
             toolbarActive === 'selected' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+          } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
-          Research Selected
+          {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
         </button>
         <button
           type="button"

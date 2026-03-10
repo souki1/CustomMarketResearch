@@ -80,3 +80,23 @@ class WorkspaceItemResponse(WorkspaceItemBase):
 
     class Config:
         from_attributes = True
+
+
+class DataSheetSelectionCreate(BaseModel):
+    """Payload to store selected table headers and row data in MongoDB."""
+
+    headers: list[str]
+    rows: list[list[str]]
+    sheet_name: str | None = None
+    file_id: int | None = None
+    tab_id: str | None = None
+
+
+class DataSheetSelectionResponse(BaseModel):
+    id: int
+    headers: list[str]
+    rows: list[list[str]]
+    sheet_name: str | None
+    file_id: int | None
+    tab_id: str | None
+    created_at: datetime

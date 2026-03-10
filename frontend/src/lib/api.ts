@@ -186,6 +186,39 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
   return res.text()
 }
 
+export type DataSheetSelectionPayload = {
+  headers: string[]
+  rows: string[][]
+  sheet_name?: string | null
+  file_id?: number | null
+  tab_id?: string | null
+}
+
+export type DataSheetSelection = {
+  id: number
+  headers: string[]
+  rows: string[][]
+  sheet_name: string | null
+  file_id: number | null
+  tab_id: string | null
+  created_at: string
+}
+
+export async function saveDataSheetSelection(
+  payload: DataSheetSelectionPayload,
+  token: string
+): Promise<DataSheetSelection> {
+  return request<DataSheetSelection>('/datasheet/selections', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
+export async function listDataSheetSelections(token: string): Promise<DataSheetSelection[]> {
+  return request<DataSheetSelection[]>('/datasheet/selections', { token })
+}
+
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {
   const headers: HeadersInit = { Authorization: `Bearer ${token}` }
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
