@@ -143,6 +143,7 @@ export function ResearchPage() {
     Array<{ url: string; data: Record<string, unknown> }> | null
   >(null)
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
+  const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('row')
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
@@ -736,7 +737,9 @@ export function ResearchPage() {
       : null
 
   return (
-    <div className={`min-h-full bg-white ${isInspectorOpen ? 'flex' : ''}`}>
+    <div
+      className={`bg-white ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+    >
       {deleteConfirmOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -1317,8 +1320,8 @@ export function ResearchPage() {
           <aside
             className={
               inspectorMaximized
-                ? 'fixed inset-0 z-50 flex flex-col bg-white shadow-xl'
-                : 'flex shrink-0 flex-col border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+                ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-white shadow-xl'
+                : 'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
             }
             style={
               inspectorMaximized
@@ -1371,7 +1374,7 @@ export function ResearchPage() {
               </svg>
             </button>
           </header>
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain p-4">
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
@@ -1510,9 +1513,37 @@ export function ResearchPage() {
                       </ul>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                        Structured data
-                      </h3>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Structured data
+                        </h3>
+                        {previewScrapedData && previewScrapedData.length > 0 && (
+                          <div className="flex rounded-lg border border-gray-200 p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setStructuredDataViewType('row')}
+                              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                structuredDataViewType === 'row'
+                                  ? 'bg-gray-200 text-gray-900'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                              }`}
+                            >
+                              Row
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStructuredDataViewType('column')}
+                              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                structuredDataViewType === 'column'
+                                  ? 'bg-gray-200 text-gray-900'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                              }`}
+                            >
+                              Column
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       {previewResultsLoading ? (
                         <p className="text-sm text-gray-500">Loading…</p>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
@@ -1525,61 +1556,125 @@ export function ResearchPage() {
                                 </p>
                               )}
                               <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                  <tbody className="divide-y divide-gray-200">
-                                    {Object.entries(item.data).map(([key, val]) => {
-                                      const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
-                                      const imageUrls = Array.isArray(val)
-                                        ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
-                                        : isImageUrl(val)
-                                          ? [String(val)]
-                                          : []
-                                      const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
-                                      return (
-                                        <tr key={key}>
-                                          <td className="py-1 pr-4 font-medium text-gray-500 align-top">
+                                {structuredDataViewType === 'row' ? (
+                                  <table className="min-w-full text-sm">
+                                    <tbody className="divide-y divide-gray-200">
+                                      {Object.entries(item.data).map(([key, val]) => {
+                                        const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
+                                        const imageUrls = Array.isArray(val)
+                                          ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+                                          : isImageUrl(val)
+                                            ? [String(val)]
+                                            : []
+                                        const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                                        return (
+                                          <tr key={key}>
+                                            <td className="py-1 pr-4 font-medium text-gray-500 align-top">
+                                              {key.replace(/_/g, ' ')}
+                                            </td>
+                                            <td className="py-1 text-gray-900">
+                                              {showAsImage ? (
+                                                <span className="inline-flex flex-wrap gap-2">
+                                                  {imageUrls.map((imgSrc, i) => (
+                                                    <span key={i} className="relative">
+                                                      <img
+                                                        src={imgSrc}
+                                                        alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                                                        className="max-h-24 rounded border border-gray-200 object-contain"
+                                                        loading="lazy"
+                                                        onError={(e) => {
+                                                          const el = e.currentTarget
+                                                          el.style.display = 'none'
+                                                          const fallback = el.nextElementSibling
+                                                          if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+                                                        }}
+                                                      />
+                                                      <a
+                                                        href={imgSrc}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
+                                                        title={imgSrc}
+                                                      >
+                                                        {imgSrc}
+                                                      </a>
+                                                    </span>
+                                                  ))}
+                                                </span>
+                                              ) : (
+                                                typeof val === 'object' && val !== null
+                                                  ? strVal
+                                                  : String(val ?? '')
+                                              )}
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <table className="min-w-full text-sm">
+                                    <thead>
+                                      <tr className="divide-x divide-gray-200">
+                                        {Object.keys(item.data).map((key) => (
+                                          <th key={key} className="px-3 py-1.5 text-left font-medium text-gray-500">
                                             {key.replace(/_/g, ' ')}
-                                          </td>
-                                          <td className="py-1 text-gray-900">
-                                            {showAsImage ? (
-                                              <span className="inline-flex flex-wrap gap-2">
-                                                {imageUrls.map((imgSrc, i) => (
-                                                  <span key={i} className="relative">
-                                                    <img
-                                                      src={imgSrc}
-                                                      alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                                      className="max-h-24 rounded border border-gray-200 object-contain"
-                                                      loading="lazy"
-                                                      onError={(e) => {
-                                                        const el = e.currentTarget
-                                                        el.style.display = 'none'
-                                                        const fallback = el.nextElementSibling
-                                                        if (fallback) (fallback as HTMLElement).classList.remove('hidden')
-                                                      }}
-                                                    />
-                                                    <a
-                                                      href={imgSrc}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
-                                                      title={imgSrc}
-                                                    >
-                                                      {imgSrc}
-                                                    </a>
-                                                  </span>
-                                                ))}
-                                              </span>
-                                            ) : (
-                                              typeof val === 'object' && val !== null
-                                                ? strVal
-                                                : String(val ?? '')
-                                            )}
-                                          </td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr className="divide-x divide-gray-200">
+                                        {Object.entries(item.data).map(([key, val]) => {
+                                          const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
+                                          const imageUrls = Array.isArray(val)
+                                            ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+                                            : isImageUrl(val)
+                                              ? [String(val)]
+                                              : []
+                                          const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                                          return (
+                                            <td key={key} className="px-3 py-1.5 text-gray-900 align-top">
+                                              {showAsImage ? (
+                                                <span className="inline-flex flex-wrap gap-2">
+                                                  {imageUrls.map((imgSrc, i) => (
+                                                    <span key={i} className="relative">
+                                                      <img
+                                                        src={imgSrc}
+                                                        alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                                                        className="max-h-24 rounded border border-gray-200 object-contain"
+                                                        loading="lazy"
+                                                        onError={(e) => {
+                                                          const el = e.currentTarget
+                                                          el.style.display = 'none'
+                                                          const fallback = el.nextElementSibling
+                                                          if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+                                                        }}
+                                                      />
+                                                      <a
+                                                        href={imgSrc}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
+                                                        title={imgSrc}
+                                                      >
+                                                        {imgSrc}
+                                                      </a>
+                                                    </span>
+                                                  ))}
+                                                </span>
+                                              ) : (
+                                                typeof val === 'object' && val !== null
+                                                  ? strVal
+                                                  : String(val ?? '')
+                                              )}
+                                            </td>
+                                          )
+                                        })}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -1592,14 +1687,6 @@ export function ResearchPage() {
                     </div>
                   </>
                 )}
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Metadata
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    Row {selectedRowIndex != null ? selectedRowIndex + 1 : ''} of {content ? content.length - 1 : 0}
-                  </p>
-                </div>
                 {inspectorMode !== 'multi' && (
                   <div className="flex flex-wrap gap-2">
                     <button

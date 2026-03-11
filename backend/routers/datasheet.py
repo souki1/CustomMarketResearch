@@ -240,20 +240,20 @@ async def search_selection_and_store_urls(
                     )
                     return (u, data) if (data and isinstance(data, dict) and len(data) > 0) else None
 
-            results = await asyncio.gather(*[scrape_one(u) for u in urls])
-            for item in results:
-                if item:
-                    scraped_url, scraped = item
-                    scraped_id = await get_next_sequence(mongo_db, "research_scraped_data")
-                    scraped_doc = {
-                        "id": scraped_id,
-                        "owner_id": user.id,
-                        "research_url_id": new_id,
-                        "url": scraped_url,
-                        "data": scraped,
-                        "created_at": datetime.utcnow(),
-                    }
-                    await mongo_db["research_scraped_data"].insert_one(scraped_doc)
+            raw_results = await asyncio.gather(*[scrape_one(u) for u in urls])
+            results = [(r[0], r[1]) for r in raw_results if r is not None]
+
+            for scraped_url, scraped in results:
+                scraped_id = await get_next_sequence(mongo_db, "research_scraped_data")
+                scraped_doc = {
+                    "id": scraped_id,
+                    "owner_id": user.id,
+                    "research_url_id": new_id,
+                    "url": scraped_url,
+                    "data": scraped,
+                    "created_at": datetime.utcnow(),
+                }
+                await mongo_db["research_scraped_data"].insert_one(scraped_doc)
         research_url_ids.append(new_id)
         total_urls += len(urls)
 

@@ -40,6 +40,9 @@ async def scrape_url_with_ai_extraction(
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.get(SCRAPINGBEE_API_URL, params=params)
             resp.raise_for_status()
+            text = resp.text
+            if not text or not text.strip().startswith("{"):
+                return None
             data = resp.json()
             if isinstance(data, dict) and data:
                 return data
