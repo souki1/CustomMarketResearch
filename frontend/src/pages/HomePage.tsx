@@ -91,6 +91,7 @@ export function HomePage() {
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [pendingUploadFolderId, setPendingUploadFolderId] = useState<string | null>(null)
 
   useEffect(() => {
     const stored = getCurrentUserName()
@@ -292,7 +293,8 @@ export function HomePage() {
     }
   }
 
-  const handleUploadCsvClick = () => {
+  const handleUploadCsvClick = (targetFolderId?: string) => {
+    setPendingUploadFolderId(targetFolderId ?? null)
     fileInputRef.current?.click()
   }
 
@@ -330,7 +332,11 @@ export function HomePage() {
 
     try {
       setError(null)
-      const parentNumeric = currentFolderId ? Number(currentFolderId) : null
+      const parentNumeric = pendingUploadFolderId
+        ? Number(pendingUploadFolderId)
+        : currentFolderId
+        ? Number(currentFolderId)
+        : null
       const created = await uploadWorkspaceCsv(fileToUpload, parentNumeric, token)
       const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
         month: 'short',
@@ -349,6 +355,7 @@ export function HomePage() {
         parentId: created.parent_id != null ? String(created.parent_id) : null,
       }
       setRows((prev) => [...prev, newRow])
+      setPendingUploadFolderId(null)
       // reset input so same file can be selected again later
       event.target.value = ''
     } catch (err) {

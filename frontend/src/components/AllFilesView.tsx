@@ -16,7 +16,7 @@ type AllFilesViewProps = {
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
   onImportCsvClick?: () => void
-  onUploadFileClick?: () => void
+  onUploadFileClick?: (folderId?: string) => void
 }
 
 export function AllFilesView({
@@ -101,7 +101,14 @@ export function AllFilesView({
       <div className="border-b border-gray-200" />
 
       <AllFilesFilters />
-      <FileTable rows={rows} onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onDelete={onDelete} />
+      <FileTable
+        rows={rows}
+        onOpenFolder={onOpenFolder}
+        onOpenFile={onOpenFile}
+        onDelete={onDelete}
+        // Upload into a specific folder from its row menu
+        onUploadFileToFolder={(folderId) => onUploadFileClick?.(folderId)}
+      />
     </div>
   )
 }

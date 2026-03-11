@@ -20,6 +20,7 @@ type FileTableProps = {
   onShare?: (row: Row) => void
   onDownload?: (row: Row) => void
   onDelete?: (row: Row) => void
+  onUploadFileToFolder?: (folderId: string) => void
 }
 
 function FolderIcon() {
@@ -83,6 +84,7 @@ function FileTableRow({
   onShare,
   onDownload,
   onDelete,
+  onUploadFileToFolder,
 }: {
   row: Row
   onOpenFolder?: (folderId: string) => void
@@ -92,6 +94,7 @@ function FileTableRow({
   onShare?: (row: Row) => void
   onDownload?: (row: Row) => void
   onDelete?: (row: Row) => void
+  onUploadFileToFolder?: (folderId: string) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
@@ -148,6 +151,10 @@ function FileTableRow({
   const handleDuplicate = () => { onDuplicate?.(row); closeMenu() }
   const handleShare = () => { onShare?.(row); closeMenu() }
   const handleDownload = () => { onDownload?.(row); closeMenu() }
+  const handleUploadToFolder = () => {
+    if (row.isFolder && onUploadFileToFolder) onUploadFileToFolder(row.id)
+    closeMenu()
+  }
   const openDeleteConfirm = () => {
     closeMenu()
     setDeleteConfirmOpen(true)
@@ -233,6 +240,19 @@ function FileTableRow({
                 <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 11h14" /></svg>
                 Open
               </button>
+              {row.isFolder && onUploadFileToFolder && (
+                <button
+                  type="button"
+                  onClick={handleUploadToFolder}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                  role="menuitem"
+                >
+                  <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Upload File here
+                </button>
+              )}
               <button type="button" onClick={handleRename} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
                 <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 Rename
@@ -315,6 +335,7 @@ export function FileTable({
   onShare,
   onDownload,
   onDelete,
+  onUploadFileToFolder,
 }: FileTableProps) {
   const [sortBy, setSortBy] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -396,6 +417,7 @@ export function FileTable({
               onShare={onShare}
               onDownload={onDownload}
               onDelete={onDelete}
+              onUploadFileToFolder={onUploadFileToFolder}
             />
           ))}
         </tbody>
