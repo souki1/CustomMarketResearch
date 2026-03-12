@@ -668,6 +668,23 @@ export function ResearchPage() {
     }
   }, [])
 
+  // Handle action from Compare page (New sheet / Open file)
+  useEffect(() => {
+    const st = location.state as { action?: string } | undefined
+    const action = st?.action
+    if (action === 'newSheet') {
+      addNewTab()
+      const rest = { ...st } as Record<string, unknown>
+      delete rest.action
+      navigate(location.pathname + location.search, { replace: true, state: Object.keys(rest).length ? rest : undefined })
+    } else if (action === 'openFilePicker') {
+      setFilePickerOpen(true)
+      const rest = { ...st } as Record<string, unknown>
+      delete rest.action
+      navigate(location.pathname + location.search, { replace: true, state: Object.keys(rest).length ? rest : undefined })
+    }
+  }, [location.pathname, location.search, location.state, addNewTab, navigate])
+
   // Restore inspector state when returning from /compare
   useEffect(() => {
     const st = location.state as
