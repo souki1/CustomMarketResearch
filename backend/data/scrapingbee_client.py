@@ -9,14 +9,14 @@ logger = logging.getLogger(__name__)
 
 # Wait 4 seconds for page to load before AI extraction (JS, dynamic content)
 PAGE_WAIT_MS = 4000
-# Premium proxy bypasses difficult-to-scrape sites (costs more credits)
-PREMIUM_PROXY = True
 
 
 async def scrape_url_with_ai_extraction(
     api_key: str,
     url: str,
     ai_query: str,
+    *,
+    premium_proxy: bool = True,
 ) -> dict | None:
     """
     Scrape a URL and extract structured data using ScrapingBee AI query.
@@ -32,7 +32,7 @@ async def scrape_url_with_ai_extraction(
         "api_key": api_key,
         "url": url,
         "ai_query": ai_query.strip(),
-        "premium_proxy": "true" if PREMIUM_PROXY else "false",
+        "premium_proxy": "true" if premium_proxy else "false",
         "wait": str(PAGE_WAIT_MS),
         "wait_browser": "load",
     }
@@ -48,5 +48,10 @@ async def scrape_url_with_ai_extraction(
                 return data
             return None
     except Exception as e:
-        logger.warning("ScrapingBee scrape failed for %s: %s", url[:80], e)
+        msg = str(e)
+        if "401" in msg or "UNAUTHORIZED" in msg:
+            msg = "401 UNAUTHORIZED – check SCRAPINGBEE_API_KEY is valid at https://app.scrapingbee.com/"
+        elif "api_key=" in msg:
+            msg = "API error (key redacted)"
+        logger.warning("ScrapingBee scrape failed for %s: %s", url[:80], msg)
         return None

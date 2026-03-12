@@ -18,6 +18,7 @@ from schemas import (
     ResearchSearchBody,
     ResearchSearchResponse,
 )
+from data.groq_client import clean_structured_data
 from data.scrapingbee_client import scrape_url_with_ai_extraction
 from data.serper_client import extract_organic_results_from_serper_response, search_serper
 
@@ -237,6 +238,7 @@ async def search_selection_and_store_urls(
                         settings.scrapingbee_api_key,
                         u,
                         ai_query,
+                        premium_proxy=settings.scrapingbee_premium_proxy,
                     )
                     return (u, data) if (data and isinstance(data, dict) and len(data) > 0) else None
 
@@ -265,6 +267,60 @@ async def search_selection_and_store_urls(
     )
 
 
+async def _get_or_create_cleaned_data(
+    mongo_db: AsyncIOMotorDatabase,
+    scraped_docs: list[dict],
+    research_url_id: int,
+    owner_id: int,
+    groq_api_key: str,
+    groq_model: str,
+) -> list[dict]:
+    """
+    For each scraped item: use cleaned data from research_cleaned_data if present,
+    else clean with Groq, store in research_cleaned_data, then return.
+    """
+    if not scraped_docs:
+        return []
+
+    async def process_one(s: dict) -> dict:
+        scraped_id = s.get("id")
+        url = s.get("url", "")
+        raw_data = s.get("data") or {}
+        if not isinstance(raw_data, dict):
+            return {"url": url, "data": raw_data}
+
+        # Check if we have stored cleaned data
+        if scraped_id is not None:
+            existing = await mongo_db["research_cleaned_data"].find_one(
+                {"research_scraped_id": scraped_id, "owner_id": owner_id}
+            )
+            if existing and isinstance(existing.get("data"), dict):
+                return {"url": url, "data": existing["data"]}
+
+        # Clean with Groq (or use raw if no key)
+        cleaned = None
+        if groq_api_key:
+            cleaned = await clean_structured_data(groq_api_key, raw_data, model=groq_model)
+        data_to_use = cleaned if cleaned else raw_data
+
+        # Store in research_cleaned_data
+        if scraped_id is not None and cleaned:
+            clean_id = await get_next_sequence(mongo_db, "research_cleaned_data")
+            await mongo_db["research_cleaned_data"].insert_one({
+                "id": clean_id,
+                "owner_id": owner_id,
+                "research_scraped_id": scraped_id,
+                "research_url_id": research_url_id,
+                "url": url,
+                "data": data_to_use,
+                "created_at": datetime.utcnow(),
+            })
+
+        return {"url": url, "data": data_to_use}
+
+    return await asyncio.gather(*[process_one(s) for s in scraped_docs])
+
+
 @router.get("/research-urls")
 async def list_research_urls(
     selection_id: int | None = None,
@@ -277,6 +333,7 @@ async def list_research_urls(
     """List research URLs. Filter by selection_id, or by file_id/tab_id+table_row_index to fetch from MongoDB."""
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    settings = get_settings()
 
     if table_row_index is not None and (file_id is not None or tab_id is not None):
         query: dict = {"owner_id": user.id, "table_row_index": table_row_index}
@@ -293,9 +350,12 @@ async def list_research_urls(
                 {"research_url_id": doc["id"], "owner_id": user.id}
             ).sort("created_at", 1)
             scraped_docs = await scraped_cursor.to_list(length=20)
-            scraped_data = [{"url": s["url"], "data": s["data"]} for s in scraped_docs]
-            if not scraped_data and doc.get("scraped_data"):
-                scraped_data = [{"url": "", "data": doc["scraped_data"]}]
+            if not scraped_docs and doc.get("scraped_data"):
+                scraped_docs = [{"id": None, "url": "", "data": doc["scraped_data"]}]
+            scraped_data = await _get_or_create_cleaned_data(
+                mongo_db, scraped_docs, doc["id"], user.id,
+                settings.groq_api_key, settings.groq_model,
+            )
             return [
                 {
                     "id": doc["id"],
@@ -343,9 +403,12 @@ async def list_research_urls(
                         {"research_url_id": doc["id"], "owner_id": user.id}
                     ).sort("created_at", 1)
                     scraped_docs = await scraped_cursor.to_list(length=20)
-                    scraped_data = [{"url": s["url"], "data": s["data"]} for s in scraped_docs]
-                    if not scraped_data and doc.get("scraped_data"):
-                        scraped_data = [{"url": "", "data": doc["scraped_data"]}]
+                    if not scraped_docs and doc.get("scraped_data"):
+                        scraped_docs = [{"id": None, "url": "", "data": doc["scraped_data"]}]
+                    scraped_data = await _get_or_create_cleaned_data(
+                        mongo_db, scraped_docs, doc["id"], user.id,
+                        settings.groq_api_key, settings.groq_model,
+                    )
                     return [
                         {
                             "id": doc["id"],
@@ -379,12 +442,18 @@ async def list_research_urls(
         rid = s["research_url_id"]
         if rid not in scraped_by_url:
             scraped_by_url[rid] = []
-        scraped_by_url[rid].append({"url": s["url"], "data": s["data"]})
+        scraped_by_url[rid].append(s)
     result = []
     for d in docs:
-        scraped_data = scraped_by_url.get(d["id"])
-        if not scraped_data and d.get("scraped_data"):
-            scraped_data = [{"url": "", "data": d["scraped_data"]}]
+        scraped_docs = scraped_by_url.get(d["id"])
+        if not scraped_docs and d.get("scraped_data"):
+            scraped_docs = [{"id": None, "url": "", "data": d["scraped_data"]}]
+        scraped_data = []
+        if scraped_docs:
+            scraped_data = await _get_or_create_cleaned_data(
+                mongo_db, scraped_docs, d["id"], user.id,
+                settings.groq_api_key, settings.groq_model,
+            )
         result.append({
             "id": d["id"],
             "selection_id": d["selection_id"],

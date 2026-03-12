@@ -47,6 +47,14 @@ function isImageUrl(val: unknown): boolean {
   return /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(s) || /\/media\/|\/catalog\/|\/images?\//i.test(s)
 }
 
+function LoaderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className ?? ''}`} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
+    </svg>
+  )
+}
+
 function isImageKey(key: string): boolean {
   const k = key.toLowerCase().replace(/_/g, '')
   return /image|img|photo|picture|thumbnail/.test(k)
@@ -136,14 +144,16 @@ export function ResearchPage() {
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
-  const [researchAiQueryInput, setResearchAiQueryInput] = useState('')
+  const [researchAiQueryInput, setResearchAiQueryInput] = useState(
+    'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
+  )
   const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
   const [researchVersion, setResearchVersion] = useState(0)
   const [previewScrapedData, setPreviewScrapedData] = useState<
     Array<{ url: string; data: Record<string, unknown> }> | null
   >(null)
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
-  const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('row')
+  const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
   const navigate = useNavigate()
   const location = useLocation()
   const { setCollapseSidebarForInspector } = useLayout()
@@ -798,7 +808,7 @@ export function ResearchPage() {
             <textarea
               value={researchAiQueryInput}
               onChange={(e) => setResearchAiQueryInput(e.target.value)}
-              placeholder="e.g. Extract product name, price, sku, and availability from this page"
+              placeholder="Describe in natural language what you want to extract from each search result"
               rows={3}
               className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
@@ -860,8 +870,9 @@ export function ResearchPage() {
                     setStoreSelectionLoading(false)
                   }
                 }}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
+                {storeSelectionLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
                 {storeSelectionLoading ? 'Researching…' : 'Start Research'}
               </button>
             </div>
@@ -989,12 +1000,8 @@ export function ResearchPage() {
               showToast('Select at least one column first')
               return
             }
-            const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
-            const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
             setResearchAiQueryInput(
-              headers.length > 0
-                ? `Extract ${headers.join(', ')} from this page`
-                : ''
+              'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
             )
             setResearchFieldsPopupOpen(true)
           }}
@@ -1008,9 +1015,13 @@ export function ResearchPage() {
             toolbarActive === 'selected' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          {storeSelectionLoading ? (
+            <LoaderIcon className="h-4 w-4 shrink-0" />
+          ) : (
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          )}
           {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
         </button>
         <button
@@ -1176,18 +1187,23 @@ export function ResearchPage() {
                 {pageRows.map((row, idx) => {
                   const dataRowIndex = rowIndices[idx]
                   const isSelectedRow = selectedRowIndex === dataRowIndex
+                  const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
                   return (
                     <tr
                       key={dataRowIndex}
                       className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
                     >
                       <td className="w-10 px-2 py-2 border-r border-gray-200">
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.has(dataRowIndex)}
-                          onChange={() => toggleRowSelection(dataRowIndex)}
-                          className="rounded border-gray-300"
-                        />
+                        {isRowBeingResearched ? (
+                          <LoaderIcon className="h-5 w-5 text-emerald-600" />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(dataRowIndex)}
+                            onChange={() => toggleRowSelection(dataRowIndex)}
+                            className="rounded border-gray-300"
+                          />
+                        )}
                       </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
                         <td
@@ -1551,7 +1567,10 @@ export function ResearchPage() {
                         )}
                       </div>
                       {previewResultsLoading ? (
-                        <p className="text-sm text-gray-500">Loading…</p>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <LoaderIcon className="h-4 w-4 shrink-0" />
+                          <span>Loading…</span>
+                        </div>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
                         <div className="space-y-4">
                           {previewScrapedData.map((item, idx) => (
