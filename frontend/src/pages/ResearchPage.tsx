@@ -676,6 +676,13 @@ export function ResearchPage() {
           }
         }
       | undefined
+    if (st?.restoreResearchSelection) {
+      const r = st.restoreResearchSelection
+      if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
+      if (r.page) setPage(r.page)
+      if (r.activeTabId) setActiveTabId(r.activeTabId)
+      setSelectedRows(new Set(r.selectedRows ?? []))
+    }
     if (st?.restoreInspector) {
       const r = st.restoreInspector
       setInspectorMode(r.mode)
@@ -684,15 +691,8 @@ export function ResearchPage() {
       setInspectorCompareSelection(new Set(r.compareSelection ?? []))
       setIsInspectorOpen(true)
       setCollapseSidebarForInspector(true)
-      navigate(location.pathname + location.search, { replace: true })
-      return
     }
-    if (st?.restoreResearchSelection) {
-      const r = st.restoreResearchSelection
-      if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
-      if (r.page) setPage(r.page)
-      if (r.activeTabId) setActiveTabId(r.activeTabId)
-      setSelectedRows(new Set(r.selectedRows ?? []))
+    if (st?.restoreInspector || st?.restoreResearchSelection) {
       navigate(location.pathname + location.search, { replace: true })
     }
   }, [location.pathname, location.search, location.state, navigate, setCollapseSidebarForInspector])
@@ -1420,6 +1420,12 @@ export function ResearchPage() {
                                 selectedRowIndex,
                                 multiRowIndices: inspectorMultiRowIndices,
                                 compareSelection: chosen,
+                              },
+                              restoreResearchSelection: {
+                                selectedRows: Array.from(selectedRows),
+                                activeTabId: effectiveTabId,
+                                page: currentPage,
+                                rowsPerPage,
                               },
                             },
                           })
