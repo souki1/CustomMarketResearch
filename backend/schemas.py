@@ -75,6 +75,10 @@ class WorkspaceItemCreate(BaseModel):
     parent_id: int | None = None
 
 
+class WorkspaceItemMove(BaseModel):
+    parent_id: int | None = None
+
+
 class WorkspaceItemResponse(WorkspaceItemBase):
     owner_display_name: str | None = None
 

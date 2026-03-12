@@ -13,7 +13,7 @@ from config import get_settings
 from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
-from schemas import WorkspaceItemCreate, WorkspaceItemResponse
+from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -247,6 +247,53 @@ async def delete_item(
 
     await mongo_db["workspace_items"].delete_one({"id": item_id, "owner_id": user.id})
 
+
+@router.patch("/items/{item_id}/move", response_model=WorkspaceItemResponse)
+async def move_item(
+    item_id: int,
+    payload: WorkspaceItemMove,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    item = await mongo_db["workspace_items"].find_one(
+        {"id": item_id, "owner_id": user.id}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    new_parent_id = payload.parent_id
+
+    if new_parent_id is not None:
+        parent = await mongo_db["workspace_items"].find_one(
+            {"id": new_parent_id, "owner_id": user.id}
+        )
+        if not parent or not parent.get("is_folder"):
+            raise HTTPException(status_code=400, detail="Target folder not found")
+
+    await mongo_db["workspace_items"].update_one(
+        {"id": item_id, "owner_id": user.id},
+        {"$set": {"parent_id": new_parent_id}},
+    )
+
+    updated = await mongo_db["workspace_items"].find_one(
+        {"id": item_id, "owner_id": user.id}
+    )
+    assert updated is not None
+
+    return WorkspaceItemResponse(
+        id=int(updated["id"]),
+        name=str(updated["name"]),
+        is_folder=bool(updated["is_folder"]),
+        parent_id=updated.get("parent_id"),
+        favorite=bool(updated.get("favorite", False)),
+        access=str(updated.get("access", "Edit")),
+        created_at=updated["created_at"],
+        last_opened=updated.get("last_opened"),
+        owner_display_name=user.display_name,
+    )
 
 @router.get("/items/{item_id}/content", response_class=PlainTextResponse)
 async def get_item_content(

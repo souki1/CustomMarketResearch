@@ -175,6 +175,18 @@ export async function uploadWorkspaceCsv(
   return res.json()
 }
 
+export async function moveWorkspaceItem(
+  itemId: number,
+  parentId: number | null,
+  token: string
+): Promise<WorkspaceItem> {
+  return request<WorkspaceItem>(`/workspace/items/${itemId}/move`, {
+    method: 'PATCH',
+    body: JSON.stringify({ parent_id: parentId }),
+    token,
+  })
+}
+
 export async function getWorkspaceFileContent(itemId: number, token: string): Promise<string> {
   const headers: HeadersInit = { Authorization: `Bearer ${token}` }
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, { headers })

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { FileTableRow as Row } from '@/types'
-
-const MENU_MIN_WIDTH = 160
-/** Menu is ~190px (5–6 items). Use so flip/position align with button. */
-const ESTIMATED_MENU_HEIGHT = 200
-const VIEWPORT_PADDING = 16
-const MENU_GAP = 4
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 type SortKey = 'name' | 'createdAt' | 'owner'
 type SortDir = 'asc' | 'desc'
@@ -16,11 +16,11 @@ type FileTableProps = {
   onOpenFolder?: (folderId: string) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
   onRename?: (row: Row) => void
-  onDuplicate?: (row: Row) => void
+  onMove?: (row: Row) => void
   onShare?: (row: Row) => void
   onDownload?: (row: Row) => void
   onDelete?: (row: Row) => void
-  onUploadFileToFolder?: (folderId: string) => void
+  onUploadIntoFolder?: (row: Row) => void
 }
 
 function FolderIcon() {
@@ -80,83 +80,35 @@ function FileTableRow({
   onOpenFolder,
   onOpenFile,
   onRename,
-  onDuplicate,
+  onMove,
   onShare,
   onDownload,
   onDelete,
-  onUploadFileToFolder,
+  onUploadIntoFolder,
 }: {
   row: Row
   onOpenFolder?: (folderId: string) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
   onRename?: (row: Row) => void
-  onDuplicate?: (row: Row) => void
+  onMove?: (row: Row) => void
   onShare?: (row: Row) => void
   onDownload?: (row: Row) => void
   onDelete?: (row: Row) => void
-  onUploadFileToFolder?: (folderId: string) => void
+  onUploadIntoFolder?: (row: Row) => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const portalMenuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!menuOpen) {
-      setMenuPosition(null)
-      return
-    }
-    const rect = buttonRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PADDING
-    const openAbove = spaceBelow < ESTIMATED_MENU_HEIGHT
-    // Place menu right next to button: below (top = bottom + gap) or above (bottom of menu = top of button - gap)
-    let top = openAbove
-      ? rect.top - ESTIMATED_MENU_HEIGHT - MENU_GAP
-      : rect.bottom + MENU_GAP
-    // Keep menu fully in viewport
-    top = Math.max(VIEWPORT_PADDING, Math.min(top, window.innerHeight - ESTIMATED_MENU_HEIGHT - VIEWPORT_PADDING))
-    // Align menu under the button (same column); clamp so it stays on screen
-    let left = rect.left
-    left = Math.max(VIEWPORT_PADDING, Math.min(left, window.innerWidth - MENU_MIN_WIDTH - VIEWPORT_PADDING))
-    setMenuPosition({
-      top,
-      left,
-    })
-  }, [menuOpen])
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      const target = e.target as Node
-      if (menuOpen && !buttonRef.current?.contains(target) && !portalMenuRef.current?.contains(target)) {
-        setMenuOpen(false)
-      }
-    }
-    if (menuOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [menuOpen])
-
-  const closeMenu = () => setMenuOpen(false)
 
   const handleOpen = () => {
     if (row.isFolder && onOpenFolder) onOpenFolder(row.id)
     else if (!row.isFolder && onOpenFile) onOpenFile(row.id, row.name)
-    closeMenu()
   }
 
-  const handleRename = () => { onRename?.(row); closeMenu() }
-  const handleDuplicate = () => { onDuplicate?.(row); closeMenu() }
-  const handleShare = () => { onShare?.(row); closeMenu() }
-  const handleDownload = () => { onDownload?.(row); closeMenu() }
-  const handleUploadToFolder = () => {
-    if (row.isFolder && onUploadFileToFolder) onUploadFileToFolder(row.id)
-    closeMenu()
-  }
+  const handleRename = () => { onRename?.(row) }
+  const handleMove = () => { onMove?.(row) }
+  const handleShare = () => { onShare?.(row) }
+  const handleDownload = () => { onDownload?.(row) }
+  const handleUploadHere = () => { onUploadIntoFolder?.(row) }
   const openDeleteConfirm = () => {
-    closeMenu()
     setDeleteConfirmOpen(true)
   }
   const closeDeleteConfirm = () => setDeleteConfirmOpen(false)
@@ -214,70 +166,57 @@ function FileTableRow({
       <td className="px-4 py-3 text-gray-600">{row.access}</td>
       <td className="px-4 py-3">
         <div className="relative">
-          <button
-            ref={buttonRef}
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            aria-label="More options"
-            aria-expanded={menuOpen}
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="5" r="1.5" />
-              <circle cx="12" cy="12" r="1.5" />
-              <circle cx="12" cy="19" r="1.5" />
-            </svg>
-          </button>
-          {menuOpen && menuPosition &&
-            createPortal(
-              <div
-                ref={portalMenuRef}
-                className="fixed z-[100] min-w-[160px] rounded-xl border border-gray-200 bg-white py-1 shadow-sm"
-                role="menu"
-                style={{ top: menuPosition.top, left: menuPosition.left }}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                aria-label="More options"
               >
-              <button type="button" onClick={handleOpen} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
-                <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 11h14" /></svg>
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="min-w-[160px]" side="bottom" align="end" alignOffset={25} sideOffset={-1} collisionPadding={16}>
+              <DropdownMenuItem onSelect={handleOpen} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 11h14" /></svg>
                 Open
-              </button>
-              {row.isFolder && onUploadFileToFolder && (
-                <button
-                  type="button"
-                  onClick={handleUploadToFolder}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
-                  role="menuitem"
-                >
-                  <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  Upload File here
-                </button>
-              )}
-              <button type="button" onClick={handleRename} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
-                <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRename} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 Rename
-              </button>
-              <button type="button" onClick={handleDuplicate} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
-                <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 8V6a2 2 0 012-2h2m0 8h2a2 2 0 002-2v-2" /></svg>
-                Duplicate
-              </button>
-              <button type="button" onClick={handleShare} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
-                <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                Share
-              </button>
-              {!row.isFolder && (
-                <button type="button" onClick={handleDownload} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none" role="menuitem">
-                  <svg className="h-4 w-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  Download
-                </button>
+              </DropdownMenuItem>
+              {!row.isFolder && onMove && (
+                <DropdownMenuItem onSelect={handleMove} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                  <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5h6m-3-3v6m-7 4h4m-4 4h4m4 0h4m-4-4h4" /></svg>
+                  Move file to folder
+                </DropdownMenuItem>
               )}
-              <button type="button" onClick={openDeleteConfirm} className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 focus:bg-red-50 focus:outline-none" role="menuitem">
+              <DropdownMenuItem onSelect={handleShare} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                Share
+              </DropdownMenuItem>
+              {row.isFolder && onUploadIntoFolder && (
+                <DropdownMenuItem onSelect={handleUploadHere} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                  <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  Upload File
+                </DropdownMenuItem>
+              )}
+              {!row.isFolder && (
+                <DropdownMenuItem onSelect={handleDownload} className="flex cursor-pointer items-center gap-2 px-4 py-2">
+                  <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  Download
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={openDeleteConfirm} variant="destructive" className="flex cursor-pointer items-center gap-2 px-4 py-2">
                 <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 Delete
-              </button>
-              </div>,
-              document.body
-            )}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {deleteConfirmOpen &&
             createPortal(
               <>
@@ -331,11 +270,11 @@ export function FileTable({
   onOpenFolder,
   onOpenFile,
   onRename,
-  onDuplicate,
+  onMove,
   onShare,
   onDownload,
   onDelete,
-  onUploadFileToFolder,
+  onUploadIntoFolder,
 }: FileTableProps) {
   const [sortBy, setSortBy] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -413,11 +352,11 @@ export function FileTable({
               onOpenFolder={onOpenFolder}
               onOpenFile={onOpenFile}
               onRename={onRename}
-              onDuplicate={onDuplicate}
+              onMove={onMove}
               onShare={onShare}
               onDownload={onDownload}
               onDelete={onDelete}
-              onUploadFileToFolder={onUploadFileToFolder}
+              onUploadIntoFolder={onUploadIntoFolder}
             />
           ))}
         </tbody>

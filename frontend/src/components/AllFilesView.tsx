@@ -16,7 +16,8 @@ type AllFilesViewProps = {
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
   onImportCsvClick?: () => void
-  onUploadFileClick?: (folderId?: string) => void
+  onUploadFileClick?: () => void
+  onMoveClick?: (row: FileTableRow) => void
 }
 
 export function AllFilesView({
@@ -31,6 +32,7 @@ export function AllFilesView({
   onNewResearchClick,
   onImportCsvClick,
   onUploadFileClick,
+  onMoveClick,
 }: AllFilesViewProps) {
   const breadcrumbParts: { label: string; onClick?: () => void }[] = [
     { label: 'All Files', onClick: () => onGoToFolder(null) },
@@ -106,8 +108,8 @@ export function AllFilesView({
         onOpenFolder={onOpenFolder}
         onOpenFile={onOpenFile}
         onDelete={onDelete}
-        // Upload into a specific folder from its row menu
-        onUploadFileToFolder={(folderId) => onUploadFileClick?.(folderId)}
+        onMove={onMoveClick}
+        onUploadIntoFolder={onUploadFileClick ? (row) => { if (row.isFolder) onUploadFileClick() } : undefined}
       />
     </div>
   )

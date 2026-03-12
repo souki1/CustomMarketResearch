@@ -9,7 +9,7 @@ import {
   CreateFolderModal,
 } from '@/components'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, uploadWorkspaceCsv } from '@/lib/api'
+import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv } from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
 /** Convert an Excel file to a CSV File so we can upload it via the existing CSV endpoint. */
@@ -91,7 +91,10 @@ export function HomePage() {
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [pendingUploadFolderId, setPendingUploadFolderId] = useState<string | null>(null)
+  const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+  const [moveSourceRow, setMoveSourceRow] = useState<FileTableRow | null>(null)
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null)
 
   useEffect(() => {
     const stored = getCurrentUserName()
@@ -293,8 +296,8 @@ export function HomePage() {
     }
   }
 
-  const handleUploadCsvClick = (targetFolderId?: string) => {
-    setPendingUploadFolderId(targetFolderId ?? null)
+  const handleUploadCsvClick = (folderId?: string | null) => {
+    setUploadTargetFolderId(folderId ?? currentFolderId)
     fileInputRef.current?.click()
   }
 
@@ -332,11 +335,7 @@ export function HomePage() {
 
     try {
       setError(null)
-      const parentNumeric = pendingUploadFolderId
-        ? Number(pendingUploadFolderId)
-        : currentFolderId
-        ? Number(currentFolderId)
-        : null
+      const parentNumeric = uploadTargetFolderId ? Number(uploadTargetFolderId) : null
       const created = await uploadWorkspaceCsv(fileToUpload, parentNumeric, token)
       const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
         month: 'short',
@@ -355,11 +354,46 @@ export function HomePage() {
         parentId: created.parent_id != null ? String(created.parent_id) : null,
       }
       setRows((prev) => [...prev, newRow])
-      setPendingUploadFolderId(null)
       // reset input so same file can be selected again later
       event.target.value = ''
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload file')
+    }
+  }
+
+  const handleOpenMove = (row: FileTableRow) => {
+    setMoveSourceRow(row)
+    setMoveTargetFolderId(row.parentId ?? null)
+    setMoveDialogOpen(true)
+  }
+
+  const allFolders = rows.filter((r) => r.isFolder)
+
+  const handleConfirmMove = async () => {
+    if (!token || !moveSourceRow) {
+      setMoveDialogOpen(false)
+      return
+    }
+    const sourceId = Number(moveSourceRow.id)
+    const targetNumeric = moveTargetFolderId ? Number(moveTargetFolderId) : null
+    try {
+      setError(null)
+      const updated = await moveWorkspaceItem(sourceId, targetNumeric, token)
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === moveSourceRow.id
+            ? {
+                ...r,
+                parentId: updated.parent_id != null ? String(updated.parent_id) : null,
+              }
+            : r
+        )
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to move item')
+    } finally {
+      setMoveDialogOpen(false)
+      setMoveSourceRow(null)
     }
   }
 
@@ -460,10 +494,11 @@ export function HomePage() {
             }}
             onDelete={handleDelete}
             onNewFolderClick={() => setCreateFolderOpen(true)}
-            onNewFileClick={handleUploadCsvClick}
+            onNewFileClick={() => handleUploadCsvClick()}
             onNewResearchClick={() => navigate('/research')}
-            onImportCsvClick={handleUploadCsvClick}
-            onUploadFileClick={handleUploadCsvClick}
+            onImportCsvClick={() => handleUploadCsvClick()}
+            onUploadFileClick={() => handleUploadCsvClick()}
+            onMoveClick={handleOpenMove}
           />
         )}
 
@@ -502,6 +537,49 @@ export function HomePage() {
         className="hidden"
         onChange={handleCsvSelected}
       />
+
+      {moveDialogOpen && moveSourceRow && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Move “{moveSourceRow.name}”</h2>
+            <p className="mt-1 text-xs text-gray-500">Choose a folder to move this file into.</p>
+            <div className="mt-3">
+              <label className="mb-1 block text-xs font-medium text-gray-700">Destination folder</label>
+              <select
+                className="h-9 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                value={moveTargetFolderId ?? ''}
+                onChange={(e) => setMoveTargetFolderId(e.target.value || null)}
+              >
+                <option value="">Home (no folder)</option>
+                {allFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMoveDialogOpen(false)
+                  setMoveSourceRow(null)
+                }}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300/40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMove}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              >
+                Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
