@@ -39,10 +39,8 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", validation_alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
 
-    # ScrapingBee web scraping API (get key at https://app.scrapingbee.com/)
-    scrapingbee_api_key: str = Field(default="", validation_alias="SCRAPINGBEE_API_KEY")
-    # Set to false if 401 (e.g. free tier limits); premium_proxy costs more credits
-    scrapingbee_premium_proxy: bool = Field(default=True, validation_alias="SCRAPINGBEE_PREMIUM_PROXY")
+    # Firecrawl web scraping API (get key at https://firecrawl.dev/)
+    firecrawl_api_key: str = Field(default="", validation_alias="FIRECRAWL_API_KEY")
 
     # Optional email delivery for OTP / verification codes
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")

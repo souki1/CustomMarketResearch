@@ -19,7 +19,7 @@ from schemas import (
     ResearchSearchResponse,
 )
 from data.groq_client import clean_structured_data
-from data.scrapingbee_client import scrape_url_with_ai_extraction
+from data.firecrawl_client import scrape_url_with_ai_extraction
 from data.serper_client import extract_organic_results_from_serper_response, search_serper
 
 
@@ -194,8 +194,8 @@ async def search_selection_and_store_urls(
         if not row_values:
             continue
 
-        # Format as "value1"+"value2" for exact phrase search in Serper/Google
-        search_query = "+".join(f'"{v}"' for v in row_values)
+        # Use space-separated values only (no header-based logic)
+        search_query = " ".join(row_values)
 
         try:
             result = await search_serper(
@@ -229,16 +229,17 @@ async def search_selection_and_store_urls(
         }
         await mongo_db["research_urls"].insert_one(doc)
         ai_query = (body.ai_query if body else None) or ""
-        if urls and settings.scrapingbee_api_key and ai_query.strip():
+        if not ai_query.strip():
+            ai_query = "Extract product specifications, pricing, availability, part numbers, and key information from this page. Return as structured JSON."
+        if urls and settings.firecrawl_api_key:
             sem = asyncio.Semaphore(5)
 
             async def scrape_one(u: str):
                 async with sem:
                     data = await scrape_url_with_ai_extraction(
-                        settings.scrapingbee_api_key,
+                        settings.firecrawl_api_key,
                         u,
                         ai_query,
-                        premium_proxy=settings.scrapingbee_premium_proxy,
                     )
                     return (u, data) if (data and isinstance(data, dict) and len(data) > 0) else None
 

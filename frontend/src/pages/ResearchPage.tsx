@@ -839,7 +839,7 @@ export function ResearchPage() {
               </button>
               <button
                 type="button"
-                disabled={storeSelectionLoading || !researchAiQueryInput.trim()}
+                disabled={storeSelectionLoading}
                 onClick={async () => {
                   if (!content || selectedColumns.size === 0) return
                   const token = getToken()
@@ -847,11 +847,7 @@ export function ResearchPage() {
                     showToast('Sign in to research selected')
                     return
                   }
-                  const aiQuery = researchAiQueryInput.trim()
-                  if (!aiQuery) {
-                    showToast('Enter an AI extraction query')
-                    return
-                  }
+                  const aiQuery = researchAiQueryInput.trim() || undefined
                   const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
                   const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
                   const rowIndices =
@@ -876,7 +872,7 @@ export function ResearchPage() {
                       },
                       token
                     )
-                    const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery)
+                    const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery || null)
                     setResearchVersion((v) => v + 1)
                     showToast(
                       `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`

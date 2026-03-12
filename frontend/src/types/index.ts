@@ -9,6 +9,5 @@ export type FileTableRow = {
   lastOpened: string
   owner: string
   access: string
-  /** Parent folder id; null/undefined = root level */
   parentId?: string | null
 }
