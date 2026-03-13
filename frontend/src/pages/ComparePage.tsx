@@ -1,5 +1,5 @@
+import type { MouseEvent } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
   getWorkspaceFileContent,
@@ -8,9 +8,6 @@ import {
 } from '@/lib/api'
 import type { ScrapedDataItem } from '@/lib/api'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
-
-const RESEARCH_TABS_KEY = 'research-tabs'
-const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
 
 function parseCsv(text: string): string[][] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
@@ -29,14 +26,6 @@ function parseCsv(text: string): string[][] {
     row.push(cell.trim())
     return row
   })
-}
-
-type TabState = {
-  id: string
-  name: string
-  data: string[][]
-  fileId: number | null
-  folderPath?: string | null
 }
 
 function isImageUrl(val: unknown): boolean {
@@ -79,155 +68,99 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current
 }
 
-function findPartNumberColumnIndex(headers: string[]): number {
-  const partHeaders = ['part number', 'part #', 'part no', 'part no.', 'sku', 'product id', 'item number', 'model']
-  for (let i = 0; i < headers.length; i++) {
-    const h = String(headers[i] ?? '').trim().toLowerCase()
-    if (partHeaders.some((p) => h.includes(p) || h === p)) return i
-  }
-  return 0
-}
-
-function parsePartNumbers(input: string): string[] {
-  return input
-    .split(/[\n,;]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function findRowsByPartNumbers(
-  tabs: TabState[],
-  activeTabId: string | null,
-  partNumbers: string[]
-): { items: ComparisonItem[]; found: string[]; notFound: string[] } {
-  const found: string[] = []
-  const notFound: string[] = []
-  const seenIds = new Set<string>()
-  const items: ComparisonItem[] = []
-
-  const tab = activeTabId
-    ? tabs.find((t) => t.id === activeTabId) ?? tabs[0]
-    : tabs[0]
-  if (!tab?.data?.length) return { items, found, notFound: partNumbers }
-
-  const content = tab.data
-  const headers = content[0] ?? []
-  const partCol = findPartNumberColumnIndex(headers)
-
-  for (const partNum of partNumbers) {
-    const normalized = partNum.trim().toLowerCase()
-    let matched = false
-    for (let rowIdx = 1; rowIdx < content.length; rowIdx++) {
-      const row = content[rowIdx]
-      if (!row) continue
-      const cellVal = String(row[partCol] ?? row[0] ?? '').trim()
-      if (!cellVal) continue
-      if (cellVal.toLowerCase() === normalized || cellVal.toLowerCase().includes(normalized)) {
-        matched = true
-        const title = String(row[0] ?? cellVal)
-        const specs = headers.map((label, i) => ({
-          label: (label || `Column ${i + 1}`).trim(),
-          value: String(row[i] ?? '—'),
-        }))
-        const id = `${tab.id}-${rowIdx - 1}`
-        if (!seenIds.has(id)) {
-          seenIds.add(id)
-          items.push({ id, title, imageUrl: null, specs, sourceName: tab.name })
-        }
-        found.push(partNum)
-        break
-      }
-    }
-    if (!matched) notFound.push(partNum)
-  }
-
-  return { items, found, notFound }
-}
-
-type CompareNavState =
-  | {
-      returnTo?: '/research'
-      restoreResearchSelection?: {
-        selectedRows: number[]
-        activeTabId: string | null
-        page: number
-        rowsPerPage: number
-      }
-      restoreInspector?: {
-        mode: 'single' | 'multi'
-        selectedRowIndex: number | null
-        multiRowIndices: number[]
-        compareSelection: number[]
-      }
-    }
-  | undefined
-
 type FileEntry = { id: number; name: string; folderPath: string | null }
 
+type LoadedFile = {
+  fileId: number
+  name: string
+  content: string[][]
+  folderPath: string | null
+}
+
+type CompareTabData = {
+  selectedFilesData: LoadedFile[]
+  selectedFileRows: Record<number, number[]>
+  activeFileId: number | null
+  selectedRowForScraped: { fileId: number; rowIdx: number; partLabel: string } | null
+}
+
+type CompareTab = {
+  id: string
+  name: string
+  data: CompareTabData
+}
+
+function newBlankCompareTab(): CompareTab {
+  return {
+    id: crypto.randomUUID(),
+    name: 'New tab',
+    data: {
+      selectedFilesData: [],
+      selectedFileRows: {},
+      activeFileId: null,
+      selectedRowForScraped: null,
+    },
+  }
+}
+
 export function ComparePage() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const { items, addItems, removeItem, closeAndClear } = useComparison()
+  const { items, addItems, closeAndClear } = useComparison()
+  const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
+  const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
-  const [partNumberInput, setPartNumberInput] = useState('')
-  const [partNumberFeedback, setPartNumberFeedback] = useState<{
-    added: number
-    found: string[]
-    notFound: string[]
-  } | null>(null)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<FileEntry[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
   const [filePickerError, setFilePickerError] = useState<string | null>(null)
-  type LoadedFile = {
-    fileId: number
-    name: string
-    content: string[][]
-    folderPath: string | null
-  }
-  const [selectedFilesData, setSelectedFilesData] = useState<LoadedFile[]>([])
-  const [selectedFileRows, setSelectedFileRows] = useState<Record<number, Set<number>>>({})
   const [fileContentLoading, setFileContentLoading] = useState<Set<number>>(new Set())
-  const [activeFileId, setActiveFileId] = useState<number | null>(null)
   const comparisonSectionRef = useRef<HTMLDivElement>(null)
-  const [selectedRowForScraped, setSelectedRowForScraped] = useState<{
-    fileId: number
-    rowIdx: number
-    partLabel: string
-  } | null>(null)
   const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
 
-  const handleCancel = () => {
-    closeAndClear()
-    setSelectedFileRows({})
-    const state = (location.state as CompareNavState) ?? undefined
-    if (state?.restoreInspector) {
-      navigate('/research', { state, replace: true })
-      return
-    }
-    if (state?.restoreResearchSelection) {
-      navigate('/research', { state, replace: true })
-      return
-    }
-    if (state?.returnTo === '/research') {
-      navigate(-1)
-      return
-    }
-    // Stay on Compare page when no restore state - user can see checkboxes unchecked and select again
-    if (!state?.returnTo) return
-    navigate('/research')
-  }
+  const activeTab =
+    compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
+  const selectedFilesData = activeTab?.data.selectedFilesData ?? []
+  const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
+  const activeFileId = activeTab?.data.activeFileId ?? null
+  const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
 
-  const handleNewSheet = () => {
-    setNewTabMenuOpen(false)
-    navigate('/research', { state: { action: 'newSheet' } })
-  }
+  const updateActiveTabData = useCallback((updater: (d: CompareTabData) => CompareTabData) => {
+    if (!activeTab) return
+    setCompareTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTab.id ? { ...t, data: updater(t.data) } : t
+      )
+    )
+  }, [activeTab?.id])
 
-  const handleOpenFile = () => {
+  const addNewCompareTab = useCallback(() => {
+    const tab = newBlankCompareTab()
+    setCompareTabs((prev) => [...prev, tab])
+    setActiveCompareTabId(tab.id)
     setNewTabMenuOpen(false)
-    navigate('/research', { state: { action: 'openFilePicker' } })
-  }
+  }, [])
+
+  const closeCompareTab = useCallback((e: MouseEvent, id: string) => {
+    e.stopPropagation()
+    const idx = compareTabs.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    const next = compareTabs.filter((t) => t.id !== id)
+    const finalTabs = next.length === 0 ? [newBlankCompareTab()] : next
+    setCompareTabs(finalTabs)
+    const closedWasActive = activeCompareTabId === id
+    if (closedWasActive) {
+      const newIdx = Math.min(idx, finalTabs.length - 1)
+      setActiveCompareTabId(finalTabs[newIdx].id)
+    } else if (next.length > 0 && compareTabs.findIndex((t) => t.id === activeCompareTabId) >= next.length) {
+      setActiveCompareTabId(finalTabs[finalTabs.length - 1].id)
+    }
+  }, [compareTabs, activeCompareTabId])
+
+  useEffect(() => {
+    if (compareTabs.length > 0 && (!activeCompareTabId || !compareTabs.some((t) => t.id === activeCompareTabId))) {
+      setActiveCompareTabId(compareTabs[0].id)
+    }
+  }, [compareTabs, activeCompareTabId])
 
   // Fetch workspace files when file picker opens
   useEffect(() => {
@@ -262,22 +195,22 @@ export function ComparePage() {
     (file: FileEntry) => {
       const token = getToken()
       if (!token) return
-      if (selectedFilesData.some((f) => f.fileId === file.id)) return
+      if (selectedFilesData.some((f: LoadedFile) => f.fileId === file.id)) return
       setFileContentLoading((prev) => new Set(prev).add(file.id))
       getWorkspaceFileContent(file.id, token)
         .then((text) => {
           const data = parseCsv(text)
-          const newFile = {
+          const newFile: LoadedFile = {
             fileId: file.id,
             name: file.name,
             content: data.length > 0 ? data : [['']],
             folderPath: file.folderPath,
           }
-          setSelectedFilesData((prev) => {
-            const next = [...prev, newFile]
-            return next
-          })
-          setActiveFileId((prev) => prev ?? file.id)
+          updateActiveTabData((d) => ({
+            ...d,
+            selectedFilesData: [...d.selectedFilesData, newFile],
+            activeFileId: d.activeFileId ?? file.id,
+          }))
         })
         .catch(() => {})
         .finally(() => setFileContentLoading((prev) => {
@@ -286,19 +219,20 @@ export function ComparePage() {
           return next
         }))
     },
-    [selectedFilesData]
+    [selectedFilesData, updateActiveTabData]
   )
 
   const handleRemoveFile = useCallback((fileId: number) => {
-    setSelectedFilesData((prev) => prev.filter((f) => f.fileId !== fileId))
-    setSelectedFileRows((prev) => {
-      const next = { ...prev }
-      delete next[fileId]
+    updateActiveTabData((d) => {
+      const next = { ...d }
+      next.selectedFilesData = d.selectedFilesData.filter((f: LoadedFile) => f.fileId !== fileId)
+      const { [fileId]: _, ...rest } = d.selectedFileRows
+      next.selectedFileRows = rest
+      next.activeFileId = d.activeFileId === fileId ? null : d.activeFileId
+      next.selectedRowForScraped = d.selectedRowForScraped?.fileId === fileId ? null : d.selectedRowForScraped
       return next
     })
-    setActiveFileId((prev) => (prev === fileId ? null : prev))
-    setSelectedRowForScraped((prev) => (prev?.fileId === fileId ? null : prev))
-  }, [])
+  }, [updateActiveTabData])
 
   // Fetch scraped data when a part row is selected for comparison
   useEffect(() => {
@@ -352,10 +286,10 @@ export function ComparePage() {
 
   const handleAddSelectedFileRows = useCallback(
     (fileId: number) => {
-      const fileData = selectedFilesData.find((f) => f.fileId === fileId)
-      const rows = selectedFileRows[fileId]
-      if (!fileData || !rows || rows.size === 0) return
-      const newItems = buildItemsFromFileRows(fileData, Array.from(rows).sort((a, b) => a - b))
+      const fileData = selectedFilesData.find((f: LoadedFile) => f.fileId === fileId)
+      const rows = selectedFileRows[fileId] ?? []
+      if (!fileData || rows.length === 0) return
+      const newItems = buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b))
       if (newItems.length > 0) {
         addItems(newItems)
         comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -365,21 +299,21 @@ export function ComparePage() {
   )
 
   const totalSelectedAcrossFiles = selectedFilesData.reduce(
-    (sum, f) => sum + (selectedFileRows[f.fileId]?.size ?? 0),
+    (sum: number, f: LoadedFile) => sum + (selectedFileRows[f.fileId]?.length ?? 0),
     0
   )
   const filesWithSelection = selectedFilesData.filter(
-    (f) => (selectedFileRows[f.fileId]?.size ?? 0) > 0
+    (f: LoadedFile) => (selectedFileRows[f.fileId]?.length ?? 0) > 0
   ).length
 
   const handleAddAllSelectedFromAllFiles = useCallback(() => {
     const allItems: ComparisonItem[] = []
     for (const fileData of selectedFilesData) {
-      const rows = selectedFileRows[fileData.fileId]
-      if (!rows || rows.size === 0) continue
+      const rows = selectedFileRows[fileData.fileId] ?? []
+      if (rows.length === 0) continue
       const items = buildItemsFromFileRows(
         fileData,
-        Array.from(rows).sort((a, b) => a - b)
+        [...rows].sort((a, b) => a - b)
       )
       allItems.push(...items)
     }
@@ -391,78 +325,37 @@ export function ComparePage() {
 
   const handleAddSingleRow = useCallback(
     (fileId: number, rowIdx: number) => {
-      const fileData = selectedFilesData.find((f) => f.fileId === fileId)
+      const fileData = selectedFilesData.find((f: LoadedFile) => f.fileId === fileId)
       if (!fileData) return
       const newItems = buildItemsFromFileRows(fileData, [rowIdx])
       if (newItems.length > 0) {
         addItems(newItems)
-        setSelectedFileRows((prev) => ({
-          ...prev,
-          [fileId]: new Set(prev[fileId] ?? []).add(rowIdx),
-        }))
+        updateActiveTabData((d) => {
+          const arr = d.selectedFileRows[fileId] ?? []
+          if (arr.includes(rowIdx)) return d
+          return {
+            ...d,
+            selectedFileRows: { ...d.selectedFileRows, [fileId]: [...arr, rowIdx] },
+          }
+        })
         comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
     },
-    [selectedFilesData, buildItemsFromFileRows, addItems]
+    [selectedFilesData, buildItemsFromFileRows, addItems, updateActiveTabData]
   )
 
   const toggleFileRow = useCallback((fileId: number, rowIdx: number, checked: boolean) => {
-    setSelectedFileRows((prev) => {
-      const next = { ...prev }
-      const set = new Set(next[fileId] ?? [])
-      if (checked) set.add(rowIdx)
-      else set.delete(rowIdx)
-      next[fileId] = set
-      return next
+    updateActiveTabData((d) => {
+      const arr = d.selectedFileRows[fileId] ?? []
+      const nextArr = checked
+        ? (arr.includes(rowIdx) ? arr : [...arr, rowIdx])
+        : arr.filter((i) => i !== rowIdx)
+      return {
+        ...d,
+        selectedFileRows: { ...d.selectedFileRows, [fileId]: nextArr },
+      }
     })
-  }, [])
-
-  const handleRemoveComparisonItem = useCallback(
-    (itemId: string) => {
-      removeItem(itemId)
-      const match = itemId.match(/^file-(\d+)-(\d+)$/)
-      if (match) {
-        const fileId = Number(match[1])
-        const rowIdx = Number(match[2])
-        setSelectedFileRows((prev) => {
-          const set = new Set(prev[fileId] ?? [])
-          set.delete(rowIdx)
-          const next = { ...prev }
-          next[fileId] = set
-          return next
-        })
-      }
-    },
-    [removeItem]
-  )
-
-  const handleAddByPartNumber = useCallback(() => {
-    const partNumbers = parsePartNumbers(partNumberInput)
-    if (partNumbers.length === 0) {
-      setPartNumberFeedback(null)
-      return
-    }
-    let tabs: TabState[] = []
-    let activeTabId: string | null = null
-    try {
-      const raw = localStorage.getItem(RESEARCH_TABS_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as TabState[]
-        tabs = Array.isArray(parsed) ? parsed : []
-      }
-      const stateRaw = localStorage.getItem(RESEARCH_PAGE_STATE_KEY)
-      if (stateRaw) {
-        const state = JSON.parse(stateRaw) as { activeTabId?: string | null }
-        activeTabId = state.activeTabId ?? null
-      }
-    } catch {
-      // ignore
-    }
-    const { items: newItems, found, notFound } = findRowsByPartNumbers(tabs, activeTabId, partNumbers)
-    if (newItems.length > 0) addItems(newItems)
-    setPartNumberFeedback({ added: newItems.length, found, notFound })
-    if (newItems.length > 0) setPartNumberInput('')
-  }, [partNumberInput, addItems])
+  }, [updateActiveTabData])
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8">
@@ -476,8 +369,38 @@ export function ComparePage() {
         </p>
       </div>
 
-      {/* New sheet + New tab bar - same as ResearchTabs */}
+      {/* Tab bar - like Research page: tabs + New tab dropdown */}
       <div className="mt-6 mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
+        {compareTabs.map((tab) => (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={tab.id === activeCompareTabId}
+            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
+              tab.id === activeCompareTabId
+                ? 'border-gray-300 bg-white text-gray-900'
+                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveCompareTabId(tab.id)}
+              className="font-medium"
+            >
+              {tab.name}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => closeCompareTab(e, tab.id)}
+              className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
+              aria-label="Close tab"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
         <div className="relative">
           <button
             type="button"
@@ -491,7 +414,7 @@ export function ComparePage() {
             <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
               <button
                 type="button"
-                onClick={handleNewSheet}
+                onClick={addNewCompareTab}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
               >
                 <span className="text-gray-400">+</span>
@@ -499,7 +422,10 @@ export function ComparePage() {
               </button>
               <button
                 type="button"
-                onClick={handleOpenFile}
+                onClick={() => {
+                  setNewTabMenuOpen(false)
+                  setFilePickerOpen(true)
+                }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
               >
                 <span className="text-gray-400">↺</span>
@@ -532,12 +458,12 @@ export function ComparePage() {
           )}
           {selectedFilesData.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              {selectedFilesData.map((file) => {
+              {selectedFilesData.map((file: LoadedFile) => {
                 const isActive = file.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
                 return (
                   <span
                     key={file.fileId}
-                    onClick={() => setActiveFileId(file.fileId)}
+                    onClick={() => updateActiveTabData((d) => ({ ...d, activeFileId: file.fileId }))}
                     className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
                       isActive
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
@@ -564,7 +490,7 @@ export function ComparePage() {
         </div>
         {selectedFilesData.length > 0 && (() => {
           const fileData = selectedFilesData.find(
-            (f) => f.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
+            (f: LoadedFile) => f.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
           )
           if (!fileData) return null
           return (
@@ -576,10 +502,10 @@ export function ComparePage() {
                   Select rows to compare (header row excluded)
                 </p>
                 <div className="divide-y divide-gray-100">
-                  {fileData.content.slice(1).map((row, idx) => {
+                  {fileData.content.slice(1).map((row: string[], idx: number) => {
                     const rowIdx = idx
                     const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
-                    const isChecked = (selectedFileRows[fileData.fileId] ?? new Set()).has(rowIdx)
+                    const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
                     const isSelectedForScraped =
                       selectedRowForScraped?.fileId === fileData.fileId &&
                       selectedRowForScraped?.rowIdx === rowIdx
@@ -603,11 +529,10 @@ export function ComparePage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setSelectedRowForScraped({
-                              fileId: fileData.fileId,
-                              rowIdx,
-                              partLabel: label,
-                            })
+                            updateActiveTabData((d) => ({
+                              ...d,
+                              selectedRowForScraped: { fileId: fileData.fileId, rowIdx, partLabel: label },
+                            }))
                             comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                           }}
                           className={`shrink-0 rounded p-1 ${
@@ -645,11 +570,11 @@ export function ComparePage() {
                   <button
                     type="button"
                     onClick={() => handleAddSelectedFileRows(fileData.fileId)}
-                    disabled={!(selectedFileRows[fileData.fileId]?.size ?? 0)}
+                    disabled={!(selectedFileRows[fileData.fileId]?.length ?? 0)}
                     className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {(selectedFileRows[fileData.fileId]?.size ?? 0) > 0
-                      ? `Add ${selectedFileRows[fileData.fileId]?.size ?? 0} selected to comparison`
+                    {(selectedFileRows[fileData.fileId]?.length ?? 0) > 0
+                      ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected to comparison`
                       : 'Select rows above to add'}
                   </button>
                 </div>
@@ -681,7 +606,7 @@ export function ComparePage() {
                 type="button"
                 onClick={() => {
                   closeAndClear()
-                  setSelectedFileRows({})
+                  updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
                 }}
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
@@ -697,64 +622,7 @@ export function ComparePage() {
         {items.length > 0 && (
           <>
             <h3 className="mb-4 text-lg font-semibold text-gray-900">Compare same part across vendors</h3>
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
-                      Spec
-                    </th>
-                    {items.map((item) => (
-                      <th key={item.id} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-gray-900">{item.title || '—'}</p>
-                            {item.sourceName && (
-                              <p className="truncate text-xs font-normal text-gray-500">{item.sourceName}</p>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveComparisonItem(item.id)}
-                            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                            aria-label={`Remove ${item.title}`}
-                          >
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(() => {
-                    const allLabels = new Set<string>()
-                    for (const item of items) {
-                      for (const s of item.specs) allLabels.add(s.label)
-                    }
-                    const labels = Array.from(allLabels)
-                    return labels.map((label) => (
-                      <tr key={label} className="hover:bg-gray-50/50">
-                        <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
-                          {label.replace(/_/g, ' ')}
-                        </td>
-                        {items.map((item) => {
-                          const spec = item.specs.find((s) => s.label === label)
-                          const value = spec?.value ?? '—'
-                          return (
-                            <td key={item.id} className="border-l border-gray-100 px-4 py-2 text-gray-900">
-                              {value}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))
-                  })()}
-                </tbody>
-              </table>
-            </div>
+       
           </>
         )}
 
@@ -931,8 +799,8 @@ export function ComparePage() {
                 <>
                   <p className="mb-2 px-2 text-xs text-gray-500">Click files to add. Close when done.</p>
                   <ul className="space-y-0.5">
-                  {filePickerFiles.map((file) => {
-                    const isSelected = selectedFilesData.some((f) => f.fileId === file.id)
+                  {filePickerFiles.map((file: FileEntry) => {
+                    const isSelected = selectedFilesData.some((f: LoadedFile) => f.fileId === file.id)
                     const isLoading = fileContentLoading.has(file.id)
                     return (
                     <li key={file.id}>
