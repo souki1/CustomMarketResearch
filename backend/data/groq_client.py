@@ -29,7 +29,7 @@ Rules:
 1. Use snake_case keys: product_image, product_description, vendor_name, price, product_details, delivery, location, contact
 2. product_image: if array, use the first valid https URL; if string, use as-is; fix protocol-relative URLs (//host -> https://host)
 3. product_description: if array, join with " | "; trim whitespace
-4. price: if array, use first price string; remove if empty
+4. price: preserve exactly as shown including currency symbol ($, €, £, etc.); if array, use first price string; remove if empty
 5. product_details: keep as object; use snake_case keys; remove empty values
 6. delivery, location, contact: omit if null or empty
 7. Omit any key with null, empty string, or empty array"""

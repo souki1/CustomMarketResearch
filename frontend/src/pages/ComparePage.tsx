@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
-import { getWorkspaceFileContent, listWorkspaceItems } from '@/lib/api'
+import {
+  getWorkspaceFileContent,
+  listResearchUrls,
+  listWorkspaceItems,
+} from '@/lib/api'
+import type { ScrapedDataItem } from '@/lib/api'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 
 const RESEARCH_TABS_KEY = 'research-tabs'
@@ -32,6 +37,46 @@ type TabState = {
   data: string[][]
   fileId: number | null
   folderPath?: string | null
+}
+
+function isImageUrl(val: unknown): boolean {
+  if (typeof val !== 'string' || !val.trim()) return false
+  const s = val.trim().toLowerCase()
+  if (!s.startsWith('http://') && !s.startsWith('https://')) return false
+  return (
+    /\.(jpg|jpeg|png|gif|webp|svg)(\?|\/|$)/i.test(s) ||
+    /\/media\/|\/catalog\/|\/images?\//i.test(s) ||
+    /imagedelivery\.net|cloudflare.*\/images?/i.test(s)
+  )
+}
+
+function isImageKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/_/g, '')
+  return /image|img|photo|picture|thumbnail/.test(k)
+}
+
+/** Flatten nested object keys for display (e.g. { a: { b: 1 } } -> ["a.b"]) */
+function flattenObjectKeys(obj: Record<string, unknown>, prefix = ''): string[] {
+  const keys: string[] = []
+  for (const [k, v] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${k}` : k
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      keys.push(...flattenObjectKeys(v as Record<string, unknown>, fullKey))
+    } else {
+      keys.push(fullKey)
+    }
+  }
+  return keys
+}
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const parts = path.split('.')
+  let current: unknown = obj
+  for (const p of parts) {
+    if (current == null || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[p]
+  }
+  return current
 }
 
 function findPartNumberColumnIndex(headers: string[]): number {
@@ -87,7 +132,7 @@ function findRowsByPartNumbers(
         const id = `${tab.id}-${rowIdx - 1}`
         if (!seenIds.has(id)) {
           seenIds.add(id)
-          items.push({ id, title, imageUrl: null, specs })
+          items.push({ id, title, imageUrl: null, specs, sourceName: tab.name })
         }
         found.push(partNum)
         break
@@ -145,6 +190,13 @@ export function ComparePage() {
   const [fileContentLoading, setFileContentLoading] = useState<Set<number>>(new Set())
   const [activeFileId, setActiveFileId] = useState<number | null>(null)
   const comparisonSectionRef = useRef<HTMLDivElement>(null)
+  const [selectedRowForScraped, setSelectedRowForScraped] = useState<{
+    fileId: number
+    rowIdx: number
+    partLabel: string
+  } | null>(null)
+  const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
+  const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
 
   const handleCancel = () => {
     closeAndClear()
@@ -245,7 +297,32 @@ export function ComparePage() {
       return next
     })
     setActiveFileId((prev) => (prev === fileId ? null : prev))
+    setSelectedRowForScraped((prev) => (prev?.fileId === fileId ? null : prev))
   }, [])
+
+  // Fetch scraped data when a part row is selected for comparison
+  useEffect(() => {
+    if (!selectedRowForScraped) {
+      setScrapedData(null)
+      return
+    }
+    const token = getToken()
+    if (!token) {
+      setScrapedData(null)
+      return
+    }
+    setScrapedDataLoading(true)
+    listResearchUrls(token, {
+      fileId: selectedRowForScraped.fileId,
+      tableRowIndex: selectedRowForScraped.rowIdx,
+    })
+      .then((items) => {
+        const item = items[0]
+        setScrapedData(item?.scraped_data ?? null)
+      })
+      .catch(() => setScrapedData(null))
+      .finally(() => setScrapedDataLoading(false))
+  }, [selectedRowForScraped])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -259,12 +336,14 @@ export function ComparePage() {
             label: (label || `Column ${i + 1}`).trim(),
             value: String(row[i] ?? '—'),
           }))
-          return {
+          const item: ComparisonItem = {
             id: `file-${fileData.fileId}-${rowIdx}`,
             title,
             imageUrl: null,
             specs,
+            sourceName: fileData.name,
           }
+          return item
         })
         .filter((x): x is ComparisonItem => x != null)
     },
@@ -393,7 +472,7 @@ export function ComparePage() {
           Which product is right for you?
         </h1>
         <p className="mt-2 text-sm text-gray-600">
-          Select products on the Research page and click Compare to view them side-by-side.
+          Add the same part from different vendor files to compare prices and specs side-by-side.
         </p>
       </div>
 
@@ -501,10 +580,15 @@ export function ComparePage() {
                     const rowIdx = idx
                     const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
                     const isChecked = (selectedFileRows[fileData.fileId] ?? new Set()).has(rowIdx)
+                    const isSelectedForScraped =
+                      selectedRowForScraped?.fileId === fileData.fileId &&
+                      selectedRowForScraped?.rowIdx === rowIdx
                     return (
                       <div
                         key={rowIdx}
-                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50"
+                        className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-50 ${
+                          isSelectedForScraped ? 'bg-emerald-50/70' : ''
+                        }`}
                       >
                         <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
                           <input
@@ -515,6 +599,30 @@ export function ComparePage() {
                           />
                           <span className="truncate text-sm text-gray-900">{label}</span>
                         </label>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedRowForScraped({
+                              fileId: fileData.fileId,
+                              rowIdx,
+                              partLabel: label,
+                            })
+                            comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}
+                          className={`shrink-0 rounded p-1 ${
+                            isSelectedForScraped
+                              ? 'bg-emerald-100 text-emerald-600'
+                              : 'text-gray-400 hover:bg-blue-100 hover:text-blue-600'
+                          }`}
+                          title="View scraped data"
+                          aria-label="View scraped data"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -584,119 +692,202 @@ export function ComparePage() {
         )}
       </div>
 
-      {/* Add by part number */}
-      <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Add by part number</h3>
-        <p className="mt-1 text-xs text-gray-600">
-          Enter part numbers from your Research sheet (comma or newline separated). Uses the first column or a column
-          named &quot;Part Number&quot;, &quot;SKU&quot;, etc.
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <textarea
-              value={partNumberInput}
-              onChange={(e) => setPartNumberInput(e.target.value)}
-              placeholder={'e.g. ABC-123, XYZ-456\nor one per line'}
-              rows={2}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleAddByPartNumber}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            Add to comparison
-          </button>
-        </div>
-        {partNumberFeedback && (
-          <div className="mt-3 text-sm">
-            {partNumberFeedback.added > 0 && (
-              <p className="text-emerald-700">
-                Added {partNumberFeedback.added} item{partNumberFeedback.added !== 1 ? 's' : ''} to comparison.
-              </p>
-            )}
-            {partNumberFeedback.notFound.length > 0 && (
-              <p className="mt-1 text-amber-700">
-                Not found: {partNumberFeedback.notFound.join(', ')}
+      {/* Comparison section: CSV items and scraped data */}
+      <div ref={comparisonSectionRef} className="mt-8">
+        {items.length > 0 && (
+          <>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Compare same part across vendors</h3>
+            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
+                      Spec
+                    </th>
+                    {items.map((item) => (
+                      <th key={item.id} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-900">{item.title || '—'}</p>
+                            {item.sourceName && (
+                              <p className="truncate text-xs font-normal text-gray-500">{item.sourceName}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveComparisonItem(item.id)}
+                            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                            aria-label={`Remove ${item.title}`}
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(() => {
+                    const allLabels = new Set<string>()
+                    for (const item of items) {
+                      for (const s of item.specs) allLabels.add(s.label)
+                    }
+                    const labels = Array.from(allLabels)
+                    return labels.map((label) => (
+                      <tr key={label} className="hover:bg-gray-50/50">
+                        <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
+                          {label.replace(/_/g, ' ')}
+                        </td>
+                        {items.map((item) => {
+                          const spec = item.specs.find((s) => s.label === label)
+                          const value = spec?.value ?? '—'
+                          return (
+                            <td key={item.id} className="border-l border-gray-100 px-4 py-2 text-gray-900">
+                              {value}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* Scraped data comparison table for selected part */}
+        {selectedRowForScraped && (
+          <div className={items.length > 0 ? 'mt-8' : ''}>
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">
+              Scraped data: {selectedRowForScraped.partLabel}
+            </h3>
+            {scrapedDataLoading ? (
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
+                </svg>
+                <span>Loading scraped data…</span>
+              </div>
+            ) : scrapedData && scrapedData.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
+                        Spec
+                      </th>
+                      {scrapedData.map((item, idx) => (
+                        <th key={idx} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium text-gray-500">Source {idx + 1}</p>
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-0.5 block truncate text-xs text-blue-600 hover:underline"
+                              title={item.url}
+                            >
+                              {item.url}
+                            </a>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(() => {
+                      const allKeys = new Set<string>()
+                      for (const item of scrapedData) {
+                        if (item.data && typeof item.data === 'object') {
+                          flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
+                        }
+                      }
+                      const keys = Array.from(allKeys).sort()
+                      return keys.map((key) => (
+                        <tr key={key} className="hover:bg-gray-50/50">
+                          <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
+                            {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
+                          </td>
+                          {scrapedData.map((item, idx) => {
+                            const val = getNestedValue(
+                              (item.data ?? {}) as Record<string, unknown>,
+                              key
+                            )
+                            const imageUrls = Array.isArray(val)
+                              ? (val as unknown[]).filter(
+                                  (v): v is string => typeof v === 'string' && isImageUrl(v)
+                                )
+                              : isImageUrl(val)
+                                ? [String(val)]
+                                : []
+                            const showAsImage =
+                              (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                            const strVal =
+                              val == null
+                                ? '—'
+                                : typeof val === 'string'
+                                  ? val
+                                  : typeof val === 'object'
+                                    ? JSON.stringify(val)
+                                    : String(val)
+                            return (
+                              <td key={idx} className="border-l border-gray-100 px-4 py-2 text-gray-900 align-top">
+                                {showAsImage ? (
+                                  <span className="inline-flex flex-wrap gap-2">
+                                    {imageUrls.map((imgSrc, i) => (
+                                      <span key={i} className="relative">
+                                        <img
+                                          src={imgSrc}
+                                          alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                                          className="max-h-24 rounded border border-gray-200 object-contain"
+                                          loading="lazy"
+                                          onError={(e) => {
+                                            const el = e.currentTarget
+                                            el.style.display = 'none'
+                                            const fallback = el.nextElementSibling
+                                            if (fallback)
+                                              (fallback as HTMLElement).classList.remove('hidden')
+                                          }}
+                                        />
+                                        <a
+                                          href={imgSrc}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
+                                          title={imgSrc}
+                                        >
+                                          {imgSrc}
+                                        </a>
+                                      </span>
+                                    ))}
+                                  </span>
+                                ) : (
+                                  typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No scraped data for this part. Run Research on the Research page first to scrape vendor data.
               </p>
             )}
           </div>
         )}
       </div>
 
-      <div className="mt-6 flex items-center justify-end">
-        <button
-          type="button"
-          onClick={handleCancel}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Cancel comparison
-        </button>
-      </div>
 
-      <div ref={comparisonSectionRef}>
-      {items.length === 0 ? (
-        <div className="mt-10 rounded-2xl border border-gray-200 bg-gray-50 p-12 text-center">
-          <p className="text-sm text-gray-700">No comparison selected.</p>
-          <p className="mt-1 text-sm text-gray-500">
-            Go to Research, select row(s), then click <strong>Compare</strong> or <strong>Compare Selected</strong>.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/research')}
-            className="mt-5 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            Go to Research
-          </button>
-        </div>
-      ) : (
-        <div className="mt-10 overflow-x-auto">
-          <div
-            className="grid gap-6"
-            style={{ gridTemplateColumns: `repeat(${items.length}, minmax(240px, 1fr))` }}
-          >
-            {items.map((item) => (
-              <div key={item.id} className="relative border-b border-gray-200 pb-6">
-                <button
-                  type="button"
-                  onClick={() => handleRemoveComparisonItem(item.id)}
-                  className="absolute right-0 top-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                  title="Remove from comparison"
-                  aria-label="Remove from comparison"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <div className="pr-8 text-center">
-                  <p className="text-sm font-semibold text-gray-900">{item.title || '—'}</p>
-                </div>
 
-                <div className="mt-4 flex items-center justify-center">
-                  <div className="h-36 w-full max-w-[220px] rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center overflow-hidden">
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt="" className="h-full w-full object-contain" />
-                    ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-gray-50 to-gray-100" />
-                    )}
-                  </div>
-                </div>
 
-                <div className="mt-6 space-y-0 divide-y divide-gray-200">
-                  {item.specs.slice(0, 12).map((spec, idx) => (
-                    <div key={idx} className="py-3 text-center">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{spec.label}</p>
-                      <p className="mt-1 text-sm font-medium text-gray-900">{spec.value || '—'}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      </div>
 
       {/* File picker modal */}
       {filePickerOpen && (

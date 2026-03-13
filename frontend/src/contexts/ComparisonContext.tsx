@@ -16,6 +16,8 @@ export type ComparisonItem = {
   title: string
   imageUrl?: string | null
   specs: ComparisonSpec[]
+  /** Vendor/source name (e.g. file name) for same-part comparison */
+  sourceName?: string | null
 }
 
 type ComparisonContextValue = {

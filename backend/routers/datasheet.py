@@ -230,7 +230,7 @@ async def search_selection_and_store_urls(
         await mongo_db["research_urls"].insert_one(doc)
         ai_query = (body.ai_query if body else None) or ""
         if not ai_query.strip():
-            ai_query = "Extract product specifications, pricing, availability, part numbers, and key information from this page. Return as structured JSON."
+            ai_query = "Extract product specifications, pricing (keep prices with currency symbols like $, €, £), availability, part numbers, and key information from this page. Return as structured JSON."
         if urls and settings.firecrawl_api_key:
             sem = asyncio.Semaphore(5)
 

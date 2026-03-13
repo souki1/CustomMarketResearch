@@ -44,7 +44,11 @@ function isImageUrl(val: unknown): boolean {
   if (typeof val !== 'string' || !val.trim()) return false
   const s = val.trim().toLowerCase()
   if (!s.startsWith('http://') && !s.startsWith('https://')) return false
-  return /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(s) || /\/media\/|\/catalog\/|\/images?\//i.test(s)
+  return (
+    /\.(jpg|jpeg|png|gif|webp|svg)(\?|\/|$)/i.test(s) ||
+    /\/media\/|\/catalog\/|\/images?\//i.test(s) ||
+    /imagedelivery\.net|cloudflare.*\/images?/i.test(s)
+  )
 }
 
 function LoaderIcon({ className }: { className?: string }) {
@@ -1522,31 +1526,8 @@ export function ResearchPage() {
                         {headers[0] ? `${headers[0]}: ${selectedRowData?.[0] ?? '—'}` : selectedRowData?.[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
                       </p>
                     </div>
-                    {selectedRowData?.[1] != null && String(selectedRowData?.[1]).trim() !== '' && (
-                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                          Description
-                        </h3>
-                        <p className="text-sm text-gray-700">
-                          {headers[1] ? `${headers[1]}: ${selectedRowData?.[1]}` : String(selectedRowData?.[1])}
-                        </p>
-                      </div>
-                    )}
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                        Key attributes
-                      </h3>
-                      <ul className="space-y-2">
-                        {headers.map((label, i) => (
-                          <li key={i} className="flex justify-between gap-2 text-sm">
-                            <span className="text-gray-500">{label || `Column ${i + 1}`}</span>
-                            <span className="min-w-0 truncate text-right font-medium text-gray-900">
-                              {selectedRowData?.[i] ?? '—'}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+             
+
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -1589,14 +1570,28 @@ export function ResearchPage() {
                           {previewScrapedData.map((item, idx) => (
                             <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
                               {item.url && (
-                                <p className="mb-2 truncate text-xs text-gray-500" title={item.url}>
-                                  Source {idx + 1}: {item.url}
-                                </p>
+                                <div className="mb-2 flex items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
+                                  <input type="checkbox" value={item.url} className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-gray-600 transition-colors hover:text-blue-600"
+                                    title={item.url}
+                                  >
+                                    <span className="shrink-0 font-medium text-gray-400">Source {idx + 1}</span>
+                                    <span className="min-w-0 truncate">{item.url}</span>
+                                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                </div>
                               )}
                               <div className="overflow-x-auto">
                                 {structuredDataViewType === 'row' ? (
                                   <table className="min-w-full text-sm">
                                     <tbody className="divide-y divide-gray-200">
+                                    
                                       {Object.entries(item.data).map(([key, val]) => {
                                         const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
                                         const imageUrls = Array.isArray(val)
