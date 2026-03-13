@@ -58,6 +58,15 @@ function flattenObjectKeys(obj: Record<string, unknown>, prefix = ''): string[] 
   return keys
 }
 
+/** Extract domain from URL for vendor filtering (e.g. store.germanbliss.com) */
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.')
   let current: unknown = obj
@@ -104,7 +113,7 @@ function newBlankCompareTab(): CompareTab {
 }
 
 export function ComparePage() {
-  const { items, addItems, closeAndClear } = useComparison()
+  const { items, addItems, removeItem, closeAndClear } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
@@ -116,6 +125,8 @@ export function ComparePage() {
   const comparisonSectionRef = useRef<HTMLDivElement>(null)
   const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
+  /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
+  const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -238,6 +249,7 @@ export function ComparePage() {
   useEffect(() => {
     if (!selectedRowForScraped) {
       setScrapedData(null)
+      setScrapedVendorFilter(null)
       return
     }
     const token = getToken()
@@ -250,13 +262,32 @@ export function ComparePage() {
       fileId: selectedRowForScraped.fileId,
       tableRowIndex: selectedRowForScraped.rowIdx,
     })
-      .then((items) => {
-        const item = items[0]
-        setScrapedData(item?.scraped_data ?? null)
+      .then((res) => {
+        const data = res[0]?.scraped_data ?? null
+        setScrapedData(data)
+        setScrapedVendorFilter(null)
       })
       .catch(() => setScrapedData(null))
       .finally(() => setScrapedDataLoading(false))
   }, [selectedRowForScraped])
+
+  // Step 3: When different parts same vendor, default scraped view to first vendor only
+  const isDifferentPartsSameVendor =
+    items.length > 1 && new Set(items.map((i) => i.sourceName ?? '')).size === 1
+
+  useEffect(() => {
+    if (
+      scrapedData &&
+      scrapedData.length > 0 &&
+      isDifferentPartsSameVendor &&
+      scrapedVendorFilter === null
+    ) {
+      const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))]
+      if (domains.length > 0) {
+        setScrapedVendorFilter(domains[0]!)
+      }
+    }
+  }, [scrapedData, isDifferentPartsSameVendor, scrapedVendorFilter])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -357,16 +388,40 @@ export function ComparePage() {
     })
   }, [updateActiveTabData])
 
+  const handleRemoveComparisonItem = useCallback(
+    (itemId: string) => {
+      removeItem(itemId)
+      const match = itemId.match(/^file-(\d+)-(\d+)$/)
+      if (match) {
+        const fileId = Number(match[1])
+        const rowIdx = Number(match[2])
+        updateActiveTabData((d) => {
+          const arr = (d.selectedFileRows[fileId] ?? []).filter((i) => i !== rowIdx)
+          return {
+            ...d,
+            selectedFileRows: { ...d.selectedFileRows, [fileId]: arr },
+          }
+        })
+      }
+    },
+    [removeItem, updateActiveTabData]
+  )
+
+  /** Parse file-{fileId}-{rowIdx} to get fileId and rowIdx for scraped data lookup */
+  function parseFileItemId(itemId: string): { fileId: number; rowIdx: number } | null {
+    const match = itemId.match(/^file-(\d+)-(\d+)$/)
+    if (!match) return null
+    return { fileId: Number(match[1]), rowIdx: Number(match[2]) }
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8">
       <div className="text-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Compare</p>
+        <p className="text-xl font-semibold uppercase tracking-wide text-gray-500">Compare</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">
           Which product is right for you?
         </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Add the same part from different vendor files to compare prices and specs side-by-side.
-        </p>
+      
       </div>
 
       {/* Tab bar - like Research page: tabs + New tab dropdown */}
@@ -440,7 +495,7 @@ export function ComparePage() {
       <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
         <h3 className="text-sm font-semibold text-gray-900">Select file from workspace</h3>
         <p className="mt-1 text-xs text-gray-600">
-          Choose files from the Home page. Click a file chip to switch between files and select rows to add to the comparison.
+          Choose files from the Home page. Select multiple rows from one file to compare different parts from the same vendor, or select rows from multiple files to compare across vendors.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
@@ -499,7 +554,7 @@ export function ComparePage() {
             {fileData.content.length > 1 ? (
               <div className="max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
                 <p className="border-b border-gray-200 px-3 py-2 text-xs font-medium text-gray-600">
-                  Select rows to compare (header row excluded)
+                  Select rows to compare different parts from this vendor (header row excluded)
                 </p>
                 <div className="divide-y divide-gray-100">
                   {fileData.content.slice(1).map((row: string[], idx: number) => {
@@ -585,9 +640,29 @@ export function ComparePage() {
           </div>
           )
         })()}
+        {selectedFilesData.length === 1 && (selectedFileRows[selectedFilesData[0]?.fileId ?? 0]?.length ?? 0) > 1 && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <h4 className="text-sm font-semibold text-blue-900">Different parts from same vendor</h4>
+            <p className="mt-1 text-xs text-blue-700">
+              {(selectedFileRows[selectedFilesData[0]?.fileId ?? 0]?.length ?? 0)} parts selected from {selectedFilesData[0]?.name}. Add to compare side-by-side.
+            </p>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => handleAddSelectedFileRows(selectedFilesData[0]!.fileId)}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                Add {selectedFileRows[selectedFilesData[0]!.fileId]?.length ?? 0} parts to comparison
+              </button>
+            </div>
+          </div>
+        )}
         {selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
           <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <h4 className="text-sm font-semibold text-emerald-900">Compare rows from different files</h4>
+            <h4 className="text-sm font-semibold text-emerald-900">Different parts from different vendors</h4>
             <p className="mt-1 text-xs text-emerald-700">
               {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected from {filesWithSelection} file{filesWithSelection !== 1 ? 's' : ''}. Add all to compare side-by-side.
             </p>
@@ -617,21 +692,133 @@ export function ComparePage() {
         )}
       </div>
 
-      {/* Comparison section: CSV items and scraped data */}
+      {/* Comparison section: same part across vendors OR different parts */}
       <div ref={comparisonSectionRef} className="mt-8">
         {items.length > 0 && (
           <>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Compare same part across vendors</h3>
-       
+            <h3 className="mb-1 text-lg font-semibold text-gray-900">Compare parts</h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Same part across vendors • Different parts from same vendor • Different parts from different vendors
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
+                      Spec
+                    </th>
+                    {items.map((item) => (
+                      <th key={item.id} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-gray-900">{item.title || '—'}</p>
+                            {item.sourceName && (
+                              <p className="truncate text-xs font-normal text-gray-500">{item.sourceName}</p>
+                            )}
+                            {parseFileItemId(item.id) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const parsed = parseFileItemId(item.id)
+                                  if (parsed) {
+                                    updateActiveTabData((d) => ({
+                                      ...d,
+                                      selectedRowForScraped: {
+                                        fileId: parsed.fileId,
+                                        rowIdx: parsed.rowIdx,
+                                        partLabel: item.title || '—',
+                                      },
+                                    }))
+                                    comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                  }
+                                }}
+                                className="mt-1 text-xs text-blue-600 hover:underline"
+                              >
+                                View scraped
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveComparisonItem(item.id)}
+                            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                            aria-label={`Remove ${item.title}`}
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(() => {
+                    const allLabels = new Set<string>()
+                    for (const item of items) {
+                      for (const s of item.specs) allLabels.add(s.label)
+                    }
+                    const labels = Array.from(allLabels)
+                    return labels.map((label) => (
+                      <tr key={label} className="hover:bg-gray-50/50">
+                        <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
+                          {label.replace(/_/g, ' ')}
+                        </td>
+                        {items.map((item) => {
+                          const spec = item.specs.find((s) => s.label === label)
+                          const value = spec?.value ?? '—'
+                          return (
+                            <td key={item.id} className="border-l border-gray-100 px-4 py-2 text-gray-900">
+                              {value}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  })()}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
 
         {/* Scraped data comparison table for selected part */}
         {selectedRowForScraped && (
           <div className={items.length > 0 ? 'mt-8' : ''}>
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">
-              Scraped data: {selectedRowForScraped.partLabel}
-            </h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Scraped data: {selectedRowForScraped.partLabel}
+              </h3>
+              {scrapedData && scrapedData.length > 0 && (() => {
+                const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
+                if (domains.length < 2) return null
+                return (
+                  <div className="flex items-center gap-2">
+                    {isDifferentPartsSameVendor && (
+                      <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                        Same vendor only
+                      </span>
+                    )}
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-600">Vendor:</span>
+                      <select
+                        value={scrapedVendorFilter ?? (isDifferentPartsSameVendor && domains[0] ? domains[0] : 'all')}
+                        onChange={(e) => setScrapedVendorFilter(e.target.value === 'all' ? 'all' : e.target.value)}
+                        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                      >
+                        <option value="all">All vendors</option>
+                        {domains.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )
+              })()}
+            </div>
             {scrapedDataLoading ? (
               <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -640,6 +827,16 @@ export function ComparePage() {
                 <span>Loading scraped data…</span>
               </div>
             ) : scrapedData && scrapedData.length > 0 ? (
+              (() => {
+                const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
+                const effectiveFilter =
+                  scrapedVendorFilter === 'all'
+                    ? null
+                    : scrapedVendorFilter || (isDifferentPartsSameVendor && domains[0] ? domains[0] : null)
+                const filteredData = effectiveFilter
+                  ? scrapedData.filter((d) => extractDomain(d.url) === effectiveFilter)
+                  : scrapedData
+                return (
               <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -647,7 +844,7 @@ export function ComparePage() {
                       <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
                         Spec
                       </th>
-                      {scrapedData.map((item, idx) => (
+                      {filteredData.map((item, idx) => (
                         <th key={idx} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
                           <div className="min-w-0">
                             <p className="truncate text-xs font-medium text-gray-500">Source {idx + 1}</p>
@@ -668,7 +865,7 @@ export function ComparePage() {
                   <tbody className="divide-y divide-gray-100">
                     {(() => {
                       const allKeys = new Set<string>()
-                      for (const item of scrapedData) {
+                      for (const item of filteredData) {
                         if (item.data && typeof item.data === 'object') {
                           flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
                         }
@@ -679,7 +876,7 @@ export function ComparePage() {
                           <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
                             {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
                           </td>
-                          {scrapedData.map((item, idx) => {
+                          {filteredData.map((item, idx) => {
                             const val = getNestedValue(
                               (item.data ?? {}) as Record<string, unknown>,
                               key
@@ -744,6 +941,8 @@ export function ComparePage() {
                   </tbody>
                 </table>
               </div>
+                )
+              })()
             ) : (
               <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                 No scraped data for this part. Run Research on the Research page first to scrape vendor data.
