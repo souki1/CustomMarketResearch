@@ -127,6 +127,8 @@ export function ComparePage() {
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
   const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
+  type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
+  const [compareMode, setCompareMode] = useState<CompareMode>('different-same-vendor')
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -595,7 +597,7 @@ export function ComparePage() {
                               ? 'bg-emerald-100 text-emerald-600'
                               : 'text-gray-400 hover:bg-blue-100 hover:text-blue-600'
                           }`}
-                          title="View scraped data"
+                          title="View  data"
                           aria-label="View scraped data"
                         >
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -640,26 +642,7 @@ export function ComparePage() {
           </div>
           )
         })()}
-        {selectedFilesData.length === 1 && (selectedFileRows[selectedFilesData[0]?.fileId ?? 0]?.length ?? 0) > 1 && (
-          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-            <h4 className="text-sm font-semibold text-blue-900">Different parts from same vendor</h4>
-            <p className="mt-1 text-xs text-blue-700">
-              {(selectedFileRows[selectedFilesData[0]?.fileId ?? 0]?.length ?? 0)} parts selected from {selectedFilesData[0]?.name}. Add to compare side-by-side.
-            </p>
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => handleAddSelectedFileRows(selectedFilesData[0]!.fileId)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-                Add {selectedFileRows[selectedFilesData[0]!.fileId]?.length ?? 0} parts to comparison
-              </button>
-            </div>
-          </div>
-        )}
+      
         {selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
           <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <h4 className="text-sm font-semibold text-emerald-900">Different parts from different vendors</h4>
@@ -734,7 +717,7 @@ export function ComparePage() {
                                 }}
                                 className="mt-1 text-xs text-blue-600 hover:underline"
                               >
-                                View scraped
+                                View data
                               </button>
                             )}
                           </div>
@@ -795,11 +778,7 @@ export function ComparePage() {
                 if (domains.length < 2) return null
                 return (
                   <div className="flex items-center gap-2">
-                    {isDifferentPartsSameVendor && (
-                      <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-                        Same vendor only
-                      </span>
-                    )}
+                 
                     <label className="flex items-center gap-2 text-sm">
                       <span className="text-gray-600">Vendor:</span>
                       <select
@@ -952,7 +931,41 @@ export function ComparePage() {
         )}
       </div>
 
-
+      {selectedFilesData.length > 0 && (
+        <div className="mt-6 mb-3">
+          <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
+            {(
+              [
+                { id: 'same-part' as const, label: 'Same part across vendors' },
+                { id: 'different-same-vendor' as const, label: 'Different parts from same vendor' },
+                { id: 'different-different-vendors' as const, label: 'Different parts from different vendors' },
+              ] as const
+            ).map(({ id, label }) => {
+              const isActive = compareMode === id
+              return (
+                <div
+                  key={id}
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
+                    isActive
+                      ? 'border-gray-300 bg-white text-gray-900'
+                      : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCompareMode(id)}
+                    className="font-medium"
+                  >
+                    {label}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        )}
 
 
 
