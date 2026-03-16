@@ -4,6 +4,7 @@ import { MainLayout } from '@/layouts'
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { ComparePage } from '@/pages/ComparePage'
 import { HomePage } from '@/pages/HomePage'
+import { PurchaseOrderPage } from '@/pages/PurchaseOrderPage'
 import { ResearchPage } from '@/pages/ResearchPage'
 import { SettingsLayout } from '@/pages/SettingsLayout'
 import { SettingsBillingPage } from '@/pages/settings/SettingsBillingPage'
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'research', element: <ResearchPage /> },
       { path: 'compare', element: <ComparePage /> },
+      { path: 'purchase-order', element: <PurchaseOrderPage /> },
       {
         path: 'settings',
         element: <SettingsLayout />,

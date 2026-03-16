@@ -175,6 +175,31 @@ export async function uploadWorkspaceCsv(
   return res.json()
 }
 
+export async function uploadWorkspaceImage(
+  file: File,
+  parentId: number | null,
+  token: string
+): Promise<WorkspaceItem> {
+  const form = new FormData()
+  form.append('file', file)
+  if (parentId != null) form.append('parent_id', String(parentId))
+
+  const headers: HeadersInit = {}
+  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/workspace/upload-image`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+  return res.json()
+}
+
 export async function moveWorkspaceItem(
   itemId: number,
   parentId: number | null,

@@ -21,6 +21,13 @@ function CompareIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+function PurchaseOrderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  )
+}
 function SettingsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -40,6 +47,7 @@ export function Sidebar({ open }: SidebarProps) {
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === '/compare'
+  const isPurchaseOrder = location.pathname === '/purchase-order'
   const isSettings = location.pathname.startsWith('/settings')
 
   return (
@@ -73,6 +81,14 @@ export function Sidebar({ open }: SidebarProps) {
           >
             <CompareIcon className={iconClass} />
             <span>Compare</span>
+          </Link>
+          <Link
+            to="/purchase-order"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${isPurchaseOrder ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`}
+            title="Purchase Order"
+          >
+            <PurchaseOrderIcon className={iconClass} />
+            <span>Purchase Order</span>
           </Link>
           <Link
             to="/settings"

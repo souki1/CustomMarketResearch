@@ -9,7 +9,7 @@ import {
   CreateFolderModal,
 } from '@/components'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv } from '@/lib/api'
+import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv, uploadWorkspaceImage } from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
 /** Convert an Excel file to a CSV File so we can upload it via the existing CSV endpoint. */
@@ -91,10 +91,12 @@ export function HomePage() {
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [moveSourceRow, setMoveSourceRow] = useState<FileTableRow | null>(null)
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null)
+  const [imageDropActive, setImageDropActive] = useState(false)
 
   useEffect(() => {
     const stored = getCurrentUserName()
@@ -301,6 +303,90 @@ export function HomePage() {
     fileInputRef.current?.click()
   }
 
+  const handleUploadImageClick = () => {
+    setUploadTargetFolderId(currentFolderId)
+    setTimeout(() => imageInputRef.current?.click(), 0)
+  }
+
+  const isValidImageFile = (file: File) => {
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']
+    const validExtensions = /\.(jpg|jpeg|png|gif|webp|svg)$/i
+    return validTypes.includes(file.type) || validExtensions.test(file.name)
+  }
+
+  const uploadImageFile = async (file: File, parentId: string | null) => {
+    if (!token) return
+    const parentNumeric = parentId ? Number(parentId) : null
+    const created = await uploadWorkspaceImage(file, parentNumeric, token)
+    const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+    const newRow: FileTableRow = {
+      id: String(created.id),
+      name: created.name,
+      isFolder: created.is_folder,
+      favorite: created.favorite,
+      createdAt,
+      lastOpened: '—',
+      owner: created.owner_display_name ?? displayName,
+      access: created.access,
+      parentId: created.parent_id != null ? String(created.parent_id) : null,
+    }
+    setRows((prev) => [...prev, newRow])
+  }
+
+  const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    event.target.value = ''
+
+    if (!token) {
+      setError('You need to be signed in to upload images.')
+      return
+    }
+
+    if (!isValidImageFile(file)) {
+      setError('Please upload an image file (.jpg, .png, .gif, .webp, .svg).')
+      return
+    }
+
+    try {
+      setError(null)
+      await uploadImageFile(file, uploadTargetFolderId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload image')
+    }
+  }
+
+  const handleImageDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setImageDropActive(false)
+
+    if (!token) {
+      setError('You need to be signed in to upload images.')
+      return
+    }
+
+    const files = Array.from(e.dataTransfer.files).filter(isValidImageFile)
+    if (files.length === 0) {
+      setError('Please drop image files (.jpg, .png, .gif, .webp, .svg).')
+      return
+    }
+
+    setError(null)
+    for (const file of files) {
+      try {
+        await uploadImageFile(file, currentFolderId)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to upload image')
+        break
+      }
+    }
+  }
+
   const handleCsvSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -427,20 +513,58 @@ export function HomePage() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-5">
-          {FEATURE_CARDS.map((card) => (
-            <Card
-              key={card.id}
-              as="button"
-              type="button"
-              className="flex w-80 flex-row items-center gap-4"
-            >
-              {card.icon}
-              <div className="min-w-10 flex-1">
-                <p className="text-sm font-semibold text-gray-900">{card.title}</p>
-                <p className="mt-1 text-xs leading-snug text-gray-500">{card.description}</p>
+          {FEATURE_CARDS.map((card) =>
+            card.id === 'import-image' ? (
+              <div
+                key={card.id}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setImageDropActive(true)
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setImageDropActive(false)
+                  }
+                }}
+                onDrop={handleImageDrop}
+                className="w-80"
+              >
+                <Card
+                  as="button"
+                  type="button"
+                  onClick={handleUploadImageClick}
+                  className={`flex w-full flex-row items-center gap-4 transition-colors ${
+                    imageDropActive ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50' : ''
+                  }`}
+                >
+                  {card.icon}
+                  <div className="min-w-10 flex-1">
+                    <p className="text-sm font-semibold text-gray-900">{card.title}</p>
+                    <p className="mt-1 text-xs leading-snug text-gray-500">
+                      {card.description}
+                      {imageDropActive ? ' — Drop images here' : ''}
+                    </p>
+                  </div>
+                </Card>
               </div>
-            </Card>
-          ))}
+            ) : (
+              <Card
+                key={card.id}
+                as="button"
+                type="button"
+                className="flex w-80 flex-row items-center gap-4"
+              >
+                {card.icon}
+                <div className="min-w-10 flex-1">
+                  <p className="text-sm font-semibold text-gray-900">{card.title}</p>
+                  <p className="mt-1 text-xs leading-snug text-gray-500">{card.description}</p>
+                </div>
+              </Card>
+            )
+          )}
         </div>
 
         <div className="mt-6 flex gap-6 border-b border-gray-200">
@@ -536,6 +660,13 @@ export function HomePage() {
         accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         className="hidden"
         onChange={handleCsvSelected}
+      />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+        className="hidden"
+        onChange={handleImageSelected}
       />
 
       {moveDialogOpen && moveSourceRow && (

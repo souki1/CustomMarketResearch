@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,6 +215,116 @@ async def upload_csv(
         last_opened=None,
         owner_display_name=user.display_name,
     )
+
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
+IMAGE_CONTENT_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+@router.post("/upload-image", response_model=WorkspaceItemResponse, status_code=201)
+async def upload_image(
+    file: UploadFile = File(...),
+    parent_id: int | None = Form(None),
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="Only image files are supported (.jpg, .jpeg, .png, .gif, .webp, .svg)",
+        )
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    safe_name = Path(file.filename).name
+    content_type = IMAGE_CONTENT_TYPES.get(suffix) or file.content_type or "image/jpeg"
+
+    now = datetime.utcnow()
+    new_id = await get_next_sequence(mongo_db, "workspace_items")
+    item_doc = {
+        "id": new_id,
+        "name": safe_name,
+        "is_folder": False,
+        "parent_id": parent_id,
+        "owner_id": user.id,
+        "favorite": False,
+        "access": "Edit",
+        "created_at": now,
+        "last_opened": None,
+    }
+    await mongo_db["workspace_items"].insert_one(item_doc)
+
+    await mongo_db["workspace_files"].insert_one(
+        {
+            "workspace_item_id": new_id,
+            "owner_id": user.id,
+            "filename": safe_name,
+            "content_type": content_type,
+            "size": len(content),
+            "content": content,
+        }
+    )
+
+    return WorkspaceItemResponse(
+        id=new_id,
+        name=safe_name,
+        is_folder=False,
+        parent_id=parent_id,
+        favorite=False,
+        access="Edit",
+        created_at=now,
+        last_opened=None,
+        owner_display_name=user.display_name,
+    )
+
+
+@router.get("/items/{item_id}/media")
+async def get_item_media(
+    item_id: int,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    """Return binary content for image files."""
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    item = await mongo_db["workspace_items"].find_one(
+        {"id": item_id, "owner_id": user.id}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if item["is_folder"]:
+        raise HTTPException(status_code=400, detail="Folders have no file content")
+
+    doc = await mongo_db["workspace_files"].find_one(
+        {"workspace_item_id": item_id, "owner_id": user.id}
+    )
+    if not doc or "content" not in doc:
+        raise HTTPException(status_code=404, detail="File has no content")
+
+    content_type = doc.get("content_type", "application/octet-stream")
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Not an image file")
+
+    content = doc["content"]
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    return Response(content=content, media_type=content_type)
 
 
 @router.delete("/items/{item_id}", status_code=204)

@@ -128,7 +128,7 @@ export function ComparePage() {
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
   const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
   type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
-  const [compareMode, setCompareMode] = useState<CompareMode>('different-same-vendor')
+  const [compareMode, setCompareMode] = useState<CompareMode>('different-different-vendors')
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -235,16 +235,11 @@ export function ComparePage() {
             content: data.length > 0 ? data : [['']],
             folderPath: file.folderPath,
           }
-          updateActiveTabData((d) => {
-            const isOneVendorMode = compareMode === 'different-same-vendor'
-            const nextFiles = isOneVendorMode ? [newFile] : [...d.selectedFilesData, newFile]
-            return {
-              ...d,
-              selectedFilesData: nextFiles,
-              activeFileId: file.id,
-              ...(isOneVendorMode && { selectedFileRows: {}, selectedRowForScraped: null }),
-            }
-          })
+          updateActiveTabData((d) => ({
+            ...d,
+            selectedFilesData: [...d.selectedFilesData, newFile],
+            activeFileId: file.id,
+          }))
         })
         .catch(() => {})
         .finally(() => setFileContentLoading((prev) => {
@@ -253,7 +248,7 @@ export function ComparePage() {
           return next
         }))
     },
-    [compareMode, selectedFilesData, updateActiveTabData]
+    [selectedFilesData, updateActiveTabData]
   )
 
   const handleRemoveFile = useCallback((fileId: number) => {
