@@ -15,7 +15,6 @@ function MainLayoutContent() {
       return true
     }
   })
-  const [sidebarHoverVisible, setSidebarHoverVisible] = useState(false)
   const [sidebarOpenBeforeInspector, setSidebarOpenBeforeInspector] = useState<boolean | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const { collapseSidebarForInspector, setCollapseSidebarForInspector } = useLayout()
@@ -29,31 +28,37 @@ function MainLayoutContent() {
   }, [sidebarOpen])
 
   useEffect(() => {
-    // Hover-reveal should ONLY apply while inspector is open.
     if (!collapseSidebarForInspector) {
-      setSidebarHoverVisible(false)
       if (sidebarOpenBeforeInspector != null) {
         setSidebarOpen(sidebarOpenBeforeInspector)
         setSidebarOpenBeforeInspector(null)
       }
     } else {
-      // Record the user's sidebar state before collapsing for inspector.
       if (sidebarOpenBeforeInspector == null) setSidebarOpenBeforeInspector(sidebarOpen)
     }
   }, [collapseSidebarForInspector, sidebarOpenBeforeInspector, sidebarOpen])
 
+  const [collapsedStripHover, setCollapsedStripHover] = useState(false)
+  useEffect(() => {
+    if (!collapseSidebarForInspector) setCollapsedStripHover(false)
+  }, [collapseSidebarForInspector])
+  const sidebarClosed = !sidebarOpen || collapseSidebarForInspector
   const showSidebar =
-    (sidebarOpen && !collapseSidebarForInspector) ||
-    (collapseSidebarForInspector && sidebarHoverVisible)
+    (sidebarOpen && !collapseSidebarForInspector) || (sidebarClosed && collapsedStripHover)
+  const showCollapsedStrip = sidebarClosed && !collapsedStripHover
 
   const handleSidebarToggle = () => {
     if (!showSidebar) {
-      // Sidebar is hidden (user closed it or inspector collapsed it) — show it
       setCollapseSidebarForInspector(false)
       setSidebarOpen(true)
     } else {
       setSidebarOpen(false)
     }
+  }
+
+  const handleExpandFromCollapsed = () => {
+    setCollapseSidebarForInspector(false)
+    setSidebarOpen(true)
   }
 
   return (
@@ -67,23 +72,16 @@ function MainLayoutContent() {
       />
       <div className="flex">
         <div
-          className="sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0"
-          onMouseLeave={
-            collapseSidebarForInspector ? () => setSidebarHoverVisible(false) : undefined
-          }
+          className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : showCollapsedStrip ? 'w-14' : 'w-0'}`}
+          onMouseEnter={sidebarClosed ? () => setCollapsedStripHover(true) : undefined}
+          onMouseLeave={sidebarClosed ? () => setCollapsedStripHover(false) : undefined}
         >
-          {collapseSidebarForInspector && (
-            <div
-              className="w-3 shrink-0 border-r border-gray-200 bg-white cursor-default hover:bg-gray-50 transition-colors"
-              onMouseEnter={() => setSidebarHoverVisible(true)}
-              title="Move mouse here to show sidebar"
-              aria-label="Show sidebar on hover"
+          <div className="h-full w-full overflow-hidden">
+            <Sidebar
+              open={showSidebar}
+              collapsed={showCollapsedStrip}
+              onExpand={showCollapsedStrip ? handleExpandFromCollapsed : undefined}
             />
-          )}
-          <div
-            className={`shrink-0 overflow-hidden transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-0'} h-full`}
-          >
-            <Sidebar open={showSidebar} />
           </div>
         </div>
         <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
