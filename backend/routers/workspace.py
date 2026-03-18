@@ -405,6 +405,42 @@ async def move_item(
         owner_display_name=user.display_name,
     )
 
+@router.put("/items/{item_id}/content", status_code=204)
+async def update_item_content(
+    item_id: int,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    """Update file content. Accepts plain text (e.g. CSV)."""
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    item = await mongo_db["workspace_items"].find_one(
+        {"id": item_id, "owner_id": user.id}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if item["is_folder"]:
+        raise HTTPException(status_code=400, detail="Folders have no file content")
+
+    body = await request.body()
+    if len(body) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Content too large (max 5MB)")
+
+    doc = await mongo_db["workspace_files"].find_one(
+        {"workspace_item_id": item_id, "owner_id": user.id}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="File has no content")
+
+    await mongo_db["workspace_files"].update_one(
+        {"workspace_item_id": item_id, "owner_id": user.id},
+        {"$set": {"content": body, "size": len(body)}},
+    )
+    return None
+
+
 @router.get("/items/{item_id}/content", response_class=PlainTextResponse)
 async def get_item_content(
     item_id: int,

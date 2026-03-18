@@ -7,6 +7,7 @@ import {
   listWorkspaceItems,
   saveDataSheetSelection,
   searchSelectionAndStoreUrls,
+  updateWorkspaceFileContent,
 } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison } from '@/contexts/ComparisonContext'
@@ -40,6 +41,20 @@ function parseCsv(text: string): string[][] {
   })
 }
 
+function serializeToCsv(data: string[][]): string {
+  return data
+    .map((row) =>
+      row
+        .map((cell) => {
+          const s = String(cell ?? '')
+          if (/[,\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+          return s
+        })
+        .join(',')
+    )
+    .join('\n')
+}
+
 function isImageUrl(val: unknown): boolean {
   if (typeof val !== 'string' || !val.trim()) return false
   const s = val.trim().toLowerCase()
@@ -62,6 +77,30 @@ function LoaderIcon({ className }: { className?: string }) {
 function isImageKey(key: string): boolean {
   const k = key.toLowerCase().replace(/_/g, '')
   return /image|img|photo|picture|thumbnail/.test(k)
+}
+
+function getDomPath(el: Element): string {
+  const parts: string[] = []
+  let current: Element | null = el
+  while (current && current !== document.body) {
+    let sel = current.tagName.toLowerCase()
+    if (current.id) sel += `#${current.id}`
+    else if (current.className && typeof current.className === 'string') {
+      const cls = current.className.trim().split(/\s+/).filter(Boolean).slice(0, 3).join('.')
+      if (cls) sel += '.' + cls.replace(/\s+/g, '.')
+    }
+    const parentEl: Element | null = current.parentElement
+    if (parentEl) {
+      const siblings = Array.from(parentEl.children).filter((c: Element) => c.tagName === current!.tagName)
+      if (siblings.length > 1) {
+        const idx = siblings.indexOf(current)
+        if (idx >= 0) sel += `[${idx}]`
+      }
+    }
+    parts.unshift(sel)
+    current = parentEl
+  }
+  return parts.join(' > ')
 }
 
 function newBlankSheet(): TabState {
@@ -137,6 +176,12 @@ export function ResearchPage() {
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [elementDetails, setElementDetails] = useState<{
+    domPath: string
+    position: { top: number; left: number; width: number; height: number }
+    reactComponent: string
+    htmlElement: string
+  } | null>(null)
   const [inspectorMode, setInspectorMode] = useState<'single' | 'multi'>('single')
   const [inspectorMultiRowIndices, setInspectorMultiRowIndices] = useState<number[]>([])
   const [inspectorCompareSelection, setInspectorCompareSelection] = useState<Set<number>>(new Set())
@@ -160,11 +205,15 @@ export function ResearchPage() {
   const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
   const navigate = useNavigate()
   const location = useLocation()
+  const flushSaveRef = useRef<(() => void) | null>(null)
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
+  const userHasEditedRef = useRef(false)
+  const saveImmediatelyRef = useRef(false)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
@@ -177,6 +226,61 @@ export function ResearchPage() {
       // ignore quota or serialization errors
     }
   }, [tabs])
+
+  // Save to workspace file when user edits and tab has fileId
+  useEffect(() => {
+    const fileId = activeTab?.fileId ?? null
+    if (!fileId || !content || !userHasEditedRef.current) return
+
+    const doSave = () => {
+      const token = getToken()
+      if (!token) return
+      const csv = serializeToCsv(content)
+      updateWorkspaceFileContent(fileId, csv, token)
+        .then(() => {
+          userHasEditedRef.current = false
+          showToast('Saved to file')
+        })
+        .catch((err: unknown) => {
+          showToast(err instanceof Error ? err.message : 'Failed to save')
+        })
+    }
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    const delay = saveImmediatelyRef.current ? 0 : 800
+    saveImmediatelyRef.current = false
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null
+      doSave()
+    }, delay)
+
+    flushSaveRef.current = () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+      if (userHasEditedRef.current && fileId && content) doSave()
+    }
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+      flushSaveRef.current = null
+    }
+  }, [content, activeTab?.fileId, showToast])
+
+  // Flush pending save when navigating away
+  useEffect(() => {
+    const flush = () => flushSaveRef.current?.()
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      flush()
+    }
+  }, [])
 
   // Restore Research page state when returning from another page (skip if returning from Compare with restore state)
   useEffect(() => {
@@ -445,6 +549,7 @@ export function ResearchPage() {
 
   const updateCell = useCallback(
     (rowIndex: number, colIndex: number, value: string) => {
+      userHasEditedRef.current = true
       setActiveTabData((prev) => {
         if (!prev.length) return prev
         const next = prev.map((row) => [...row])
@@ -461,6 +566,8 @@ export function ResearchPage() {
   // addColumn UI removed with "Other options"
 
   const addRow = useCallback((count: number = 1) => {
+    userHasEditedRef.current = true
+    saveImmediatelyRef.current = true
     setActiveTabData((prev) => {
       if (!prev.length) return [['']]
       const numCols = prev[0]?.length ?? 1
@@ -486,6 +593,8 @@ export function ResearchPage() {
       .map((i) => i + 1)
       .sort((a, b) => b - a)
 
+    userHasEditedRef.current = true
+    saveImmediatelyRef.current = true
     setActiveTabData((prev) => {
       if (!prev.length) return prev
       const next = [...prev]
@@ -654,6 +763,32 @@ export function ResearchPage() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, closeInspector])
+
+  // Capture element details for selected row (for Add details)
+  useEffect(() => {
+    if (selectedRowIndex == null || !isInspectorOpen) {
+      setElementDetails(null)
+      return
+    }
+    const capture = () => {
+      const row = document.querySelector(`tr[data-row-index="${selectedRowIndex}"]`)
+      const cell = row?.querySelector('td:nth-child(2)')
+      const input = cell?.querySelector('input')
+      const el = (input ?? cell) as HTMLElement
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      setElementDetails({
+        domPath: getDomPath(el),
+        position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        reactComponent: 'ResearchPage',
+        htmlElement: el.outerHTML.slice(0, 200) + (el.outerHTML.length > 200 ? '…' : ''),
+      })
+    }
+    const t = requestAnimationFrame(() => {
+      requestAnimationFrame(capture)
+    })
+    return () => cancelAnimationFrame(t)
+  }, [selectedRowIndex, isInspectorOpen])
 
   // Inspector resize drag
   useEffect(() => {
@@ -1216,6 +1351,7 @@ export function ResearchPage() {
                   return (
                     <tr
                       key={dataRowIndex}
+                      data-row-index={dataRowIndex}
                       className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
                     >
                       <td className="w-10 px-2 py-2 border-r border-gray-200">
@@ -1535,7 +1671,71 @@ export function ResearchPage() {
                         {headers[0] ? `${headers[0]}: ${selectedRowData?.[0] ?? '—'}` : selectedRowData?.[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
                       </p>
                     </div>
-             
+
+                    <div className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Add details
+                        </h3>
+                        {elementDetails && (
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = `DOM Path: ${elementDetails.domPath}\nPosition: top=${Math.round(elementDetails.position.top)}px, left=${Math.round(elementDetails.position.left)}px, width=${Math.round(elementDetails.position.width)}px, height=${Math.round(elementDetails.position.height)}px\nReact Component: ${elementDetails.reactComponent}\nHTML Element: ${elementDetails.htmlElement}`
+                                void navigator.clipboard.writeText(text)
+                                showToast('Copied to clipboard')
+                              }}
+                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Copy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!elementDetails) return
+                                const text = `DOM Path: ${elementDetails.domPath}\nPosition: top=${Math.round(elementDetails.position.top)}px, left=${Math.round(elementDetails.position.left)}px, width=${Math.round(elementDetails.position.width)}px, height=${Math.round(elementDetails.position.height)}px\nReact Component: ${elementDetails.reactComponent}\nHTML Element: ${elementDetails.htmlElement}`
+                                const blob = new Blob([text], { type: 'text/plain' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `element-details-row-${selectedRowIndex ?? 0}.txt`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                                showToast('Saved to file')
+                              }}
+                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Save to file
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {elementDetails ? (
+                        <div className="space-y-2 font-mono text-xs text-gray-600">
+                          <div>
+                            <span className="font-medium text-gray-500">DOM Path:</span>
+                            <p className="mt-0.5 break-all">{elementDetails.domPath}</p>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-500">Position:</span>
+                            <p className="mt-0.5">
+                              top={Math.round(elementDetails.position.top)}px, left={Math.round(elementDetails.position.left)}px, width={Math.round(elementDetails.position.width)}px, height={Math.round(elementDetails.position.height)}px
+                            </p>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-500">React Component:</span>
+                            <p className="mt-0.5">{elementDetails.reactComponent}</p>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-500">HTML Element:</span>
+                            <p className="mt-0.5 break-all">{elementDetails.htmlElement}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-center text-sm text-gray-500">Loading element details…</p>
+                      )}
+                    </div>
 
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">

@@ -223,6 +223,27 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
   return res.text()
 }
 
+export async function updateWorkspaceFileContent(
+  itemId: number,
+  content: string,
+  token: string
+): Promise<void> {
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'text/plain; charset=utf-8',
+  }
+  const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, {
+    method: 'PUT',
+    headers,
+    body: content,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+}
+
 export type DataSheetSelectionPayload = {
   headers: string[]
   rows: string[][]

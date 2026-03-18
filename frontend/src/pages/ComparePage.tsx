@@ -123,6 +123,7 @@ export function ComparePage() {
   const [filePickerError, setFilePickerError] = useState<string | null>(null)
   const [fileContentLoading, setFileContentLoading] = useState<Set<number>>(new Set())
   const comparisonSectionRef = useRef<HTMLDivElement>(null)
+  const hasScrolledToComparisonRef = useRef(false)
   const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
@@ -190,6 +191,17 @@ export function ComparePage() {
       setActiveCompareTabId(compareTabs[0].id)
     }
   }, [compareTabs, activeCompareTabId])
+
+  // When navigating from Research with items, scroll to comparison section
+  useEffect(() => {
+    if (items.length > 0 && !hasScrolledToComparisonRef.current) {
+      hasScrolledToComparisonRef.current = true
+      const t = setTimeout(() => {
+        comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 150)
+      return () => clearTimeout(t)
+    }
+  }, [items.length])
 
   // Fetch workspace files when file picker opens
   useEffect(() => {
