@@ -28,6 +28,23 @@ function PurchaseOrderIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+function AiIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 20v-2m7.07-9H21M3 12h2m14.07 6.07l-1.41-1.41M6.34 6.34L4.93 4.93m14.14 0l-1.41 1.41M6.34 17.66l-1.41 1.41" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 14.5a4 4 0 01-5.66 0 4 4 0 010-5.66 4 4 0 015.66 0 4 4 0 010 5.66z" />
+    </svg>
+  )
+}
+function PortfolioIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-6m6 6v-6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18v13a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7l2-4h6l2 4" />
+    </svg>
+  )
+}
 function SettingsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -56,6 +73,8 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === '/compare'
   const isPurchaseOrder = location.pathname === '/purchase-order'
+  const isAi = location.pathname === '/ai'
+  const isPortfolio = location.pathname === '/portfolio'
   const isSettings = location.pathname.startsWith('/settings')
 
   if (collapsed) {
@@ -74,6 +93,12 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
             </Link>
             <Link to="/compare" className={collapsedLinkClass(isCompare)} title="Compare">
               <CompareIcon className={iconClass} />
+            </Link>
+            <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
+              <AiIcon className={iconClass} />
+            </Link>
+            <Link to="/portfolio" className={collapsedLinkClass(isPortfolio)} title="Portfolio">
+              <PortfolioIcon className={iconClass} />
             </Link>
             <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
               <PurchaseOrderIcon className={iconClass} />
@@ -119,6 +144,14 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
           <Link to="/compare" className={linkClass(isCompare)} title="Compare">
             <CompareIcon className={iconClass} />
             <span>Compare</span>
+          </Link>
+          <Link to="/ai" className={linkClass(isAi)} title="AI">
+            <AiIcon className={iconClass} />
+            <span>AI</span>
+          </Link>
+          <Link to="/portfolio" className={linkClass(isPortfolio)} title="Portfolio">
+            <PortfolioIcon className={iconClass} />
+            <span>Portfolio</span>
           </Link>
           <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
             <PurchaseOrderIcon className={iconClass} />

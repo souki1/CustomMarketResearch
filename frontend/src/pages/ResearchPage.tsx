@@ -563,27 +563,35 @@ export function ResearchPage() {
     })
   }
 
-  // Cell click: open inspector for this row, or switch to this row, or close if same row
-  const handleCellClick = useCallback(
+  // Cell interactions:
+  // - single click selects row (updates highlight, but does not open preview panel)
+  // - double click opens the right-side preview panel for that row
+  const handleCellSelect = useCallback(
     (dataRowIndex: number) => {
-      if (selectedRowIndex === dataRowIndex) {
-        setSelectedRowIndex(null)
-        setIsInspectorOpen(false)
+      setSelectedRowIndex(dataRowIndex)
+      if (isInspectorOpen) {
+        // Keep inspector state consistent when switching rows while panel is already open.
+        setInspectorMode('single')
         setInspectorMaximized(false)
-        setInspectorMode('single')
-        setInspectorMultiRowIndices([])
-        setInspectorCompareSelection(new Set())
-        setCollapseSidebarForInspector(false)
-      } else {
-        setSelectedRowIndex(dataRowIndex)
-        setIsInspectorOpen(true)
-        setInspectorMode('single')
         setInspectorMultiRowIndices([])
         setInspectorCompareSelection(new Set([dataRowIndex]))
         setCollapseSidebarForInspector(true)
       }
     },
-    [selectedRowIndex, setCollapseSidebarForInspector]
+    [isInspectorOpen, setCollapseSidebarForInspector]
+  )
+
+  const handleCellClick = useCallback(
+    (dataRowIndex: number) => {
+      setSelectedRowIndex(dataRowIndex)
+      setIsInspectorOpen(true)
+      setInspectorMode('single')
+      setInspectorMaximized(false)
+      setInspectorMultiRowIndices([])
+      setInspectorCompareSelection(new Set([dataRowIndex]))
+      setCollapseSidebarForInspector(true)
+    },
+    [setCollapseSidebarForInspector]
   )
 
   const toggleSelectAll = () => {
@@ -1226,7 +1234,8 @@ export function ResearchPage() {
                         <td
                           key={colIndex}
                           className="cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
-                          onClick={() => handleCellClick(dataRowIndex)}
+                          onClick={() => handleCellSelect(dataRowIndex)}
+                          onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
