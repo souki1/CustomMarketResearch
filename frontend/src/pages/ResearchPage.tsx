@@ -1672,70 +1672,7 @@ export function ResearchPage() {
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 bg-white p-4">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                          Add details
-                        </h3>
-                        {elementDetails && (
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const text = `DOM Path: ${elementDetails.domPath}\nPosition: top=${Math.round(elementDetails.position.top)}px, left=${Math.round(elementDetails.position.left)}px, width=${Math.round(elementDetails.position.width)}px, height=${Math.round(elementDetails.position.height)}px\nReact Component: ${elementDetails.reactComponent}\nHTML Element: ${elementDetails.htmlElement}`
-                                void navigator.clipboard.writeText(text)
-                                showToast('Copied to clipboard')
-                              }}
-                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Copy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!elementDetails) return
-                                const text = `DOM Path: ${elementDetails.domPath}\nPosition: top=${Math.round(elementDetails.position.top)}px, left=${Math.round(elementDetails.position.left)}px, width=${Math.round(elementDetails.position.width)}px, height=${Math.round(elementDetails.position.height)}px\nReact Component: ${elementDetails.reactComponent}\nHTML Element: ${elementDetails.htmlElement}`
-                                const blob = new Blob([text], { type: 'text/plain' })
-                                const url = URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = url
-                                a.download = `element-details-row-${selectedRowIndex ?? 0}.txt`
-                                a.click()
-                                URL.revokeObjectURL(url)
-                                showToast('Saved to file')
-                              }}
-                              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Save to file
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {elementDetails ? (
-                        <div className="space-y-2 font-mono text-xs text-gray-600">
-                          <div>
-                            <span className="font-medium text-gray-500">DOM Path:</span>
-                            <p className="mt-0.5 break-all">{elementDetails.domPath}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-500">Position:</span>
-                            <p className="mt-0.5">
-                              top={Math.round(elementDetails.position.top)}px, left={Math.round(elementDetails.position.left)}px, width={Math.round(elementDetails.position.width)}px, height={Math.round(elementDetails.position.height)}px
-                            </p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-500">React Component:</span>
-                            <p className="mt-0.5">{elementDetails.reactComponent}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-500">HTML Element:</span>
-                            <p className="mt-0.5 break-all">{elementDetails.htmlElement}</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-center text-sm text-gray-500">Loading element details…</p>
-                      )}
-                    </div>
+
 
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">
