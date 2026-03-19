@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -77,6 +77,99 @@ function LoaderIcon({ className }: { className?: string }) {
 function isImageKey(key: string): boolean {
   const k = key.toLowerCase().replace(/_/g, '')
   return /image|img|photo|picture|thumbnail/.test(k)
+}
+
+function formatValue(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (val == null) return '—'
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
+}
+
+function isPartNumberKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/\s+/g, '').replace(/-/g, '_')
+  // Common LLM/schema outputs: part_number, partNumbers, part_no, partNo, etc.
+  return (k.includes('part') && (k.includes('number') || k.endsWith('part_no') || k.includes('part_no'))) || k === 'partno'
+}
+
+function getFirstPartNumber(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (!isPartNumberKey(k)) continue
+    if (v == null) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v)
+    if (Array.isArray(v)) {
+      const first = v.find((x) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean')
+      if (first != null) return String(first)
+    }
+  }
+  return null
+}
+
+function renderSimplePartFields(obj: Record<string, unknown>, maxFields = 3): ReactNode {
+  const parts: string[] = []
+  for (const [k, v] of Object.entries(obj)) {
+    if (parts.length >= maxFields) break
+    if (isPartNumberKey(k) || isImageKey(k)) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      parts.push(`${k.replace(/_/g, ' ')}: ${String(v)}`)
+    }
+  }
+  if (parts.length === 0) return null
+  return <div className="text-xs text-gray-600">{parts.join(' • ')}</div>
+}
+
+function renderValue(val: unknown): ReactNode {
+  if (val == null) return '—'
+
+  if (Array.isArray(val)) {
+    if (val.length === 0) return '—'
+
+    const allObjects = val.every((v) => typeof v === 'object' && v !== null && !Array.isArray(v))
+    if (allObjects) {
+      const objs = val as Record<string, unknown>[]
+      const hasAnyPartNumber = objs.some((o) => getFirstPartNumber(o) != null)
+      if (!hasAnyPartNumber) return formatValue(val)
+
+      return (
+        <div className="space-y-1">
+          {objs.map((obj, i) => {
+            const partNumber = getFirstPartNumber(obj)
+            return (
+              <div key={i} className="rounded border border-gray-200 bg-white px-2 py-1">
+                <div className="text-xs font-semibold text-gray-700">
+                  {partNumber ? `Part number: ${partNumber}` : `Part ${i + 1}`}
+                </div>
+                {renderSimplePartFields(obj)}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+
+    const allPrimitive =
+      val.every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') &&
+      !val.some((v) => typeof v === 'object')
+    if (allPrimitive) return val.map(String).join(', ')
+
+    return formatValue(val)
+  }
+
+  if (typeof val === 'object') {
+    const obj = val as Record<string, unknown>
+    const partNumber = getFirstPartNumber(obj)
+    if (partNumber) {
+      return (
+        <div className="space-y-1">
+          <div className="text-xs font-semibold text-gray-700">Part number: {partNumber}</div>
+          {renderSimplePartFields(obj)}
+        </div>
+      )
+    }
+    return formatValue(val)
+  }
+
+  return String(val)
 }
 
 function getDomPath(el: Element): string {
@@ -176,7 +269,7 @@ export function ResearchPage() {
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
-  const [elementDetails, setElementDetails] = useState<{
+  const [, setElementDetails] = useState<{
     domPath: string
     position: { top: number; left: number; width: number; height: number }
     reactComponent: string
@@ -1739,7 +1832,6 @@ export function ResearchPage() {
                                     <tbody className="divide-y divide-gray-200">
                                     
                                       {Object.entries(item.data).map(([key, val]) => {
-                                        const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
                                         const imageUrls = Array.isArray(val)
                                           ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
                                           : isImageUrl(val)
@@ -1781,9 +1873,7 @@ export function ResearchPage() {
                                                   ))}
                                                 </span>
                                               ) : (
-                                                typeof val === 'object' && val !== null
-                                                  ? strVal
-                                                  : String(val ?? '')
+                                                renderValue(val)
                                               )}
                                             </td>
                                           </tr>
@@ -1805,7 +1895,6 @@ export function ResearchPage() {
                                     <tbody>
                                       <tr className="divide-x divide-gray-200">
                                         {Object.entries(item.data).map(([key, val]) => {
-                                          const strVal = typeof val === 'string' ? val : (typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? ''))
                                           const imageUrls = Array.isArray(val)
                                             ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
                                             : isImageUrl(val)
@@ -1843,9 +1932,7 @@ export function ResearchPage() {
                                                   ))}
                                                 </span>
                                               ) : (
-                                                typeof val === 'object' && val !== null
-                                                  ? strVal
-                                                  : String(val ?? '')
+                                                renderValue(val)
                                               )}
                                             </td>
                                           )

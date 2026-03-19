@@ -128,3 +128,11 @@ class ResearchSearchBody(BaseModel):
     """Optional body for search endpoint to enable scraping."""
 
     ai_query: str | None = None
+
+
+class PortfolioItemResponse(BaseModel):
+    part_number: str | None = None
+    vendor_name: str | None = None
+    price: str | None = None
+    quantity: int | None = None
+    url: str | None = None

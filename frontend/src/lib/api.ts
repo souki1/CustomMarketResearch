@@ -341,6 +341,18 @@ export async function listResearchUrls(
   return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
 }
 
+export type PortfolioItem = {
+  part_number: string | null
+  vendor_name: string | null
+  price: string | null
+  quantity: number | null
+  url: string | null
+}
+
+export async function listPortfolioItems(token: string, selectionId: number): Promise<PortfolioItem[]> {
+  return request<PortfolioItem[]>(`/portfolio/items?selection_id=${selectionId}`, { token })
+}
+
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {
   const headers: HeadersInit = { Authorization: `Bearer ${token}` }
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
