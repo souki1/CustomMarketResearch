@@ -255,10 +255,10 @@ export function PortfolioPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `portfolio-export-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `portfolio-report-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    showToast("Exported CSV")
+    showToast("Report generated")
   }, [filteredSortedGroups, showToast])
 
   const openCompareForGroup = useCallback(
@@ -456,20 +456,21 @@ export function PortfolioPage() {
             </div>
             <button
               type="button"
-              onClick={handleExportCsv}
-              disabled={!token || filteredSortedGroups.length === 0}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </button>
-            <button
-              type="button"
               onClick={handleCompareSelected}
               disabled={!token || selectedPartIds.size === 0}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Compare Selected
+            </button>
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={!token || filteredSortedGroups.length === 0}
+              title="Download portfolio data as CSV — final output"
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/25 transition-colors hover:border-emerald-700 hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+            >
+              <Download className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
+              Generate Report
             </button>
           </div>
         </div>
