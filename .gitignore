@@ -1,5 +1,6 @@
 .env.development
 backend/.env.development
 
-__pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
+*$py.class

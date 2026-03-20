@@ -21,6 +21,13 @@ function CompareIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+function ReportsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6m4 6V9m4 10V5M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  )
+}
 function PurchaseOrderIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -57,7 +64,6 @@ function SettingsIcon({ className }: { className?: string }) {
 type SidebarProps = {
   open: boolean
   collapsed?: boolean
-  onExpand?: () => void
 }
 
 const linkClass = (active: boolean) =>
@@ -66,12 +72,13 @@ const linkClass = (active: boolean) =>
 const collapsedLinkClass = (active: boolean) =>
   `flex items-center justify-center rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`
 
-export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
+export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const iconClass = 'h-5 w-5 shrink-0 text-gray-500'
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === '/compare'
+  const isReports = location.pathname === '/reports'
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
@@ -94,6 +101,9 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
             <Link to="/compare" className={collapsedLinkClass(isCompare)} title="Compare">
               <CompareIcon className={iconClass} />
             </Link>
+            <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
+              <ReportsIcon className={iconClass} />
+            </Link>
             <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
               <AiIcon className={iconClass} />
             </Link>
@@ -106,19 +116,6 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
             <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
               <SettingsIcon className={iconClass} />
             </Link>
-            {onExpand && (
-              <button
-                type="button"
-                onClick={onExpand}
-                className="mt-4 flex items-center justify-center rounded-lg p-2.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
           </nav>
         </div>
       </aside>
@@ -144,6 +141,10 @@ export function Sidebar({ open, collapsed = false, onExpand }: SidebarProps) {
           <Link to="/compare" className={linkClass(isCompare)} title="Compare">
             <CompareIcon className={iconClass} />
             <span>Compare</span>
+          </Link>
+          <Link to="/reports" className={linkClass(isReports)} title="Reports">
+            <ReportsIcon className={iconClass} />
+            <span>Reports</span>
           </Link>
           <Link to="/ai" className={linkClass(isAi)} title="AI">
             <AiIcon className={iconClass} />

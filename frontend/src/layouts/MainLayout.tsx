@@ -38,14 +38,8 @@ function MainLayoutContent() {
     }
   }, [collapseSidebarForInspector, sidebarOpenBeforeInspector, sidebarOpen])
 
-  const [collapsedStripHover, setCollapsedStripHover] = useState(false)
-  useEffect(() => {
-    if (!collapseSidebarForInspector) setCollapsedStripHover(false)
-  }, [collapseSidebarForInspector])
-  const sidebarClosed = !sidebarOpen || collapseSidebarForInspector
-  const showSidebar =
-    (sidebarOpen && !collapseSidebarForInspector) || (sidebarClosed && collapsedStripHover)
-  const showCollapsedStrip = sidebarClosed && !collapsedStripHover
+  const showSidebar = sidebarOpen && !collapseSidebarForInspector
+  const showCollapsedStrip = !showSidebar
 
   const handleSidebarToggle = () => {
     if (!showSidebar) {
@@ -54,11 +48,6 @@ function MainLayoutContent() {
     } else {
       setSidebarOpen(false)
     }
-  }
-
-  const handleExpandFromCollapsed = () => {
-    setCollapseSidebarForInspector(false)
-    setSidebarOpen(true)
   }
 
   return (
@@ -72,16 +61,10 @@ function MainLayoutContent() {
       />
       <div className="flex">
         <div
-          className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : showCollapsedStrip ? 'w-14' : 'w-0'}`}
-          onMouseEnter={sidebarClosed ? () => setCollapsedStripHover(true) : undefined}
-          onMouseLeave={sidebarClosed ? () => setCollapsedStripHover(false) : undefined}
+          className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
         >
           <div className="h-full w-full overflow-hidden">
-            <Sidebar
-              open={showSidebar}
-              collapsed={showCollapsedStrip}
-              onExpand={showCollapsedStrip ? handleExpandFromCollapsed : undefined}
-            />
+            <Sidebar open={showSidebar} collapsed={showCollapsedStrip} />
           </div>
         </div>
         <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">

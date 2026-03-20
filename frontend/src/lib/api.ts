@@ -362,3 +362,69 @@ export async function deleteWorkspaceItem(itemId: number, token: string): Promis
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
   }
 }
+
+export type AiChatMode = 'chat' | 'summarize' | 'rewrite' | 'brainstorm'
+
+export type AiChatHistoryMessage = { role: 'user' | 'assistant'; content: string }
+
+export type AiChatRequestBody = {
+  mode: AiChatMode
+  message: string
+  history?: AiChatHistoryMessage[]
+  /** Chat mode only — continue a thread stored in MongoDB */
+  session_id?: string | null
+}
+
+export type AiChatResponseBody = {
+  content: string
+  model: string
+  session_id: string
+}
+
+export async function aiGroqChat(token: string, body: AiChatRequestBody): Promise<AiChatResponseBody> {
+  return request<AiChatResponseBody>('/ai/chat', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      mode: body.mode,
+      message: body.message,
+      history: body.history ?? [],
+      ...(body.session_id != null && body.session_id !== ''
+        ? { session_id: body.session_id }
+        : {}),
+    }),
+  })
+}
+
+export type AiSessionSummary = {
+  session_id: string
+  mode: string
+  preview: string
+  last_at: string
+  turn_count: number
+}
+
+export async function listAiSessions(
+  token: string,
+  options?: { mode?: string; limit?: number }
+): Promise<AiSessionSummary[]> {
+  const params = new URLSearchParams()
+  if (options?.mode) params.set('mode', options.mode)
+  if (options?.limit != null) params.set('limit', String(options.limit))
+  const q = params.toString() ? `?${params}` : ''
+  return request<AiSessionSummary[]>(`/ai/sessions${q}`, { token })
+}
+
+export type AiSessionMessagesResponse = {
+  session_id: string
+  mode: string
+  messages: AiChatHistoryMessage[]
+}
+
+export async function getAiSessionMessages(
+  token: string,
+  sessionId: string
+): Promise<AiSessionMessagesResponse> {
+  const enc = encodeURIComponent(sessionId)
+  return request<AiSessionMessagesResponse>(`/ai/sessions/${enc}/messages`, { token })
+}

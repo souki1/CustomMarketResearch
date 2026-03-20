@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
 
 
@@ -136,3 +136,46 @@ class PortfolioItemResponse(BaseModel):
     price: str | None = None
     quantity: int | None = None
     url: str | None = None
+
+
+class AiChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AiChatRequest(BaseModel):
+    """Groq-backed assistant; `mode` selects system prompt / behavior."""
+
+    mode: Literal["chat", "summarize", "rewrite", "brainstorm"] = "chat"
+    message: str = Field(..., min_length=1, max_length=48_000)
+    history: list[AiChatHistoryMessage] = Field(default_factory=list, max_length=32)
+    session_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Continue a chat thread; omit to start a new conversation (server assigns session_id).",
+    )
+
+
+class AiChatResponse(BaseModel):
+    content: str
+    model: str
+    session_id: str = Field(
+        ...,
+        description="MongoDB session key for this thread (new UUID if you did not pass session_id).",
+    )
+
+
+class AiSessionSummary(BaseModel):
+    """Grouped AI interactions in MongoDB collection `ai_interactions`."""
+
+    session_id: str
+    mode: str
+    preview: str
+    last_at: datetime
+    turn_count: int
+
+
+class AiSessionMessagesResponse(BaseModel):
+    session_id: str
+    mode: str
+    messages: list[AiChatHistoryMessage]

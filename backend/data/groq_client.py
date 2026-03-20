@@ -1,14 +1,37 @@
-"""Groq client for cleaning structured data using Llama 3.3 70B (1,000 req/day, 12k TPM free tier)."""
+"""Groq client for cleaning structured data using Llama models via the official Groq SDK."""
 
 import json
 import logging
 
-from openai import AsyncOpenAI
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+_AI_MODE_SYSTEM: dict[str, tuple[str, float]] = {
+    "chat": (
+        "You are a helpful AI assistant inside InteligentResearch. You help with research, "
+        "procurement context, summarizing findings, and clear explanations. Be concise unless "
+        "the user asks for detail. Do not invent facts; say when you are uncertain.",
+        0.7,
+    ),
+    "summarize": (
+        "Summarize the user's text clearly and concisely. Use short paragraphs or bullet "
+        "points when helpful. Capture the main ideas without adding new claims.",
+        0.3,
+    ),
+    "rewrite": (
+        "Rewrite the user's text to be clearer and more professional while preserving meaning. "
+        "Fix grammar and flow. Return only the rewritten text unless they ask for alternatives.",
+        0.4,
+    ),
+    "brainstorm": (
+        "Generate practical, creative ideas based on the user's topic. Use bullet points. "
+        "Be specific and actionable; avoid generic filler.",
+        0.9,
+    ),
+}
 
 
 def _fix_protocol_relative_urls(obj: dict) -> dict:
@@ -49,19 +72,24 @@ async def clean_structured_data(
     if not api_key or not raw_data:
         return None
     try:
-        client = AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+        client = AsyncGroq(api_key=api_key)
         data_str = json.dumps(raw_data, default=str) if isinstance(raw_data, dict) else str(raw_data)
-        resp = await client.chat.completions.create(
+        collected: list[str] = []
+        stream = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": CLEAN_SYSTEM},
                 {"role": "user", "content": f"Clean this data:\n{data_str}"},
             ],
+            temperature=1,
+            max_completion_tokens=1024,
+            top_p=1,
+            stream=True,
+            stop=None,
         )
-        choice = resp.choices[0] if resp.choices else None
-        if not choice or not choice.message or not choice.message.content:
-            return None
-        text = choice.message.content.strip()
+        async for chunk in stream:
+            collected.append(chunk.choices[0].delta.content or "")
+        text = "".join(collected).strip()
         # Remove markdown code blocks if present
         if "```" in text:
             start = text.find("```")
@@ -96,4 +124,51 @@ async def clean_structured_data(
         return None
     except Exception as e:
         logger.warning("Groq/Llama clean failed: %s", e)
+        return None
+
+
+async def groq_assistant_chat(
+    api_key: str,
+    *,
+    mode: str,
+    user_message: str,
+    history: list[tuple[str, str]],
+    model: str = DEFAULT_MODEL,
+    max_completion_tokens: int = 2048,
+) -> str | None:
+    """
+    General-purpose chat / tools via Groq (streaming aggregated to a single string).
+    `history` is (role, content) pairs with role in user|assistant.
+    """
+    if not api_key or not user_message.strip():
+        return None
+    spec = _AI_MODE_SYSTEM.get(mode)
+    if not spec:
+        return None
+    system_prompt, temperature = spec
+    try:
+        client = AsyncGroq(api_key=api_key)
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        for role, content in history[-24:]:
+            if role not in ("user", "assistant") or not content.strip():
+                continue
+            messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_message.strip()})
+        collected: list[str] = []
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_completion_tokens=max_completion_tokens,
+            top_p=1,
+            stream=True,
+            stop=None,
+        )
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            collected.append(chunk.choices[0].delta.content or "")
+        return "".join(collected).strip() or None
+    except Exception as e:
+        logger.warning("Groq assistant chat failed: %s", e)
         return None
