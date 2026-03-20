@@ -5,6 +5,7 @@ import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { ComparePage } from '@/pages/ComparePage'
 import { AiPlaceholderPage } from '@/pages/AiPlaceholderPage'
 import { HomePage } from '@/pages/HomePage'
+import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 import { PurchaseOrderPage } from '@/pages/PurchaseOrderPage'
 import { ResearchPage } from '@/pages/ResearchPage'
 
@@ -26,7 +27,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'research', element: <ResearchPage /> },
-      { path: 'compare', element: <ComparePage /> },
+      { path: 'research/compare', element: <ComparePage /> },
+      { path: 'compare', element: <Navigate to={RESEARCH_COMPARE_PATH} replace /> },
       { path: 'reports', element: <ReportsPage /> },
       { path: 'purchase-order', element: <PurchaseOrderPage /> },
       { path: 'ai', element: <AiPlaceholderPage /> },

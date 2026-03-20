@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -113,6 +114,13 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         icon: <ResearchIcon className="h-4 w-4 shrink-0 text-gray-500" />,
         shortcut: 'N',
         action: () => navigate('/research'),
+      },
+      {
+        id: 'compare',
+        label: 'Go to Compare',
+        keywords: ['compare', 'comparison', 'parts', 'vendors'],
+        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        action: () => navigate(RESEARCH_COMPARE_PATH),
       },
       {
         id: 'settings',

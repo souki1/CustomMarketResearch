@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -77,7 +78,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
-  const isCompare = location.pathname === '/compare'
+  const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
@@ -98,7 +99,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <Link to="/research" className={collapsedLinkClass(isResearch)} title="Research">
               <ResearchIcon className={iconClass} />
             </Link>
-            <Link to="/compare" className={collapsedLinkClass(isCompare)} title="Compare">
+            <Link to={RESEARCH_COMPARE_PATH} className={collapsedLinkClass(isCompare)} title="Compare">
               <CompareIcon className={iconClass} />
             </Link>
             <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
@@ -138,7 +139,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <ResearchIcon className={iconClass} />
             <span>Research</span>
           </Link>
-          <Link to="/compare" className={linkClass(isCompare)} title="Compare">
+          <Link to={RESEARCH_COMPARE_PATH} className={linkClass(isCompare)} title="Compare">
             <CompareIcon className={iconClass} />
             <span>Compare</span>
           </Link>

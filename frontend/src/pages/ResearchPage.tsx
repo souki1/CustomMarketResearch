@@ -10,9 +10,10 @@ import {
   updateWorkspaceFileContent,
 } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
-import { useComparison } from '@/contexts/ComparisonContext'
+import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
+import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 type TabState = {
   id: string
@@ -84,6 +85,49 @@ function formatValue(val: unknown): string {
   if (val == null) return '—'
   if (typeof val === 'object') return JSON.stringify(val)
   return String(val)
+}
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url.slice(0, 48)
+  }
+}
+
+/** Flatten nested scraped objects into spec rows (dot-path labels). */
+function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = []
+  for (const [k, v] of Object.entries(obj)) {
+    const label = prefix ? `${prefix}.${k}` : k
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      out.push(...collectScalarSpecs(v as Record<string, unknown>, label))
+    } else {
+      out.push({ label, value: formatValue(v) })
+    }
+  }
+  return out
+}
+
+function comparisonItemsFromScrapedSources(
+  previewScrapedData: Array<{ url: string; data: Record<string, unknown> }>,
+  selectedIndices: Set<number>,
+  effectiveTabId: string,
+  selectedRowIndex: number
+): ComparisonItem[] {
+  const sorted = [...selectedIndices].filter((i) => i >= 0 && i < previewScrapedData.length).sort((a, b) => a - b)
+  return sorted.map((idx) => {
+    const row = previewScrapedData[idx]!
+    const domain = row.url ? extractDomain(row.url) : '—'
+    const title = getFirstPartNumber(row.data) ?? `Source ${idx + 1}`
+    return {
+      id: `research-${effectiveTabId}-r${selectedRowIndex}-s${idx}`,
+      title,
+      imageUrl: null,
+      specs: collectScalarSpecs(row.data),
+      sourceName: domain,
+    }
+  })
 }
 
 function isPartNumberKey(key: string): boolean {
@@ -294,6 +338,8 @@ export function ResearchPage() {
   const [previewScrapedData, setPreviewScrapedData] = useState<
     Array<{ url: string; data: Record<string, unknown> }> | null
   >(null)
+  /** Checked scraped source indices for inspector → Compare (synced when preview data loads). */
+  const [inspectorScrapedSourceSelection, setInspectorScrapedSourceSelection] = useState<Set<number>>(new Set())
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
   const navigate = useNavigate()
@@ -521,6 +567,14 @@ export function ResearchPage() {
       .catch(() => setPreviewScrapedData(null))
       .finally(() => setPreviewResultsLoading(false))
   }, [selectedRowIndex, effectiveTabId, activeTab?.fileId, researchVersion, isInspectorOpen])
+
+  useEffect(() => {
+    if (!previewScrapedData?.length) {
+      setInspectorScrapedSourceSelection(new Set())
+      return
+    }
+    setInspectorScrapedSourceSelection(new Set(previewScrapedData.map((_, i) => i)))
+  }, [previewScrapedData])
 
   // Show loading in preview while research is running (until all rows scraped)
   useEffect(() => {
@@ -826,29 +880,6 @@ export function ResearchPage() {
     [setCollapseSidebarForInspector]
   )
 
-  // Keep comparison context in sync with currently selected rows
-  useEffect(() => {
-    if (!content || !effectiveTabId || selectedRows.size === 0) return
-    const items = Array.from(selectedRows)
-      .map((rowIndex) => {
-        const row = content[rowIndex + 1]
-        if (!row) return null
-        const title = String(row[0] ?? '')
-        const specs = headers.map((label, i) => ({
-          label: (label || `Column ${i + 1}`).trim(),
-          value: String(row[i] ?? '—'),
-        }))
-        return {
-          id: `${effectiveTabId}-${rowIndex}`,
-          title,
-          imageUrl: null,
-          specs,
-        }
-      })
-      .filter((x): x is NonNullable<typeof x> => x != null)
-    if (items.length) openComparison(items)
-  }, [content, effectiveTabId, headers, selectedRows, openComparison])
-
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isInspectorOpen) closeInspector()
@@ -925,7 +956,7 @@ export function ResearchPage() {
     }
   }, [location.pathname, location.search, location.state, addNewTab, navigate])
 
-  // Restore inspector state when returning from /compare
+  // Restore inspector state when returning from research/compare
   useEffect(() => {
     const st = location.state as
       | {
@@ -1336,7 +1367,7 @@ export function ResearchPage() {
               .filter((x): x is NonNullable<typeof x> => x != null)
             openComparison(comparisonItems)
             showToast('Opened comparison')
-            navigate('/compare', {
+            navigate(RESEARCH_COMPARE_PATH, {
               state: {
                 returnTo: '/research',
                 restoreResearchSelection: {
@@ -1683,7 +1714,7 @@ export function ResearchPage() {
                             })
                             .filter((x): x is NonNullable<typeof x> => x != null)
                           openComparison(comparisonItems)
-                          navigate('/compare', {
+                          navigate(RESEARCH_COMPARE_PATH, {
                             state: {
                               returnTo: '/research',
                               restoreInspector: {
@@ -1810,7 +1841,20 @@ export function ResearchPage() {
                             <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
                               {item.url && (
                                 <div className="mb-2 flex items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
-                                  <input type="checkbox" value={item.url} className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                  <input
+                                    type="checkbox"
+                                    checked={inspectorScrapedSourceSelection.has(idx)}
+                                    onChange={() => {
+                                      setInspectorScrapedSourceSelection((prev) => {
+                                        const next = new Set(prev)
+                                        if (next.has(idx)) next.delete(idx)
+                                        else next.add(idx)
+                                        return next
+                                      })
+                                    }}
+                                    className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    aria-label={`Include source ${idx + 1} in comparison`}
+                                  />
                                   <a
                                     href={item.url}
                                     target="_blank"
@@ -1959,22 +2003,41 @@ export function ResearchPage() {
                       type="button"
                       onClick={() => {
                         if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                        const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
+                        if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
+                          showToast('Select at least one scraped source')
+                          return
+                        }
                         clearComparison()
-                        const title = String(selectedRowData[0] ?? '')
-                        const specs = headers.map((label, i) => ({
-                          label: (label || `Column ${i + 1}`).trim(),
-                          value: String(selectedRowData[i] ?? '—'),
-                        }))
-                        openComparison([
-                          {
-                            id: `${effectiveTabId}-${selectedRowIndex}`,
-                            title,
-                            imageUrl: null,
-                            specs,
-                          },
-                        ])
+                        if (hasScraped) {
+                          const scrapedItems = comparisonItemsFromScrapedSources(
+                            previewScrapedData,
+                            inspectorScrapedSourceSelection,
+                            effectiveTabId,
+                            selectedRowIndex
+                          )
+                          if (scrapedItems.length === 0) {
+                            showToast('Select at least one scraped source')
+                            return
+                          }
+                          openComparison(scrapedItems)
+                        } else {
+                          const title = String(selectedRowData[0] ?? '')
+                          const specs = headers.map((label, i) => ({
+                            label: (label || `Column ${i + 1}`).trim(),
+                            value: String(selectedRowData[i] ?? '—'),
+                          }))
+                          openComparison([
+                            {
+                              id: `${effectiveTabId}-${selectedRowIndex}`,
+                              title,
+                              imageUrl: null,
+                              specs,
+                            },
+                          ])
+                        }
                         showToast('Opened comparison')
-                        navigate('/compare', {
+                        navigate(RESEARCH_COMPARE_PATH, {
                           state: {
                             returnTo: '/research',
                             restoreInspector: {
