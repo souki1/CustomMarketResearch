@@ -14,6 +14,8 @@ import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext
 import { useLayout } from '@/contexts/LayoutContext'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { useTheme } from '@/contexts/ThemeContext'
+import { THEME_MODAL, THEME_RESEARCH, themePagePanelClasses } from '@/lib/uiTheme'
 
 type TabState = {
   id: string
@@ -348,6 +350,10 @@ export function ResearchPage() {
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
+  const { theme } = useTheme()
+  const tr = THEME_RESEARCH[theme]
+  const modalPanel = THEME_MODAL[theme].panel
+  const panelSurface = themePagePanelClasses(theme)
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
   const userHasEditedRef = useRef(false)
@@ -1009,11 +1015,7 @@ export function ResearchPage() {
           >
             Go to Home
           </Link>
-          <button
-            type="button"
-            onClick={addNewTab}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
+          <button type="button" onClick={addNewTab} className={tr.primaryBtn}>
             + New tab
           </button>
         </div>
@@ -1036,7 +1038,7 @@ export function ResearchPage() {
 
   return (
     <div
-      className={`bg-white ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`${tr.pageRoot} ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
       {deleteConfirmOpen && (
         <div
@@ -1047,7 +1049,7 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setDeleteConfirmOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className={`w-full max-w-md rounded-xl p-4 shadow-lg ${modalPanel}`}
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="delete-rows-title" className="text-sm font-semibold text-gray-900">
@@ -1060,7 +1062,7 @@ export function ResearchPage() {
               <button
                 type="button"
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65"
               >
                 Cancel
               </button>
@@ -1084,7 +1086,7 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setResearchFieldsPopupOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className={`w-full max-w-md rounded-xl p-4 shadow-lg ${modalPanel}`}
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="research-fields-title" className="text-sm font-semibold text-gray-900">
@@ -1104,7 +1106,7 @@ export function ResearchPage() {
               <button
                 type="button"
                 onClick={() => setResearchFieldsPopupOpen(false)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65"
               >
                 Cancel
               </button>
@@ -1154,9 +1156,9 @@ export function ResearchPage() {
                     setStoreSelectionLoading(false)
                   }
                 }}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className={`inline-flex items-center gap-2 ${tr.primaryBtn}`}
               >
-                {storeSelectionLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
+                {storeSelectionLoading && <LoaderIcon className={`h-4 w-4 shrink-0 ${tr.loaderIcon}`} />}
                 {storeSelectionLoading ? 'Researching…' : 'Start Research'}
               </button>
             </div>
@@ -1166,7 +1168,7 @@ export function ResearchPage() {
       {addRowPopover.open && (
         <div
           data-add-row-popover
-          className="fixed z-50 w-[220px] rounded-xl border border-gray-200 bg-white p-2 shadow-sm"
+          className={`fixed z-50 w-[220px] rounded-xl p-2 shadow-lg ${modalPanel}`}
           style={{ left: addRowPopover.x, top: addRowPopover.y }}
         >
           <p className="px-2 pb-1 text-xs font-semibold text-gray-700">Add rows</p>
@@ -1176,7 +1178,7 @@ export function ResearchPage() {
                 key={n}
                 type="button"
                 onClick={() => commitAddRows(n)}
-                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-sky-50/65"
               >
                 {n}
               </button>
@@ -1193,7 +1195,7 @@ export function ResearchPage() {
             <button
               type="button"
               onClick={() => commitAddRows(Number(addRowCountDraft))}
-              className="h-8 shrink-0 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"
+              className={`h-8 shrink-0 ${tr.primaryBtnCompact}`}
             >
               Add
             </button>
@@ -1268,7 +1270,7 @@ export function ResearchPage() {
           type="button"
           onClick={() => setToolbarActive('all')}
           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            toolbarActive === 'all' ? tr.segmentActive : tr.segmentInactive
           }`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1296,7 +1298,7 @@ export function ResearchPage() {
               : 'Research selected headers and rows'
           }
           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'selected' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            toolbarActive === 'selected' ? tr.segmentActive : tr.segmentInactive
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {storeSelectionLoading ? (
@@ -1334,7 +1336,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className={`${tr.toolGhost} disabled:cursor-not-allowed disabled:opacity-50`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1381,7 +1383,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className={`${tr.toolGhost} disabled:cursor-not-allowed disabled:opacity-50`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -1393,7 +1395,7 @@ export function ResearchPage() {
           <button
             type="button"
             onClick={() => setFilterOpen((f) => !f)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className={tr.outlineTool}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17m0 0h2m-2 0h-5m-9 0H3" />
@@ -1402,7 +1404,7 @@ export function ResearchPage() {
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className={tr.outlineTool}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -1413,7 +1415,7 @@ export function ResearchPage() {
       </div>
 
       {filterOpen && (
-        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+        <div className={`mb-3 ${tr.filterBanner}`}>
           Filter options (placeholder). Configure filters per column.
         </div>
       )}
@@ -1422,9 +1424,9 @@ export function ResearchPage() {
       {content && content.length > 0 && (
         <>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="h-full overflow-auto rounded-lg border border-gray-200 shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50">
+            <div className={`h-full overflow-auto rounded-lg ${panelSurface}`}>
+            <table className="min-w-full text-left text-sm">
+              <thead className={tr.tableHeadSticky}>
                 <tr>
                   <th className="w-10 px-2 py-3 border-r border-gray-200">
                     <input
@@ -1467,7 +1469,7 @@ export function ResearchPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
+              <tbody className={tr.tableBody}>
                 {pageRows.map((row, idx) => {
                   const dataRowIndex = rowIndices[idx]
                   const isSelectedRow = selectedRowIndex === dataRowIndex
@@ -1476,11 +1478,11 @@ export function ResearchPage() {
                     <tr
                       key={dataRowIndex}
                       data-row-index={dataRowIndex}
-                      className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
+                      className={`transition-colors ${isSelectedRow ? tr.tableRowSelected : tr.tableRowHover}`}
                     >
                       <td className="w-10 px-2 py-2 border-r border-gray-200">
                         {isRowBeingResearched ? (
-                          <LoaderIcon className="h-5 w-5 text-emerald-600" />
+                          <LoaderIcon className={`h-5 w-5 ${tr.loaderIcon}`} />
                         ) : (
                           <input
                             type="checkbox"
@@ -1519,7 +1521,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={(e) => openAddRowPopover(e.currentTarget)}
                 data-add-row-footer-btn
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                className={tr.primaryBtn}
               >
                 + Add row
               </button>
@@ -1528,7 +1530,7 @@ export function ResearchPage() {
                 onClick={removeSelectedRows}
                 disabled={selectedRows.size === 0}
                 title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete row
               </button>
@@ -1590,13 +1592,13 @@ export function ResearchPage() {
       )}
 
       {content && content.length === 0 && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+        <div className={tr.subtleWell}>
           No data. Use &quot;+ Add row&quot; to add rows.
         </div>
       )}
 
       {!content && !loading && tabs.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+        <div className={tr.subtleWell}>
           Select a tab or open a file from Home.
         </div>
       )}
@@ -1610,7 +1612,7 @@ export function ResearchPage() {
               aria-orientation="vertical"
               aria-label="Resize preview panel"
               title="Drag to resize"
-              className="shrink-0 w-1.5 cursor-col-resize border-l border-gray-200 bg-gray-100 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+              className={tr.resizeHandle}
               onMouseDown={(e) => {
                 e.preventDefault()
                 document.body.style.cursor = 'col-resize'
@@ -1621,9 +1623,7 @@ export function ResearchPage() {
           )}
           <aside
             className={
-              inspectorMaximized
-                ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-white shadow-xl'
-                : 'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+              inspectorMaximized ? tr.inspectorMaximized : tr.inspectorDocked
             }
             style={
               inspectorMaximized
@@ -1631,7 +1631,6 @@ export function ResearchPage() {
                 : {
                     width: inspectorWidth,
                     minWidth: inspectorWidth,
-                    boxShadow: '-2px 0 10px rgba(0,0,0,0.08)',
                   }
             }
             role="complementary"
@@ -1643,7 +1642,7 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 items-center justify-end gap-1 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
+          <header className={tr.inspectorHeaderBar}>
             <button
               type="button"
               onClick={(e) => {
@@ -1680,7 +1679,7 @@ export function ResearchPage() {
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className={`rounded-xl p-4 shadow-sm ${panelSurface}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-gray-900">Selected rows</h3>
@@ -1732,7 +1731,7 @@ export function ResearchPage() {
                             },
                           })
                         }}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                        className={tr.primaryBtn}
                       >
                         Compare ({inspectorCompareSelection.size})
                       </button>
@@ -1747,8 +1746,8 @@ export function ResearchPage() {
                         return (
                           <label
                             key={rowIndex}
-                            className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer ${
-                              checked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 ${
+                              checked ? tr.compareCardOn : tr.compareCardOff
                             }`}
                           >
                             <input
@@ -1787,7 +1786,7 @@ export function ResearchPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className={`rounded-xl p-4 shadow-sm ${panelSurface}`}>
                       <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
                         Item
                       </h3>
@@ -1798,13 +1797,13 @@ export function ResearchPage() {
 
 
 
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className={`rounded-xl p-4 shadow-sm ${panelSurface}`}>
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
                           Structured data
                         </h3>
                         {previewScrapedData && previewScrapedData.length > 0 && (
-                          <div className="flex rounded-lg border border-gray-200 p-0.5">
+                          <div className={tr.pillGroup}>
                             <button
                               type="button"
                               onClick={() => setStructuredDataViewType('row')}
@@ -1838,9 +1837,9 @@ export function ResearchPage() {
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
                         <div className="space-y-4">
                           {previewScrapedData.map((item, idx) => (
-                            <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                            <div key={idx} className={tr.scrapedSourcePanel}>
                               {item.url && (
-                                <div className="mb-2 flex items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
+                                <div className={`mb-2 flex items-center gap-2 rounded px-2 py-1.5 ${panelSurface}`}>
                                   <input
                                     type="checkbox"
                                     checked={inspectorScrapedSourceSelection.has(idx)}
@@ -2049,7 +2048,7 @@ export function ResearchPage() {
                           },
                         })
                       }}
-                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                      className={tr.primaryBtn}
                     >
                       Compare
                     </button>
@@ -2086,7 +2085,7 @@ export function ResearchPage() {
                 )}
               </div>
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+              <div className={`${tr.subtleWell} p-6`}>
                 Select a row in the table to preview its details here.
               </div>
             )}

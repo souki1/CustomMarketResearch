@@ -1,4 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useTheme } from '@/contexts/ThemeContext'
+import { THEME_CARD, THEME_SETTINGS_RAIL } from '@/lib/uiTheme'
 
 const SECTIONS = [
   { path: 'profile', label: 'Profile' },
@@ -9,11 +11,15 @@ const SECTIONS = [
 ] as const
 
 export function SettingsLayout() {
+  const { theme } = useTheme()
+  const st = THEME_SETTINGS_RAIL[theme]
+  const focusRing = THEME_CARD[theme].focusRing
+
   return (
-    <div className="flex min-h-full bg-white">
-      <div className="w-64 shrink-0 border-r border-gray-200 bg-white px-4 py-6">
-        <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
-        <p className="mt-1 text-xs text-gray-500">
+    <div className="flex min-h-full bg-transparent">
+      <div className={`w-64 shrink-0 px-4 py-6 ${st.rail}`}>
+        <h1 className="text-lg font-semibold text-slate-900">Settings</h1>
+        <p className="mt-1 text-xs text-slate-500">
           Configure your profile, company, billing, and security.
         </p>
         <nav className="mt-5 space-y-0.5" aria-label="Settings sections">
@@ -23,10 +29,8 @@ export function SettingsLayout() {
               to={`/settings/${path}`}
               end={path === 'profile'}
               className={({ isActive }) =>
-                `block rounded-r-lg border-l-2 py-2.5 pl-3 pr-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                  isActive
-                    ? 'border-blue-600 bg-blue-50/80 font-semibold text-gray-900'
-                    : 'border-transparent font-medium text-gray-700 hover:bg-gray-100'
+                `block rounded-r-xl py-2.5 pl-3 pr-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 ${focusRing} ${
+                  isActive ? st.navActive : st.navInactive
                 }`
               }
             >
@@ -35,7 +39,7 @@ export function SettingsLayout() {
           ))}
         </nav>
       </div>
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto bg-transparent px-6 py-6">
         <div className="mx-auto w-full max-w-[720px]">
           <Outlet />
         </div>

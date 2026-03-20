@@ -4,10 +4,12 @@ import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrent
 import { profilePhotoUrl } from '@/lib/api'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 import { useBucket, type BucketItem } from '@/contexts/BucketContext'
+import { useTheme } from '@/contexts/ThemeContext'
+import { THEME_ACCOUNT_MENU, THEME_MODAL, THEME_NAVBAR } from '@/lib/uiTheme'
 
-function NavbarIcon() {
+function NavbarIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+    <svg className={className ?? 'w-6 h-6 text-sky-900'} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
   )
@@ -179,6 +181,10 @@ const SAMPLE_NOTIFICATIONS: { id: string; text: string; time: string; unread: bo
 const TIP_SEEN_KEY = 'cmr_command_palette_tip_seen'
 
 export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalette }: NavbarProps) {
+  const { theme } = useTheme()
+  const navShell = THEME_NAVBAR[theme]
+  const accountMenu = THEME_ACCOUNT_MENU[theme]
+  const flyoutModal = THEME_MODAL[theme].panel
   const navigate = useNavigate()
   const { items: bucketItems, removeItem, drawerOpen, setDrawerOpen } = useBucket()
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -325,7 +331,10 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   }
   return (
     <>
-    <nav className="sticky top-0 z-10 border-b border-gray-200 bg-white" aria-label="Main navigation">
+    <nav
+      className={`sticky top-0 z-10 ${navShell.bar}`}
+      aria-label="Main navigation"
+    >
       <div className="w-full max-w-8xl mx-auto px-3 sm:px-4">
         <div className="flex items-center justify-between h-11 gap-2">
           <div className="flex items-center gap-1">
@@ -333,7 +342,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
               <button
                 type="button"
                 onClick={onSidebarToggle}
-                className="flex items-center justify-center p-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
+                className={`flex cursor-pointer items-center justify-center rounded-md p-1.5 transition-colors ${navShell.iconButton}`}
                 aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
                 title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
               >
@@ -342,10 +351,10 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
             )}
             <button
               type="button"
-              className="flex items-center justify-center p-1.5 -ml-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
+              className={`-ml-1 flex cursor-pointer items-center justify-center rounded-md p-1.5 transition-colors ${navShell.iconButton}`}
               aria-label="Home"
             >
-              <NavbarIcon />
+              <NavbarIcon className={`h-6 w-6 ${navShell.logoIcon}`} />
             </button>
 
             {onOpenCommandPalette && (
@@ -353,26 +362,28 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 <button
                   type="button"
                   onClick={handleOpenCommandPalette}
-                  className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-1.5 text-left text-sm text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-1"
+                  className={navShell.searchTrigger}
                   aria-label="Search (Ctrl+K)"
                 >
-                  <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg
+                    className={`h-4 w-4 shrink-0 ${
+                      theme === 'dark' ? 'text-[#c65dfb]' : theme === 'purple' ? 'text-violet-500' : 'text-slate-400'
+                    }`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <span className="min-w-0 flex-1 truncate">Search files, folders, templates...</span>
-                  <kbd className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-[#F3F4F6] border border-gray-200/80">
-                    Ctrl + K
-                  </kbd>
+                  <kbd className={navShell.searchKbd}>Ctrl + K</kbd>
                 </button>
                 {showCommandTip && (
-                  <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
+                  <div className={`absolute left-0 top-full z-50 mt-1.5 w-64 px-3 py-2.5 ${flyoutModal}`}>
                     <p className="text-xs font-medium text-gray-900">Tip 💡</p>
                     <p className="mt-0.5 text-xs text-gray-600">Press Ctrl + K to quickly search anything.</p>
-                    <button
-                      type="button"
-                      onClick={dismissCommandTip}
-                      className="mt-2 text-[11px] font-medium text-blue-600 hover:text-blue-700"
-                    >
+                    <button type="button" onClick={dismissCommandTip} className={navShell.tipLink}>
                       Got it
                     </button>
                   </div>
@@ -382,20 +393,17 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
           </div>
 
           <div className="flex items-center gap-0 ml-auto">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-500 text-white text-xs font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors cursor-pointer"
-            >
+            <button type="button" className={navShell.upgradeCta}>
               <StarIcon className="w-3.5 h-3.5 text-white" />
               Upgrade your plan
             </button>
 
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
+            <span className={`mx-2 h-4 w-px shrink-0 ${navShell.verticalRule}`} aria-hidden />
 
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md p-1 transition-colors ${navShell.iconButton}`}
               aria-label="Bucket"
               title="Bucket"
             >
@@ -404,30 +412,32 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 Bucket{bucketItems.length > 0 ? ` (${bucketItems.length})` : ''}
               </span>
               {bucketItems.length > 0 && (
-                <span className="sm:hidden flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-100 text-blue-700 px-1 text-[10px] font-semibold">
+                <span
+                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold sm:hidden ${navShell.mobileBucketBadge}`}
+                >
                   {bucketItems.length > 9 ? '9+' : bucketItems.length}
                 </span>
               )}
             </button>
 
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
+            <span className={`mx-2 h-4 w-px shrink-0 ${navShell.verticalRule}`} aria-hidden />
 
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md p-1 transition-colors ${navShell.iconButton}`}
               aria-label="Credits"
             >
               <CreditsIcon className="w-3.5 h-3.5" />
               <span className="text-xs font-medium hidden sm:inline">Credits</span>
             </button>
 
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
+            <span className={`mx-2 h-4 w-px shrink-0 ${navShell.verticalRule}`} aria-hidden />
 
             <div className="relative" ref={helpRef}>
               <button
                 type="button"
                 onClick={() => setHelpOpen((o) => !o)}
-                className="flex items-center justify-center w-8 h-8 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
+                className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-md p-1 transition-colors ${navShell.iconButton}`}
                 aria-label="Help"
                 aria-expanded={helpOpen}
                 aria-haspopup="true"
@@ -435,8 +445,8 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 <HelpIcon className="w-4 h-4" />
               </button>
               {helpOpen && (
-                <div className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-gray-200 bg-white py-2 shadow-sm z-50">
-                  <div className="px-4 py-2 border-b border-gray-100">
+                <div className={`absolute right-0 top-full z-50 mt-1 w-64 py-2 ${flyoutModal}`}>
+                  <div className={`px-4 py-2 ${accountMenu.panelHeaderBorder}`}>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Keyboard shortcuts</h3>
                   </div>
                   <div className="px-4 py-2 space-y-2 text-sm">
@@ -457,13 +467,13 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
               )}
             </div>
 
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
+            <span className={`mx-2 h-4 w-px shrink-0 ${navShell.verticalRule}`} aria-hidden />
 
             <div className="relative" ref={notificationsRef}>
               <button
                 type="button"
                 onClick={() => setNotificationsOpen((o) => !o)}
-                className="relative flex items-center justify-center w-8 h-8 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
+                className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md p-1 transition-colors ${navShell.iconButton}`}
                 aria-label="Notifications"
                 aria-expanded={notificationsOpen}
                 aria-haspopup="true"
@@ -471,7 +481,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 <BellIcon className="w-4 h-4" />
                 {unreadCount > 0 && (
                   <span
-                    className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white"
+                    className={`absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ${navShell.notifBadge}`}
                     aria-hidden
                   >
                     {unreadCount > 9 ? '9+' : unreadCount}
@@ -481,11 +491,11 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
 
               {notificationsOpen && (
                 <div
-                  className={`absolute right-0 top-full mt-1 w-80 rounded-xl border border-gray-200 bg-white shadow-sm z-50 origin-top-right transition-[opacity,transform] duration-200 ease-out ${notificationsAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                  className={`absolute right-0 top-full z-50 mt-1 w-80 origin-top-right shadow-lg transition-[opacity,transform] duration-200 ease-out ${flyoutModal} ${notificationsAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
                   role="dialog"
                   aria-label="Notifications"
                 >
-                  <div className="px-4 py-3 border-b border-gray-100">
+                  <div className={`px-4 py-3 ${accountMenu.panelHeaderBorder}`}>
                     <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   </div>
                   <div className="max-h-72 overflow-y-auto py-1">
@@ -498,12 +508,25 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                         <button
                           key={n.id}
                           type="button"
-                          className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer hover:bg-gray-50 focus:outline-none focus:bg-gray-50 ${n.unread ? 'bg-gray-50' : ''}`}
+                          className={`flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors focus:outline-none ${accountMenu.item} ${
+                            n.unread
+                              ? theme === 'dark'
+                                ? 'bg-[#c65dfb]/10'
+                                : theme === 'purple'
+                                  ? 'bg-violet-50/50'
+                                  : 'bg-sky-50/40'
+                              : ''
+                          }`}
                         >
                           <NotificationTypeIcon type={n.icon} className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                           <div className="min-w-0 flex-1">
                             <p className={`text-sm ${n.unread ? 'font-semibold text-gray-900' : 'text-gray-900'}`}>
-                              {n.unread && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500 align-middle" aria-hidden />}
+                              {n.unread && (
+                                <span
+                                  className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${navShell.unreadPip}`}
+                                  aria-hidden
+                                />
+                              )}
                               {n.text}
                             </p>
                             <p className="mt-0.5 text-xs text-gray-500">{n.time}</p>
@@ -512,11 +535,15 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                       ))
                     )}
                   </div>
-                  <div className="border-t border-gray-100 px-3 py-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <div
+                    className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t px-3 py-2 ${
+                      theme === 'dark' ? 'border-slate-700' : theme === 'purple' ? 'border-violet-200/50' : 'border-white/40'
+                    }`}
+                  >
                     <button
                       type="button"
                       onClick={markAllNotificationsRead}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:underline disabled:opacity-50"
+                      className={`${navShell.accentLink} disabled:opacity-50`}
                       disabled={notifications.length === 0 || !notifications.some((n) => n.unread)}
                     >
                       Mark all as read
@@ -541,18 +568,18 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
               )}
             </div>
 
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
+            <span className={`mx-2 h-4 w-px shrink-0 ${navShell.verticalRule}`} aria-hidden />
 
             <div className="relative pl-1 ml-3" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-2 p-1 pr-2 text-gray-700 hover:bg-gray-100 focus:outline-none cursor-pointer"
+                className={navShell.accountTrigger}
                 aria-expanded={dropdownOpen}
                 aria-haspopup="true"
                 aria-label="Workspace and account menu"
               >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-700 text-white text-xs font-semibold">
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full text-white text-xs font-semibold ${accountMenu.avatarBg}`}>
                   {profilePhotoFullUrl ? (
                     <img
                       src={profilePhotoFullUrl}
@@ -573,13 +600,13 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
 
               {dropdownOpen && (
                 <div
-                  className={`absolute right-0 top-full mt-1 w-[260px] rounded-xl border border-gray-200 bg-white py-1.5 shadow-sm z-50 origin-top-right transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                  className={`absolute right-0 top-full z-50 mt-1 w-[260px] origin-top-right transition-[opacity,transform] duration-200 ease-out ${accountMenu.panel} ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
                   role="menu"
                 >
                   <Link
                     to="/settings/profile"
                     onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                    className={accountMenu.item}
                     role="menuitem"
                   >
                     <UserIcon className="w-4 h-4 text-gray-500 shrink-0" />
@@ -588,7 +615,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                   <button
                     type="button"
                     onClick={() => closeAndNavigate('/')}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                    className={accountMenu.item}
                     role="menuitem"
                   >
                     <WorkspaceIcon className="w-4 h-4 text-gray-500 shrink-0" />
@@ -597,7 +624,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                   <Link
                     to="/settings/billing"
                     onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                    className={accountMenu.item}
                     role="menuitem"
                   >
                     <BillingIcon className="w-4 h-4 text-gray-500 shrink-0" />
@@ -606,17 +633,17 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                   <Link
                     to="/settings/profile"
                     onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                    className={accountMenu.item}
                     role="menuitem"
                   >
                     <SettingsIcon className="w-4 h-4 text-gray-500 shrink-0" />
                     Settings
                   </Link>
-                  <div className="my-2 border-t border-gray-200" aria-hidden />
+                  <div className={accountMenu.divider} aria-hidden />
                   <button
                     type="button"
                     onClick={handleSignOut}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
+                    className={accountMenu.item}
                     role="menuitem"
                   >
                     <SignOutIcon className="w-4 h-4 text-gray-500 shrink-0" />

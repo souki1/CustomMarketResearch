@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '@/contexts/ThemeContext'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { THEME_MODAL } from '@/lib/uiTheme'
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -66,6 +68,10 @@ type CommandPaletteProps = {
 }
 
 export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPaletteProps = {}) {
+  const { theme } = useTheme()
+  const modalPanel = THEME_MODAL[theme].panel
+  const modalHeaderBorder =
+    theme === 'dark' ? 'border-slate-700' : theme === 'purple' ? 'border-violet-100' : 'border-white/30'
   const navigate = useNavigate()
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = controlledOpen !== undefined
@@ -224,15 +230,15 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
       aria-label="Command palette"
     >
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-slate-900/35 backdrop-blur-[2px]"
         aria-hidden
         onClick={closePalette}
       />
       <div
-        className="relative w-full max-w-xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-[opacity,transform] duration-200 ease-out"
+        className={`relative w-full max-w-xl overflow-hidden rounded-2xl transition-[opacity,transform] duration-200 ease-out ${modalPanel}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+        <div className={`flex items-center gap-3 border-b px-4 py-3 ${modalHeaderBorder}`}>
           <SearchIcon className="h-5 w-5 shrink-0 text-gray-400" />
           <input
             ref={inputRef}
@@ -249,7 +255,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
             aria-controls="command-list"
             aria-activedescendant={filtered[selectedIndex] ? `command-${filtered[selectedIndex].id}` : undefined}
           />
-          <kbd className="hidden rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 sm:inline-block">
+          <kbd className="hidden rounded border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-slate-500 sm:inline-block">
             ESC
           </kbd>
         </div>
@@ -272,13 +278,13 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
                 aria-selected={i === selectedIndex}
                 onClick={() => runCommand(cmd)}
                 className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                  i === selectedIndex ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'
+                  i === selectedIndex ? 'bg-sky-50 text-slate-900' : 'text-slate-700 hover:bg-sky-50/70'
                 }`}
               >
                 {cmd.icon}
                 <span className="min-w-0 flex-1 font-medium">{cmd.label}</span>
                 {cmd.shortcut && (
-                  <kbd className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                  <kbd className="shrink-0 rounded border border-sky-200/70 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
                     {cmd.shortcut}
                   </kbd>
                 )}
@@ -286,7 +292,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
             ))
           )}
         </div>
-        <div className="border-t border-gray-100 px-4 py-2 flex items-center justify-between text-[11px] text-gray-400">
+        <div className="flex items-center justify-between border-t border-sky-100 px-4 py-2 text-[11px] text-slate-400">
           <span>Press ↑ ↓ to navigate</span>
           <span>Enter to select</span>
           <span>Esc to close</span>

@@ -8,6 +8,8 @@ import {
   CreateFileModal,
   CreateFolderModal,
 } from '@/components'
+import { useTheme } from '@/contexts/ThemeContext'
+import { THEME_HOME, UI_THEME_OPTIONS, type UiThemeId } from '@/lib/uiTheme'
 import { getCurrentUserName, getToken } from '@/lib/auth'
 import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv, uploadWorkspaceImage } from '@/lib/api'
 import type { FileTableRow } from '@/types'
@@ -76,7 +78,23 @@ const PLACEHOLDER_FILES: FileTableRow[] = [
 type FileTab = 'all' | 'recents' | 'favourites'
 type BreadcrumbSegment = { id: string; name: string }
 
+function ThemeMoonIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+    </svg>
+  )
+}
+
+function themePickerSelectedClasses(id: UiThemeId): string {
+  if (id === 'sky') return 'bg-sky-600 text-white shadow-md shadow-sky-600/25'
+  if (id === 'purple') return 'bg-violet-600 text-white shadow-md shadow-violet-600/25'
+  return 'bg-[#161b26] text-slate-100 shadow-md shadow-black/50 ring-2 ring-[#c65dfb]/55'
+}
+
 export function HomePage() {
+  const { theme, setTheme } = useTheme()
+  const hc = THEME_HOME[theme]
   const navigate = useNavigate()
   const [displayName, setDisplayName] = useState(() => getCurrentUserName() ?? 'there')
   const [searchQuery, setSearchQuery] = useState('')
@@ -484,13 +502,73 @@ export function HomePage() {
   }
 
   return (
-    <div className="min-h-full bg-white">
+    <div className="min-h-full bg-transparent">
       <div className="flex flex-col pl-6 pr-6 py-6">
-        <h1 className="text-base font-bold tracking-tight text-gray-900 sm:text-lg">
-          Hey {displayName}, ready to get started?
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1
+            className={`min-w-0 flex-1 text-base font-bold tracking-tight sm:text-lg ${
+              theme === 'dark' ? 'text-slate-100' : 'text-gray-900'
+            }`}
+          >
+            Hey {displayName}, ready to get started?
+          </h1>
+          <div
+            className="flex shrink-0 flex-col items-end gap-1.5"
+            role="group"
+            aria-label="Workspace theme"
+          >
+            <span
+              className={`text-[10px] font-bold uppercase tracking-[0.14em] ${
+                theme === 'dark' ? 'text-slate-500' : 'text-gray-400'
+              }`}
+            >
+              Appearance
+            </span>
+            <div className={`flex flex-wrap items-center justify-end gap-1.5 rounded-xl p-1.5 ${hc.themeToggleWrap}`}>
+              {UI_THEME_OPTIONS.map((opt) => {
+                const selected = theme === opt.id
+                const inactiveMuted =
+                  theme === 'dark'
+                    ? 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100'
+                    : theme === 'purple'
+                      ? 'text-violet-900/85 hover:bg-violet-100/65 hover:text-violet-950'
+                      : 'text-slate-600 hover:bg-white/55 hover:text-slate-900'
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setTheme(opt.id)}
+                    title={`${opt.label} — ${opt.blurb}`}
+                    className={`flex min-w-[4.75rem] flex-col items-center gap-1 rounded-lg px-3 py-2 transition-all duration-200 ${
+                      selected ? themePickerSelectedClasses(opt.id) : `bg-transparent ${inactiveMuted}`
+                    }`}
+                  >
+                    {opt.id === 'dark' ? (
+                      <ThemeMoonIcon
+                        className={`h-5 w-5 shrink-0 ${selected ? 'text-[#c65dfb]' : 'text-slate-400'}`}
+                      />
+                    ) : (
+                      <span className="flex gap-0.5" aria-hidden>
+                        {opt.preview.slice(0, 3).map((c) => (
+                          <span
+                            key={c}
+                            className="h-2 w-2 rounded-full border border-black/10 shadow-sm"
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </span>
+                    )}
+                    <span className="text-[11px] font-semibold leading-tight">{opt.pickerLabel}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
 
-        <div className="mt-2 flex w-full max-w-xl items-center rounded-xl border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+        <div
+          className={`mt-2 flex w-full max-w-xl items-center rounded-xl border px-3 py-1.5 shadow-sm backdrop-blur-sm ${hc.searchBar}`}
+        >
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-sm">
             <span role="img" aria-label="search">🔍</span>
           </div>
@@ -503,7 +581,7 @@ export function HomePage() {
           />
           <button
             type="button"
-            className="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md bg-blue-500 text-white transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            className={`shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 ${hc.searchSubmit}`}
             aria-label="Submit"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -567,16 +645,14 @@ export function HomePage() {
           )}
         </div>
 
-        <div className="mt-6 flex gap-6 border-b border-gray-200">
+        <div className={`mt-6 flex gap-6 border-b ${hc.fileTabsBorder}`}>
           {(['all', 'recents', 'favourites'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setFileTab(tab)}
               className={`pb-2.5 text-sm font-medium transition-colors focus:outline-none focus:ring-0 ${
-                fileTab === tab
-                  ? 'border-b-2 border-blue-600 text-blue-600 -mb-px'
-                  : 'text-gray-600 hover:text-gray-900'
+                fileTab === tab ? `${hc.homeTabActive}` : hc.homeTabInactive
               }`}
             >
               {tab === 'all' ? 'All files' : tab === 'recents' ? 'Recents' : 'Favorites'}

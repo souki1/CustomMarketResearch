@@ -31,7 +31,7 @@ export function AuthCallbackPage() {
   }, [token, displayName, email, error, navigate])
 
   return (
-    <div className="min-h-screen flex items-center justify-center text-gray-600">
+    <div className="flex min-h-screen items-center justify-center bg-transparent text-slate-600">
       Signing you in...
     </div>
   )

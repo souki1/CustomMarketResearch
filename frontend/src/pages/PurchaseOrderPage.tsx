@@ -328,7 +328,7 @@ export function PurchaseOrderPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(o.id)}
-                      className={`flex w-full flex-col items-start gap-1 px-4 py-3 text-left transition-colors ${active ? 'bg-blue-50/80' : 'hover:bg-gray-50'}`}
+                      className={`flex w-full flex-col items-start gap-1 px-4 py-3 text-left transition-colors ${active ? 'bg-blue-50/80' : 'hover:bg-sky-50/65'}`}
                     >
                       <div className="flex w-full items-center justify-between gap-2">
                         <span className="font-mono text-sm font-semibold text-gray-900">{o.number}</span>
@@ -349,7 +349,7 @@ export function PurchaseOrderPage() {
         {/* Detail */}
         <div className="lg:col-span-8">
           {!selected ? (
-            <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/80 p-8 text-center text-sm text-gray-500">
+            <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-sky-200/60 bg-sky-50/50 p-8 text-center text-sm text-gray-500">
               Select a purchase order or create a new one.
             </div>
           ) : (
@@ -389,7 +389,7 @@ export function PurchaseOrderPage() {
                     type="button"
                     onClick={advanceStatus}
                     disabled={selected.status === 'closed'}
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-sky-50/65 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                   >
                     Advance status
                   </button>
@@ -485,7 +485,7 @@ export function PurchaseOrderPage() {
                   <button
                     type="button"
                     onClick={addLine}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-sky-50/65 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden />
                     Add line
@@ -494,7 +494,7 @@ export function PurchaseOrderPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[640px] text-left text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/80 text-xs font-medium uppercase tracking-wide text-gray-500">
+                      <tr className="border-b border-sky-100/80 bg-sky-50/70 text-xs font-medium uppercase tracking-wide text-gray-500">
                         <th className="px-3 py-2 sm:px-4">SKU</th>
                         <th className="px-3 py-2 sm:px-4">Description</th>
                         <th className="px-3 py-2 sm:px-4">Qty</th>
@@ -506,7 +506,7 @@ export function PurchaseOrderPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {selected.lines.map((line) => (
-                        <tr key={line.id} className="hover:bg-gray-50/50">
+                        <tr key={line.id} className="hover:bg-sky-50/65/50">
                           <td className="px-3 py-2 sm:px-4">
                             <input
                               className={`${inputClass} font-mono text-xs`}
@@ -575,7 +575,7 @@ export function PurchaseOrderPage() {
                 </div>
 
                 {/* Summary */}
-                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-4 sm:px-6">
+                <div className="border-t border-sky-100/80 bg-sky-50/45 px-4 py-4 sm:px-6">
                   <div className="ml-auto max-w-xs space-y-2 text-sm">
                     <div className="flex justify-between tabular-nums text-gray-600">
                       <span>Subtotal</span>

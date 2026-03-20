@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTheme } from '@/contexts/ThemeContext'
 import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
+import { THEME_AUTH } from '@/lib/uiTheme'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
 
 function GoogleIcon() {
@@ -38,6 +40,8 @@ function deriveNameFromEmail(email: string) {
 }
 
 export function SignUpPage() {
+  const { theme } = useTheme()
+  const authPanel = THEME_AUTH[theme].panel
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -76,8 +80,10 @@ export function SignUpPage() {
   }
 
   return (
-    <section className="min-h-[60vh] flex items-center justify-center py-12">
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-200/80 p-8">
+    <section className="flex min-h-[60vh] items-center justify-center bg-transparent py-12">
+      <div
+        className={`mx-auto w-full max-w-md rounded-2xl border bg-white/95 p-8 shadow-lg backdrop-blur-sm ${authPanel}`}
+      >
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 mb-1">
           Create an account
         </h1>

@@ -172,7 +172,7 @@ export function AiPlaceholderPage() {
   const tabHint = MODES.find((m) => m.value === tab)?.hint ?? ''
 
   return (
-    <div className="min-h-full bg-gray-50/50">
+    <div className="min-h-full bg-transparent">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 to-indigo-600 text-white shadow-sm">

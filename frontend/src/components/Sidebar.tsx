@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useTheme } from '@/contexts/ThemeContext'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { sidebarNavLinkClass, THEME_SHELL } from '@/lib/uiTheme'
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -67,14 +69,10 @@ type SidebarProps = {
   collapsed?: boolean
 }
 
-const linkClass = (active: boolean) =>
-  `flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`
-
-const collapsedLinkClass = (active: boolean) =>
-  `flex items-center justify-center rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`
-
 export function Sidebar({ open, collapsed = false }: SidebarProps) {
-  const iconClass = 'h-5 w-5 shrink-0 text-gray-500'
+  const { theme } = useTheme()
+  const shell = THEME_SHELL[theme]
+  const iconClass = shell.icon
   const location = useLocation()
   const isHome = location.pathname === '/'
   const isResearch = location.pathname === '/research'
@@ -88,33 +86,33 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   if (collapsed) {
     return (
       <aside
-        className="w-14 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)]"
+        className={`w-14 shrink-0 min-h-[calc(100vh-3.5rem)] ${shell.sidebar}`}
         aria-label="Collapsed sidebar"
       >
         <div className="flex h-full flex-col py-4">
           <nav className="flex flex-col items-center gap-1 px-2">
-            <Link to="/" className={collapsedLinkClass(isHome)} title="Home">
+            <Link to="/" className={sidebarNavLinkClass(theme, isHome, true)} title="Home">
               <HomeIcon className={iconClass} />
             </Link>
-            <Link to="/research" className={collapsedLinkClass(isResearch)} title="Research">
+            <Link to="/research" className={sidebarNavLinkClass(theme, isResearch, true)} title="Research">
               <ResearchIcon className={iconClass} />
             </Link>
-            <Link to={RESEARCH_COMPARE_PATH} className={collapsedLinkClass(isCompare)} title="Compare">
+            <Link to={RESEARCH_COMPARE_PATH} className={sidebarNavLinkClass(theme, isCompare, true)} title="Compare">
               <CompareIcon className={iconClass} />
             </Link>
-            <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
+            <Link to="/reports" className={sidebarNavLinkClass(theme, isReports, true)} title="Reports">
               <ReportsIcon className={iconClass} />
             </Link>
-            <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
+            <Link to="/ai" className={sidebarNavLinkClass(theme, isAi, true)} title="AI">
               <AiIcon className={iconClass} />
             </Link>
-            <Link to="/portfolio" className={collapsedLinkClass(isPortfolio)} title="Portfolio">
+            <Link to="/portfolio" className={sidebarNavLinkClass(theme, isPortfolio, true)} title="Portfolio">
               <PortfolioIcon className={iconClass} />
             </Link>
-            <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
+            <Link to="/purchase-order" className={sidebarNavLinkClass(theme, isPurchaseOrder, true)} title="Purchase Order">
               <PurchaseOrderIcon className={iconClass} />
             </Link>
-            <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
+            <Link to="/settings" className={sidebarNavLinkClass(theme, isSettings, true)} title="Settings">
               <SettingsIcon className={iconClass} />
             </Link>
           </nav>
@@ -125,41 +123,41 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
 
   return (
     <aside
-      className={`w-56 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`w-56 shrink-0 min-h-[calc(100vh-3.5rem)] transition-transform duration-200 ease-out ${shell.sidebar} ${open ? 'translate-x-0' : '-translate-x-full'}`}
       aria-label="Sidebar"
       aria-hidden={!open}
     >
       <div className="flex h-full flex-col py-4">
         <nav className="flex flex-col gap-1 px-2">
-          <Link to="/" className={linkClass(isHome)} title="Home">
+          <Link to="/" className={sidebarNavLinkClass(theme, isHome, false)} title="Home">
             <HomeIcon className={iconClass} />
             <span>Home</span>
           </Link>
-          <Link to="/research" className={linkClass(isResearch)} title="Research">
+          <Link to="/research" className={sidebarNavLinkClass(theme, isResearch, false)} title="Research">
             <ResearchIcon className={iconClass} />
             <span>Research</span>
           </Link>
-          <Link to={RESEARCH_COMPARE_PATH} className={linkClass(isCompare)} title="Compare">
+          <Link to={RESEARCH_COMPARE_PATH} className={sidebarNavLinkClass(theme, isCompare, false)} title="Compare">
             <CompareIcon className={iconClass} />
             <span>Compare</span>
           </Link>
-          <Link to="/reports" className={linkClass(isReports)} title="Reports">
+          <Link to="/reports" className={sidebarNavLinkClass(theme, isReports, false)} title="Reports">
             <ReportsIcon className={iconClass} />
             <span>Reports</span>
           </Link>
-          <Link to="/ai" className={linkClass(isAi)} title="AI">
+          <Link to="/ai" className={sidebarNavLinkClass(theme, isAi, false)} title="AI">
             <AiIcon className={iconClass} />
             <span>AI</span>
           </Link>
-          <Link to="/portfolio" className={linkClass(isPortfolio)} title="Portfolio">
+          <Link to="/portfolio" className={sidebarNavLinkClass(theme, isPortfolio, false)} title="Portfolio">
             <PortfolioIcon className={iconClass} />
             <span>Portfolio</span>
           </Link>
-          <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
+          <Link to="/purchase-order" className={sidebarNavLinkClass(theme, isPurchaseOrder, false)} title="Purchase Order">
             <PurchaseOrderIcon className={iconClass} />
             <span>Purchase Order</span>
           </Link>
-          <Link to="/settings" className={linkClass(isSettings)} title="Settings">
+          <Link to="/settings" className={sidebarNavLinkClass(theme, isSettings, false)} title="Settings">
             <SettingsIcon className={iconClass} />
             <span>Settings</span>
           </Link>

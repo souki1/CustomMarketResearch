@@ -67,7 +67,7 @@ function MainLayoutContent() {
             <Sidebar open={showSidebar} collapsed={showCollapsedStrip} />
           </div>
         </div>
-        <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
+        <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0 bg-transparent">
           <Outlet />
         </main>
       </div>

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { FileTableRow as Row } from '@/types'
+import { useTheme } from '@/contexts/ThemeContext'
+import { themePagePanelClasses } from '@/lib/uiTheme'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +14,7 @@ type SortKey = 'name' | 'createdAt' | 'owner'
 type SortDir = 'asc' | 'desc'
 
 type FileTableProps = {
+  variant?: 'standalone' | 'embedded'
   rows: Row[]
   onOpenFolder?: (folderId: string) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
@@ -77,6 +80,7 @@ function StarIcon({ filled }: { filled: boolean }) {
 
 function FileTableRow({
   row,
+  rowSurfaceClass,
   onOpenFolder,
   onOpenFile,
   onRename,
@@ -87,6 +91,7 @@ function FileTableRow({
   onUploadIntoFolder,
 }: {
   row: Row
+  rowSurfaceClass: string
   onOpenFolder?: (folderId: string) => void
   onOpenFile?: (fileId: string, fileName?: string) => void
   onRename?: (row: Row) => void
@@ -118,7 +123,7 @@ function FileTableRow({
   }
 
   return (
-    <tr className="bg-white transition-colors duration-150 ease-out hover:bg-gray-50">
+    <tr className={rowSurfaceClass}>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           {row.isFolder ? <FolderIcon /> : <FileIcon />}
@@ -266,6 +271,7 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' | null }) {
 }
 
 export function FileTable({
+  variant = 'standalone',
   rows,
   onOpenFolder,
   onOpenFile,
@@ -276,6 +282,23 @@ export function FileTable({
   onDelete,
   onUploadIntoFolder,
 }: FileTableProps) {
+  const { theme } = useTheme()
+  const panelShell = themePagePanelClasses(theme)
+  const rowSurfaceClass =
+    theme === 'dark'
+      ? 'bg-[#161b26] transition-colors duration-150 ease-out hover:bg-slate-800/90'
+      : theme === 'purple'
+        ? 'bg-white transition-colors duration-150 ease-out hover:bg-violet-50/55'
+        : 'bg-white/55 backdrop-blur-sm transition-colors duration-150 ease-out hover:bg-sky-50/45'
+  const theadClass =
+    theme === 'dark'
+      ? 'bg-[#1a2030]'
+      : theme === 'purple'
+        ? 'bg-violet-50/90'
+        : 'bg-sky-50/80 backdrop-blur-sm'
+  const thSortHover =
+    theme === 'dark' ? 'hover:bg-slate-800/90' : theme === 'purple' ? 'hover:bg-violet-100/80' : 'hover:bg-sky-100/75'
+
   const [sortBy, setSortBy] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
@@ -304,12 +327,15 @@ export function FileTable({
 
   const thClass = 'px-4 py-3 font-medium text-gray-900'
   const thSortClass =
-    'w-full text-left ' + thClass + ' cursor-pointer select-none hover:bg-gray-100 rounded-t transition-colors inline-flex items-center'
+    `w-full text-left ${thClass} cursor-pointer select-none rounded-t transition-colors inline-flex items-center ${thSortHover}`
+
+  const wrapClass =
+    variant === 'embedded' ? 'overflow-x-auto' : `overflow-x-auto rounded-lg ${panelShell}`
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+    <div className={wrapClass}>
       <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-        <thead className="bg-gray-50">
+        <thead className={theadClass}>
           <tr>
             <th scope="col" className="p-0" aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
               <button type="button" onClick={() => toggleSort('name')} className={thSortClass}>
@@ -344,11 +370,20 @@ export function FileTable({
             <th scope="col" className="w-12 px-4 py-3" aria-label="Actions" />
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 bg-white">
+        <tbody
+          className={
+            theme === 'dark'
+              ? 'divide-y divide-slate-700/80 bg-[#161b26]'
+              : theme === 'purple'
+                ? 'divide-y divide-violet-100/90 bg-white'
+                : 'divide-y divide-slate-200/80 bg-white/60 backdrop-blur-sm'
+          }
+        >
           {sortedRows.map((row) => (
             <FileTableRow
               key={row.id}
               row={row}
+              rowSurfaceClass={rowSurfaceClass}
               onOpenFolder={onOpenFolder}
               onOpenFile={onOpenFile}
               onRename={onRename}

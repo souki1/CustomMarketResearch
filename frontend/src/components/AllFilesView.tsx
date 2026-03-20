@@ -1,4 +1,6 @@
 import type { FileTableRow } from '@/types'
+import { useTheme } from '@/contexts/ThemeContext'
+import { themeFilesSearchWrap, themePagePanelClasses } from '@/lib/uiTheme'
 import { AllFilesFilters } from './AllFilesFilters'
 import { FileTable } from './FileTable'
 import { NewMenu } from './NewMenu'
@@ -34,6 +36,16 @@ export function AllFilesView({
   onUploadFileClick,
   onMoveClick,
 }: AllFilesViewProps) {
+  const { theme } = useTheme()
+  const searchWrap = themeFilesSearchWrap(theme)
+  const listDivider =
+    theme === 'dark'
+      ? 'border-b border-slate-700/70'
+      : theme === 'purple'
+        ? 'border-b border-violet-200/50'
+        : 'border-b border-white/35'
+  const tablePanel = themePagePanelClasses(theme)
+
   const breadcrumbParts: { label: string; onClick?: () => void }[] = [
     { label: 'All Files', onClick: () => onGoToFolder(null) },
   ]
@@ -69,7 +81,7 @@ export function AllFilesView({
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm">
+          <div className={`flex items-center px-3 py-2 shadow-sm ${searchWrap}`}>
             <svg
               className="h-4 w-4 shrink-0 text-gray-400"
               viewBox="0 0 24 24"
@@ -100,17 +112,20 @@ export function AllFilesView({
         </div>
       </div>
 
-      <div className="border-b border-gray-200" />
+      <div className={listDivider} />
 
       <AllFilesFilters />
-      <FileTable
-        rows={rows}
-        onOpenFolder={onOpenFolder}
-        onOpenFile={onOpenFile}
-        onDelete={onDelete}
-        onMove={onMoveClick}
-        onUploadIntoFolder={onUploadFileClick ? (row) => { if (row.isFolder) onUploadFileClick() } : undefined}
-      />
+      <div className={`overflow-hidden rounded-xl ${tablePanel}`}>
+        <FileTable
+          variant="embedded"
+          rows={rows}
+          onOpenFolder={onOpenFolder}
+          onOpenFile={onOpenFile}
+          onDelete={onDelete}
+          onMove={onMoveClick}
+          onUploadIntoFolder={onUploadFileClick ? (row) => { if (row.isFolder) onUploadFileClick() } : undefined}
+        />
+      </div>
     </div>
   )
 }

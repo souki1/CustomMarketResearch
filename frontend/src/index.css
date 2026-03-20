@@ -4,6 +4,106 @@
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* App-wide light blue “soft UI” backdrop (see design: pale sky → white) */
+html {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  color: rgb(15 23 42);
+  /* Fallback before ThemeProvider sets data-ui-theme */
+  background: #e0f2fe;
+  background-attachment: fixed;
+}
+
+/* Light blue — glassmorphism-style depth (soft blues + frosted layers) */
+html[data-ui-theme="sky"] body {
+  background:
+    radial-gradient(ellipse 85% 55% at 100% -5%, rgba(147, 197, 253, 0.45), transparent 52%),
+    radial-gradient(ellipse 70% 50% at -5% 70%, rgba(186, 230, 253, 0.42), transparent 48%),
+    radial-gradient(ellipse 50% 35% at 50% 100%, rgba(224, 242, 254, 0.6), transparent 55%),
+    linear-gradient(
+      168deg,
+      #93c5fd 0%,
+      #bfdbfe 18%,
+      #dbeafe 38%,
+      #e0f2fe 58%,
+      #f0f9ff 78%,
+      #ffffff 100%
+    );
+  background-attachment: fixed;
+}
+
+/* Purple — Sensei-style lavender workspace + soft violet orbs */
+html[data-ui-theme="purple"] body {
+  background:
+    radial-gradient(ellipse 75% 50% at 92% 8%, rgba(167, 139, 250, 0.42), transparent 52%),
+    radial-gradient(ellipse 65% 45% at 5% 95%, rgba(233, 213, 255, 0.55), transparent 50%),
+    radial-gradient(ellipse 45% 30% at 40% 0%, rgba(196, 181, 253, 0.35), transparent 45%),
+    linear-gradient(
+      168deg,
+      #ddd6fe 0%,
+      #e9d5ff 20%,
+      #ede9fe 42%,
+      #f5f3ff 65%,
+      #faf5ff 85%,
+      #ffffff 100%
+    );
+  background-attachment: fixed;
+}
+
+/* Dark — charcoal base, subtle purple / cyan glow (Dashdark-inspired) */
+html[data-ui-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-ui-theme="dark"] body {
+  color: #e2e8f0;
+  background:
+    radial-gradient(ellipse 85% 55% at 100% -10%, rgba(198, 93, 251, 0.09), transparent 52%),
+    radial-gradient(ellipse 70% 50% at 0% 105%, rgba(35, 211, 238, 0.07), transparent 48%),
+    radial-gradient(ellipse 50% 40% at 50% 0%, rgba(99, 102, 241, 0.06), transparent 45%),
+    linear-gradient(180deg, #0b0e14 0%, #0f1219 38%, #0b0e14 100%);
+  background-attachment: fixed;
+}
+
+/* Light text utilities on dark (pages still use gray-* Tailwind classes) */
+html[data-ui-theme="dark"] #root .text-gray-900,
+html[data-ui-theme="dark"] #root .text-slate-900 {
+  color: rgb(248 250 252) !important;
+}
+
+html[data-ui-theme="dark"] #root .text-gray-800,
+html[data-ui-theme="dark"] #root .text-slate-800 {
+  color: rgb(241 245 249) !important;
+}
+
+html[data-ui-theme="dark"] #root .text-gray-700,
+html[data-ui-theme="dark"] #root .text-slate-700 {
+  color: rgb(203 213 225) !important;
+}
+
+html[data-ui-theme="dark"] #root .text-gray-600,
+html[data-ui-theme="dark"] #root .text-slate-600 {
+  color: rgb(186 198 216) !important;
+}
+
+html[data-ui-theme="dark"] #root .text-gray-500,
+html[data-ui-theme="dark"] #root .text-slate-500 {
+  color: rgb(148 163 184) !important;
+}
+
+html[data-ui-theme="dark"] #root .text-gray-400,
+html[data-ui-theme="dark"] #root .text-slate-400 {
+  color: rgb(148 163 184) !important;
+}
+
+#root {
+  min-height: 100vh;
+}
+
 /* 3D icon container – raised, beveled look */
 .icon-3d {
   box-shadow:

@@ -526,7 +526,7 @@ export function ComparePage() {
       </div>
 
       {/* Tab bar - like Research page: tabs + New tab dropdown */}
-      <div className="mt-6 mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
+      <div className="mt-6 mb-3 flex flex-wrap items-center gap-1 border-b border-sky-200/60">
         {compareTabs.map((tab) => (
           <div
             key={tab.id}
@@ -535,7 +535,7 @@ export function ComparePage() {
             className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
               tab.id === activeCompareTabId
                 ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'border-transparent bg-sky-100/70 text-slate-600 hover:bg-sky-200/50'
             }`}
           >
             <button
@@ -593,7 +593,7 @@ export function ComparePage() {
       </div>
 
       {/* Select file from workspace */}
-      <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <div className="mt-6 rounded-lg border border-sky-200/60 bg-sky-50/55 p-4">
         <h3 className="text-sm font-semibold text-gray-900">Select file from workspace</h3>
         <p className="mt-1 text-xs text-gray-600">
           Choose files from the Home page. Select multiple rows from one file to compare different parts from the same vendor, or select rows from multiple files to compare across vendors.
@@ -602,7 +602,7 @@ export function ComparePage() {
           <button
             type="button"
             onClick={() => setFilePickerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -626,7 +626,7 @@ export function ComparePage() {
                     className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
                       isActive
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-sky-50/65'
                     }`}
                   >
                     <span className="font-medium">{file.name}</span>
@@ -672,7 +672,7 @@ export function ComparePage() {
                     return (
                       <div
                         key={rowIdx}
-                        className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-50 ${
+                        className={`flex items-center gap-3 px-3 py-2 hover:bg-sky-50/65 ${
                           isSelectedForScraped ? 'bg-emerald-50/70' : ''
                         }`}
                       >
@@ -769,7 +769,7 @@ export function ComparePage() {
                   closeAndClear()
                   updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
                 }}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65"
               >
                 Cancel
               </button>
@@ -789,7 +789,7 @@ export function ComparePage() {
             <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
+                  <tr className="border-b border-sky-200/60 bg-sky-50/55">
                     <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
                       Spec
                     </th>
@@ -847,7 +847,7 @@ export function ComparePage() {
                     }
                     const labels = Array.from(allLabels)
                     return labels.map((label) => (
-                      <tr key={label} className="hover:bg-gray-50/50">
+                      <tr key={label} className="hover:bg-sky-50/65/50">
                         <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
                           {label.replace(/_/g, ' ')}
                         </td>
@@ -870,7 +870,7 @@ export function ComparePage() {
         )}
               {selectedFilesData.length > 0 && (
         <div className="mt-6 mb-3">
-          <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
+          <div className="flex flex-wrap items-center gap-1 border-b border-sky-200/60">
             {(
               [
                 { id: 'same-part' as const, label: 'Same part across vendors' },
@@ -887,7 +887,7 @@ export function ComparePage() {
                   className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
                     isActive
                       ? 'border-gray-300 bg-white text-gray-900'
-                      : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'border-transparent bg-sky-100/70 text-slate-600 hover:bg-sky-200/50'
                   }`}
                 >
                   <button
@@ -973,11 +973,11 @@ export function ComparePage() {
               </div>
             </div>
             {!selectedRowForScraped ? (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              <p className="rounded-lg border border-sky-200/60 bg-sky-50/55 px-4 py-6 text-sm text-gray-500">
                 Select a part above to view scraped data across vendors.
               </p>
             ) : scrapedDataLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              <div className="flex items-center gap-2 rounded-lg border border-sky-200/60 bg-sky-50/55 px-4 py-6 text-sm text-gray-500">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
                 </svg>
@@ -994,7 +994,7 @@ export function ComparePage() {
                   <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
                     <table className="min-w-full text-sm">
                       <thead>
-                        <tr className="border-b border-gray-200 bg-gray-50">
+                        <tr className="border-b border-sky-200/60 bg-sky-50/55">
                           <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
                             Spec
                           </th>
@@ -1045,7 +1045,7 @@ export function ComparePage() {
                           }
                           const keys = Array.from(allKeys).sort()
                           return keys.map((key) => (
-                            <tr key={key} className="hover:bg-gray-50/50">
+                            <tr key={key} className="hover:bg-sky-50/65/50">
                               <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
                                 {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
                               </td>
@@ -1120,7 +1120,7 @@ export function ComparePage() {
                 )
               })()
             ) : (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              <p className="rounded-lg border border-sky-200/60 bg-sky-50/55 px-4 py-6 text-sm text-gray-500">
                 No scraped data for this part. Run Research on the Research page first to scrape vendor data.
               </p>
             )}
@@ -1142,7 +1142,7 @@ export function ComparePage() {
           aria-labelledby="compare-file-picker-title"
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border border-sky-200/70 bg-white/95 shadow-xl shadow-sky-900/10 backdrop-blur-sm"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
@@ -1210,7 +1210,7 @@ export function ComparePage() {
               <button
                 type="button"
                 onClick={() => setFilePickerOpen(false)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-sky-50/65"
               >
                 Done
               </button>

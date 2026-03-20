@@ -1,4 +1,6 @@
 import type React from 'react'
+import { useTheme } from '@/contexts/ThemeContext'
+import { THEME_MODAL, THEME_RESEARCH } from '@/lib/uiTheme'
 
 type TabState = {
   id: string
@@ -56,19 +58,56 @@ export function ResearchTabs(props: Props) {
     onFilePickerFileClick,
   } = props
 
+  const { theme } = useTheme()
+  const tr = THEME_RESEARCH[theme]
+  const modalPanel = THEME_MODAL[theme].panel
+  const tabBarBorder =
+    theme === 'dark' ? 'border-slate-700' : theme === 'purple' ? 'border-violet-200/55' : 'border-white/40'
+  const tabActive =
+    theme === 'dark'
+      ? 'border-slate-600 border-b-0 bg-[#161b26] text-slate-50 shadow-sm ring-1 ring-slate-600/50'
+      : theme === 'purple'
+        ? 'border-violet-200/85 border-b-0 bg-white text-violet-950 shadow-sm shadow-violet-500/10'
+        : 'border-white/60 border-b-0 bg-white/60 text-slate-900 shadow-sm shadow-sky-900/10 ring-1 ring-white/35 backdrop-blur-md'
+  const tabInactive =
+    theme === 'dark'
+      ? 'border-transparent border-b-0 bg-slate-900/40 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
+      : theme === 'purple'
+        ? 'border-transparent border-b-0 bg-violet-100/45 text-violet-800 hover:bg-violet-100/75'
+        : 'border-transparent border-b-0 bg-slate-100/55 text-slate-600 hover:bg-slate-200/65'
+  const newTabBtn =
+    theme === 'dark'
+      ? 'rounded-t border border-transparent px-3 py-2 text-sm text-slate-500 hover:bg-slate-800/70 hover:text-slate-200'
+      : theme === 'purple'
+        ? 'rounded-t border border-transparent px-3 py-2 text-sm text-violet-700 hover:bg-violet-100/60 hover:text-violet-950'
+        : 'rounded-t border border-transparent px-3 py-2 text-sm text-slate-500 hover:bg-white/40 hover:text-slate-800 hover:backdrop-blur-sm'
+  const dropdownPanel = `${modalPanel} absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b-xl py-1 shadow-lg`
+  const dropdownItem =
+    theme === 'dark'
+      ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-800/90'
+      : theme === 'purple'
+        ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-violet-950 hover:bg-violet-50/90'
+        : 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-white/50'
+  const renameFocus =
+    theme === 'dark'
+      ? 'focus:border-[#c65dfb] focus:outline-none focus:ring-1 focus:ring-[#c65dfb]'
+      : theme === 'purple'
+        ? 'focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500'
+        : 'focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500'
+  const modalSectionBorder = theme === 'dark' ? 'border-slate-700' : theme === 'purple' ? 'border-violet-200/60' : 'border-white/40'
+  const modalFooterBorderClass = theme === 'dark' ? 'border-slate-700' : theme === 'purple' ? 'border-violet-200/55' : 'border-white/40'
+
   return (
     <>
       {/* Tab bar */}
-      <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
+      <div className={`mb-3 flex flex-wrap items-center gap-1 border-b ${tabBarBorder}`}>
         {tabs.map((tab) => (
           <div
             key={tab.id}
             role="tab"
             aria-selected={tab.id === activeTabId}
-            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-              tab.id === activeTabId
-                ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
+            className={`flex items-center gap-1.5 rounded-t border px-3 py-2 text-sm ${
+              tab.id === activeTabId ? tabActive : tabInactive
             }`}
           >
             {editingTabId === tab.id ? (
@@ -82,7 +121,7 @@ export function ResearchTabs(props: Props) {
                   if (e.key === 'Escape') onRenameCancel()
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className="min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className={`min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 ${renameFocus}`}
                 autoFocus
                 aria-label="Rename tab"
               />
@@ -116,17 +155,17 @@ export function ResearchTabs(props: Props) {
           <button
             type="button"
             onClick={onToggleNewTabMenu}
-            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            className={newTabBtn}
             title="New tab"
           >
             + New tab
           </button>
           {newTabMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
+            <div className={dropdownPanel}>
               <button
                 type="button"
                 onClick={onNewSheet}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                className={dropdownItem}
               >
                 <span className="text-gray-400">+</span>
                 New sheet
@@ -134,7 +173,7 @@ export function ResearchTabs(props: Props) {
               <button
                 type="button"
                 onClick={onOpenFilePicker}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                className={dropdownItem}
               >
                 <span className="text-gray-400">↺</span>
                 Open file…
@@ -154,10 +193,12 @@ export function ResearchTabs(props: Props) {
           aria-labelledby="file-picker-title"
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+            className={`flex max-h-[80vh] w-full max-w-md flex-col rounded-xl shadow-xl ${modalPanel}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <div
+              className={`flex items-center justify-between border-b px-4 py-3 ${modalSectionBorder}`}
+            >
               <h3 id="file-picker-title" className="text-base font-semibold text-gray-900">
                 Open file
               </h3>
@@ -189,7 +230,7 @@ export function ResearchTabs(props: Props) {
                       <button
                         type="button"
                         onClick={() => onFilePickerFileClick(file)}
-                        className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
+                        className={tr.filePickerRow}
                       >
                         <span className="truncate w-full font-medium">{file.name}</span>
                         {file.folderPath && (
@@ -201,11 +242,13 @@ export function ResearchTabs(props: Props) {
                 </ul>
               )}
             </div>
-            <div className="border-t border-gray-200 px-4 py-2">
+            <div
+              className={`border-t px-4 py-2 ${modalFooterBorderClass}`}
+            >
               <button
                 type="button"
                 onClick={onCloseFilePicker}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className={`flex w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-medium ${tr.segmentInactive}`}
               >
                 Cancel
               </button>

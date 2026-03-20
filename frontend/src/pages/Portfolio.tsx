@@ -21,7 +21,9 @@ import { listDataSheetSelections, listPortfolioItems } from "@/lib/api"
 import type { PortfolioItem } from "@/lib/api"
 import { useBucket } from "@/contexts/BucketContext"
 import { useComparison } from "@/contexts/ComparisonContext"
+import { useTheme } from "@/contexts/ThemeContext"
 import { RESEARCH_COMPARE_PATH } from "@/lib/paths"
+import { THEME_PRIMARY_CTA, themePagePanelClasses } from "@/lib/uiTheme"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-const PAGE_BG = "bg-[#f8fafc]"
-const BORDER = "border-slate-200"
+const PAGE_BG = "bg-transparent"
 const BEST_PRICE_GREEN = "text-[#16a34a]"
 const AVG_PRICE_SLATE = "text-[#334155]"
 
@@ -61,6 +62,9 @@ type PartGroup = {
 type SortMode = "part-asc" | "part-desc" | "vendors-desc" | "best-asc" | "best-desc"
 
 export function PortfolioPage() {
+  const { theme } = useTheme()
+  const panelClass = themePagePanelClasses(theme)
+  const reportCta = THEME_PRIMARY_CTA[theme].generateReport
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([])
@@ -348,7 +352,7 @@ export function PortfolioPage() {
 
         {/* Summary cards */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
+          <div className={`rounded-xl p-5 ${panelClass}`}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total Parts</p>
@@ -361,7 +365,7 @@ export function PortfolioPage() {
               </span>
             </div>
           </div>
-          <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
+          <div className={`rounded-xl p-5 ${panelClass}`}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Vendors Found</p>
@@ -374,7 +378,7 @@ export function PortfolioPage() {
               </span>
             </div>
           </div>
-          <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
+          <div className={`rounded-xl p-5 ${panelClass}`}>
             <div className="flex items-start justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Best Price</p>
@@ -396,7 +400,7 @@ export function PortfolioPage() {
               </span>
             </div>
           </div>
-          <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
+          <div className={`rounded-xl p-5 ${panelClass}`}>
             <div className="flex items-start justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Average Price</p>
@@ -422,7 +426,7 @@ export function PortfolioPage() {
 
         {/* Toolbar */}
         <div
-          className={`mb-3 flex flex-col gap-3 rounded-t-xl border border-b-0 ${BORDER} bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between`}
+          className={`mb-3 flex flex-col gap-3 rounded-t-xl border-b-0 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${panelClass}`}
         >
           <div className="relative min-w-0 flex-1 max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -467,7 +471,7 @@ export function PortfolioPage() {
               onClick={handleExportCsv}
               disabled={!token || filteredSortedGroups.length === 0}
               title="Download portfolio data as CSV — final output"
-              className="inline-flex items-center gap-2 rounded-lg border-2 border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/25 transition-colors hover:border-emerald-700 hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none ${reportCta}`}
             >
               <Download className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
               Generate Report
@@ -476,7 +480,7 @@ export function PortfolioPage() {
         </div>
 
         {/* Table */}
-        <div className={`overflow-hidden rounded-b-xl border ${BORDER} bg-white shadow-sm`}>
+        <div className={`overflow-hidden rounded-b-xl ${panelClass}`}>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
