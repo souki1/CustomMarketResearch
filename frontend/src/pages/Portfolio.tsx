@@ -102,15 +102,10 @@ export function PortfolioPage() {
   const stats = useMemo(() => {
     const uniqueParts = partGroups.length
     const vendorRows = portfolioItems.length
-    const allNums = portfolioItems.map((p) => parsePrice(p.price)).filter((n): n is number => n != null)
-    const best = allNums.length ? Math.min(...allNums) : null
 
-    /** With no part checkboxes selected, average is always 0. With selection, mean of every vendor price on those rows. */
     const hasPartSelection = selectedPartIds.size > 0
-    let avg = 0
-    let avgOfferCount = 0
+    const selectedNums: number[] = []
     if (hasPartSelection) {
-      const selectedNums: number[] = []
       for (const g of partGroups) {
         if (!selectedPartIds.has(g.rowId)) continue
         for (const e of g.entries) {
@@ -118,8 +113,18 @@ export function PortfolioPage() {
           if (n != null) selectedNums.push(n)
         }
       }
+    }
+
+    /** No rows checked: best and average are $0. Checked rows: min / mean of every vendor price on those parts. */
+    let best = 0
+    let avg = 0
+    let avgOfferCount = 0
+    if (hasPartSelection) {
       avgOfferCount = selectedNums.length
-      avg = selectedNums.length ? selectedNums.reduce((a, b) => a + b, 0) / selectedNums.length : 0
+      if (selectedNums.length) {
+        best = Math.min(...selectedNums)
+        avg = selectedNums.reduce((a, b) => a + b, 0) / selectedNums.length
+      }
     }
 
     return { uniqueParts, vendorRows, best, avg, avgUsesSelection: hasPartSelection, avgOfferCount }
@@ -371,11 +376,20 @@ export function PortfolioPage() {
           </div>
           <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
             <div className="flex items-start justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Best Price</p>
                 <p className={`mt-2 text-3xl font-semibold tabular-nums ${BEST_PRICE_GREEN}`}>
-                  {!token || loading ? "—" : stats.best != null ? formatUsd(stats.best) : "—"}
+                  {!token || loading ? "—" : formatUsd(stats.best)}
                 </p>
+                {!loading && token && (
+                  <p className="mt-1 text-xs font-normal normal-case text-slate-500">
+                    {stats.avgUsesSelection
+                      ? stats.avgOfferCount > 0
+                        ? `Lowest of ${stats.avgOfferCount} price${stats.avgOfferCount === 1 ? "" : "s"} from ${selectedPartIds.size} checked part${selectedPartIds.size === 1 ? "" : "s"}`
+                        : `Checked part${selectedPartIds.size === 1 ? "" : "s"} (${selectedPartIds.size}) — no parseable prices (showing $0)`
+                      : "No parts checked — best price is $0 until you select rows"}
+                  </p>
+                )}
               </div>
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#16a34a] text-white shadow-sm">
                 <DollarSign className="h-5 w-5" strokeWidth={2} />
