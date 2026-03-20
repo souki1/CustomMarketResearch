@@ -102,11 +102,27 @@ export function PortfolioPage() {
   const stats = useMemo(() => {
     const uniqueParts = partGroups.length
     const vendorRows = portfolioItems.length
-    const nums = portfolioItems.map((p) => parsePrice(p.price)).filter((n): n is number => n != null)
-    const best = nums.length ? Math.min(...nums) : null
-    const avg = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null
-    return { uniqueParts, vendorRows, best, avg }
-  }, [partGroups.length, portfolioItems])
+    const allNums = portfolioItems.map((p) => parsePrice(p.price)).filter((n): n is number => n != null)
+    const best = allNums.length ? Math.min(...allNums) : null
+
+    let avg: number | null = null
+    const hasPartSelection = selectedPartIds.size > 0
+    if (hasPartSelection) {
+      const selectedNums: number[] = []
+      for (const g of partGroups) {
+        if (!selectedPartIds.has(g.rowId)) continue
+        for (const e of g.entries) {
+          const n = parsePrice(e.price)
+          if (n != null) selectedNums.push(n)
+        }
+      }
+      avg = selectedNums.length ? selectedNums.reduce((a, b) => a + b, 0) / selectedNums.length : null
+    } else {
+      avg = allNums.length ? allNums.reduce((a, b) => a + b, 0) / allNums.length : null
+    }
+
+    return { uniqueParts, vendorRows, best, avg, avgUsesSelection: hasPartSelection }
+  }, [partGroups, portfolioItems, selectedPartIds])
 
   const filteredSortedGroups = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -367,11 +383,20 @@ export function PortfolioPage() {
           </div>
           <div className={`rounded-xl border ${BORDER} bg-white p-5 shadow-sm`}>
             <div className="flex items-start justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Average Price</p>
                 <p className={`mt-2 text-3xl font-semibold tabular-nums ${AVG_PRICE_SLATE}`}>
                   {!token || loading ? "—" : stats.avg != null ? formatUsd(stats.avg) : "—"}
                 </p>
+                {!loading && token && (
+                  <p className="mt-1 text-xs font-normal normal-case text-slate-500">
+                    {stats.avgUsesSelection
+                      ? stats.avg != null
+                        ? `Checked parts (${selectedPartIds.size}) · all offers for those parts`
+                        : `Checked parts (${selectedPartIds.size}) · no parseable prices`
+                      : "All vendor offers"}
+                  </p>
+                )}
               </div>
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#334155] text-white shadow-sm">
                 <DollarSign className="h-5 w-5" strokeWidth={2} />
