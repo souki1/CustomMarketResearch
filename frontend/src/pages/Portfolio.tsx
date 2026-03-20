@@ -105,8 +105,10 @@ export function PortfolioPage() {
     const allNums = portfolioItems.map((p) => parsePrice(p.price)).filter((n): n is number => n != null)
     const best = allNums.length ? Math.min(...allNums) : null
 
-    let avg: number | null = null
+    /** With no part checkboxes selected, average is always 0. With selection, mean of every vendor price on those rows. */
     const hasPartSelection = selectedPartIds.size > 0
+    let avg = 0
+    let avgOfferCount = 0
     if (hasPartSelection) {
       const selectedNums: number[] = []
       for (const g of partGroups) {
@@ -116,12 +118,11 @@ export function PortfolioPage() {
           if (n != null) selectedNums.push(n)
         }
       }
-      avg = selectedNums.length ? selectedNums.reduce((a, b) => a + b, 0) / selectedNums.length : null
-    } else {
-      avg = allNums.length ? allNums.reduce((a, b) => a + b, 0) / allNums.length : null
+      avgOfferCount = selectedNums.length
+      avg = selectedNums.length ? selectedNums.reduce((a, b) => a + b, 0) / selectedNums.length : 0
     }
 
-    return { uniqueParts, vendorRows, best, avg, avgUsesSelection: hasPartSelection }
+    return { uniqueParts, vendorRows, best, avg, avgUsesSelection: hasPartSelection, avgOfferCount }
   }, [partGroups, portfolioItems, selectedPartIds])
 
   const filteredSortedGroups = useMemo(() => {
@@ -386,15 +387,15 @@ export function PortfolioPage() {
               <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Average Price</p>
                 <p className={`mt-2 text-3xl font-semibold tabular-nums ${AVG_PRICE_SLATE}`}>
-                  {!token || loading ? "—" : stats.avg != null ? formatUsd(stats.avg) : "—"}
+                  {!token || loading ? "—" : formatUsd(stats.avg)}
                 </p>
                 {!loading && token && (
                   <p className="mt-1 text-xs font-normal normal-case text-slate-500">
                     {stats.avgUsesSelection
-                      ? stats.avg != null
-                        ? `Checked parts (${selectedPartIds.size}) · all offers for those parts`
-                        : `Checked parts (${selectedPartIds.size}) · no parseable prices`
-                      : "All vendor offers"}
+                      ? stats.avgOfferCount > 0
+                        ? `Average of ${stats.avgOfferCount} price${stats.avgOfferCount === 1 ? "" : "s"} from ${selectedPartIds.size} checked part${selectedPartIds.size === 1 ? "" : "s"}`
+                        : `Checked part${selectedPartIds.size === 1 ? "" : "s"} (${selectedPartIds.size}) — no parseable prices (showing $0)`
+                      : "No parts checked — average is $0 until you select rows"}
                   </p>
                 )}
               </div>
