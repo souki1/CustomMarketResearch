@@ -787,10 +787,10 @@ export function ComparePage() {
               Same part across vendors • Different parts from same vendor • Different parts from different vendors
             </p>
             <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="min-w-full text-sm">
+              <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
+                    <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] sm:min-w-[160px]">
                       Spec
                     </th>
                     {items.map((item) => (
@@ -847,8 +847,8 @@ export function ComparePage() {
                     }
                     const labels = Array.from(allLabels)
                     return labels.map((label) => (
-                      <tr key={label} className="hover:bg-gray-50/50">
-                        <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
+                      <tr key={label} className="group hover:bg-gray-50/50">
+                        <td className="sticky left-0 z-10 min-w-[120px] border-r border-gray-200 bg-white px-4 py-2 font-medium text-gray-600 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/50 sm:min-w-[160px]">
                           {label.replace(/_/g, ' ')}
                         </td>
                         {items.map((item) => {
@@ -992,10 +992,10 @@ export function ComparePage() {
                 const displayScrapedRows = colOrder.map((i) => scrapedTableRows[i]!)
                 return (
                   <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <table className="min-w-full text-sm">
+                    <table className="min-w-full border-separate border-spacing-0 text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50">
-                          <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
+                          <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] sm:min-w-[160px]">
                             Spec
                           </th>
                           {displayScrapedRows.map((item, displayIdx) => (
@@ -1045,8 +1045,8 @@ export function ComparePage() {
                           }
                           const keys = Array.from(allKeys).sort()
                           return keys.map((key) => (
-                            <tr key={key} className="hover:bg-gray-50/50">
-                              <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
+                            <tr key={key} className="group hover:bg-gray-50/50">
+                              <td className="sticky left-0 z-10 min-w-[120px] border-r border-gray-200 bg-white px-4 py-2 font-medium text-gray-600 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/50 sm:min-w-[160px]">
                                 {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
                               </td>
                               {displayScrapedRows.map((item) => {
