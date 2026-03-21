@@ -112,6 +112,14 @@ function newBlankCompareTab(): CompareTab {
   }
 }
 
+type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
+
+const COMPARE_MODE_TABS: { id: CompareMode; label: string }[] = [
+  { id: 'same-part', label: 'Same part across vendors' },
+  { id: 'different-same-vendor', label: 'Different parts from same vendor' },
+  { id: 'different-different-vendors', label: 'Different parts from different vendors' },
+]
+
 export function ComparePage() {
   const { items, addItems, removeItem, closeAndClear } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
@@ -128,7 +136,6 @@ export function ComparePage() {
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
   const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
-  type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
   const [compareMode, setCompareMode] = useState<CompareMode>('different-different-vendors')
 
   const activeTab =
@@ -778,16 +785,43 @@ export function ComparePage() {
         )}
       </div>
 
-      {/* Comparison section: same part across vendors OR different parts */}
+      {/* Comparison section: compare type tabs, then table + mode-specific panels */}
       <div ref={comparisonSectionRef} className="mt-8">
+        <h3 className="mb-1 text-lg font-semibold text-gray-900">Compare parts</h3>
+        <p className="mb-3 text-sm text-gray-600">
+          The workspace section above follows the tab you choose. Scraped vendor data is shown when &quot;Same part
+          across vendors&quot; is active.
+        </p>
+        <div
+          role="tablist"
+          aria-label="Comparison type"
+          className="mb-4 flex flex-wrap gap-1 border-b border-gray-200"
+        >
+          {COMPARE_MODE_TABS.map(({ id, label }) => {
+            const isActive = compareMode === id
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                id={`compare-mode-tab-${id}`}
+                onClick={() => setCompareMode(id)}
+                className={`rounded-t border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'relative z-[1] -mb-px border-gray-300 border-b-white bg-white text-gray-900'
+                    : 'border-transparent border-b-0 bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+
         {items.length > 0 && (
-          <>
-            <h3 className="mb-1 text-lg font-semibold text-gray-900">Compare parts</h3>
-            <p className="mb-4 text-sm text-gray-600">
-              Same part across vendors • Different parts from same vendor • Different parts from different vendors
-            </p>
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="min-w-full border-separate border-spacing-0 text-sm">
+          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+            <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] sm:min-w-[160px]">
@@ -864,49 +898,13 @@ export function ComparePage() {
                     ))
                   })()}
                 </tbody>
-              </table>
-            </div>
-          </>
-        )}
-              {selectedFilesData.length > 0 && (
-        <div className="mt-6 mb-3">
-          <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
-            {(
-              [
-                { id: 'same-part' as const, label: 'Same part across vendors' },
-                { id: 'different-same-vendor' as const, label: 'Different parts from same vendor' },
-                { id: 'different-different-vendors' as const, label: 'Different parts from different vendors' },
-              ] as const
-            ).map(({ id, label }) => {
-              const isActive = compareMode === id
-              return (
-                <div
-                  key={id}
-                  role="tab"
-                  aria-selected={isActive}
-                  className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-                    isActive
-                      ? 'border-gray-300 bg-white text-gray-900'
-                      : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCompareMode(id)}
-                    className="font-medium"
-                  >
-                    {label}
-                  </button>
-                </div>
-              )
-            })}
+            </table>
           </div>
-        </div>
         )}
 
         {/* Scraped data - shown when "Same part across vendors" tab is selected */}
         {compareMode === 'same-part' && (
-          <div className={items.length > 0 ? 'mt-8' : ''}>
+          <div className={items.length > 0 ? 'mt-8' : 'mt-2'}>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-lg font-semibold text-gray-900">
                 Scraped data{selectedRowForScraped ? `: ${selectedRowForScraped.partLabel}` : ''}
