@@ -1,0 +1,6 @@
+.env.development
+backend/.env.development
+
+**/__pycache__/
+*.py[cod]
+*$py.class
