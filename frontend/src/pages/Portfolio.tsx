@@ -68,6 +68,8 @@ export function PortfolioPage() {
   const [sortMode, setSortMode] = useState<SortMode>("part-asc")
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const [selectedPartIds, setSelectedPartIds] = useState<Set<string>>(() => new Set())
+  /** Collapsed row: which vendor offer is selected in the dropdown (per part group). */
+  const [vendorChoiceByPart, setVendorChoiceByPart] = useState<Record<string, number>>({})
   const [detailEntry, setDetailEntry] = useState<PortfolioItem | null>(null)
 
   const navigate = useNavigate()
@@ -234,6 +236,19 @@ export function PortfolioPage() {
       }
     }
     return best
+  }, [])
+
+  const bestEntryIndexForGroup = useCallback((g: PartGroup): number => {
+    let bestI = 0
+    let bestN = Number.POSITIVE_INFINITY
+    for (let i = 0; i < g.entries.length; i++) {
+      const n = parsePrice(g.entries[i]!.price)
+      if (n != null && n < bestN) {
+        bestN = n
+        bestI = i
+      }
+    }
+    return bestI
   }, [])
 
   const handleExportCsv = useCallback(() => {
@@ -536,6 +551,12 @@ export function PortfolioPage() {
                       g.entries.length > 1
                         ? `${g.entries.length} vendors`
                         : collapsedVendor?.vendor_name ?? "—"
+                    const savedChoice = vendorChoiceByPart[g.rowId]
+                    const choiceIdx =
+                      savedChoice != null && savedChoice >= 0 && savedChoice < g.entries.length
+                        ? savedChoice
+                        : bestEntryIndexForGroup(g)
+                    const selectedOffer = g.entries[choiceIdx] ?? g.entries[0]
 
                     return (
                       <Fragment key={g.rowId}>
@@ -576,12 +597,50 @@ export function PortfolioPage() {
                           <td className="px-3 py-3 align-middle text-slate-700">
                             {expanded ? (
                               <span className="text-slate-400">—</span>
+                            ) : g.entries.length > 1 ? (
+                              <div className="min-w-0 max-w-[min(100%,16rem)]">
+                                <label htmlFor={`portfolio-vendor-${g.rowId}`} className="sr-only">
+                                  Vendor offer for part {g.part_number ?? "—"}
+                                </label>
+                                <div className="relative">
+                                  <select
+                                    id={`portfolio-vendor-${g.rowId}`}
+                                    value={choiceIdx}
+                                    onChange={(e) =>
+                                      setVendorChoiceByPart((prev) => ({
+                                        ...prev,
+                                        [g.rowId]: Number(e.target.value),
+                                      }))
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-full cursor-pointer appearance-none truncate rounded-lg border border-slate-200 bg-white py-2 pl-2.5 pr-8 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                  >
+                                    {g.entries.map((entry, ei) => {
+                                      const pn = parsePrice(entry.price)
+                                      return (
+                                        <option key={`${g.rowId}-vopt-${ei}`} value={ei}>
+                                          {(entry.vendor_name ?? "Vendor")} —{" "}
+                                          {displayPrice(entry.price, pn)}
+                                        </option>
+                                      )
+                                    })}
+                                  </select>
+                                  <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                                </div>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {g.entries.length} vendor{g.entries.length === 1 ? "" : "s"} — expand for all
+                                </p>
+                              </div>
                             ) : (
                               <span className="line-clamp-2">{collapsedDisplay}</span>
                             )}
                           </td>
                           <td className="px-3 py-3 align-middle tabular-nums text-slate-900">
-                            {expanded ? "—" : g.entries.length > 1 && minForGroup != null ? formatUsd(minForGroup) : collapsedPrice}
+                            {expanded
+                              ? "—"
+                              : g.entries.length > 1 && selectedOffer
+                                ? displayPrice(selectedOffer.price, parsePrice(selectedOffer.price))
+                                : collapsedPrice}
                           </td>
                           <td className="px-3 py-3 text-right align-middle">
                             <DropdownMenu>
@@ -679,6 +738,7 @@ export function PortfolioPage() {
                                         <MoreHorizontal className="h-4 w-4" />
                                       </button>
                                     </DropdownMenuTrigger>
+                                  {/* added comments */}
                                     <DropdownMenuContent className="min-w-[200px]" align="end">
                                       <DropdownMenuItem
                                         className="flex cursor-pointer items-center gap-2"
