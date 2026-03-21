@@ -568,12 +568,9 @@ export function ResearchPage() {
       .finally(() => setPreviewResultsLoading(false))
   }, [selectedRowIndex, effectiveTabId, activeTab?.fileId, researchVersion, isInspectorOpen])
 
+  // Keep scraped-source checkboxes unchecked until the user selects them (do not select all on load).
   useEffect(() => {
-    if (!previewScrapedData?.length) {
-      setInspectorScrapedSourceSelection(new Set())
-      return
-    }
-    setInspectorScrapedSourceSelection(new Set(previewScrapedData.map((_, i) => i)))
+    setInspectorScrapedSourceSelection(new Set())
   }, [previewScrapedData])
 
   // Show loading in preview while research is running (until all rows scraped)
@@ -830,7 +827,7 @@ export function ResearchPage() {
         setInspectorMode('single')
         setInspectorMaximized(false)
         setInspectorMultiRowIndices([])
-        setInspectorCompareSelection(new Set([dataRowIndex]))
+        setInspectorCompareSelection(new Set())
         setCollapseSidebarForInspector(true)
       }
     },
@@ -844,7 +841,7 @@ export function ResearchPage() {
       setInspectorMode('single')
       setInspectorMaximized(false)
       setInspectorMultiRowIndices([])
-      setInspectorCompareSelection(new Set([dataRowIndex]))
+      setInspectorCompareSelection(new Set())
       setCollapseSidebarForInspector(true)
     },
     [setCollapseSidebarForInspector]
