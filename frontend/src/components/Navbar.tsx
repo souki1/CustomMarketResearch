@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
-import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 import { useBucket, type BucketItem } from '@/contexts/BucketContext'
 
 function NavbarIcon() {
@@ -325,7 +324,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   }
   return (
     <>
-    <nav className="sticky top-0 z-10 border-b border-gray-200 bg-white" aria-label="Main navigation">
+    <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white" aria-label="Main navigation">
       <div className="w-full max-w-8xl mx-auto px-3 sm:px-4">
         <div className="flex items-center justify-between h-11 gap-2">
           <div className="flex items-center gap-1">
@@ -636,7 +635,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
         onRemove={removeItem}
         onClose={() => setDrawerOpen(false)}
         onViewDetails={() => { setDrawerOpen(false); navigate('/research'); }}
-        onCompare={() => { setDrawerOpen(false); navigate(RESEARCH_COMPARE_PATH); }}
+        onCompare={() => { setDrawerOpen(false); navigate('/compare'); }}
       />
     )}
     </>
