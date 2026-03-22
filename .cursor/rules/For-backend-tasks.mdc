@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+
+- Use async patterns when available
+- Follow clean architecture principles
+- Use parameterized queries or ORM for database access
+- Include input validation and error handling
+- Provide example API routes with request/response schemas
