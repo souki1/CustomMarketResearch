@@ -19,6 +19,7 @@ import { SignInPage } from '@/pages/SignInPage'
 import { SignUpPage } from '@/pages/SignUpPage'
 import { PortfolioPage } from '@/pages/Portfolio'
 import { GenerateReportPage } from '@/pages/GenerateReport'
+import { AnalysisPage } from '@/pages/AnalysisPage'
 
 const router = createBrowserRouter([
   {
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
       { path: 'research/compare', element: <ComparePage /> },
       { path: 'compare', element: <Navigate to={RESEARCH_COMPARE_PATH} replace /> },
       { path: 'reports', element: <GenerateReportPage /> },
+      { path: 'analysis', element: <AnalysisPage /> },
       { path: 'purchase-order', element: <PurchaseOrderPage /> },
       { path: 'ai', element: <AiPlaceholderPage /> },
       { path: 'portfolio', element: <PortfolioPage /> },
