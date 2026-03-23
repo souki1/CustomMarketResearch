@@ -523,93 +523,103 @@ export function ComparePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-8">
-      <div className="text-center">
-        <p className="text-xl font-semibold uppercase tracking-wide text-gray-500">Compare</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">
-          Which product is right for you?
+    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="border-b border-slate-200/80 pb-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare workspace</p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          Product comparison
         </h1>
-      
-      </div>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+          Align specifications across vendors and parts using workspace data and scraped research in one view.
+        </p>
+      </header>
 
-      {/* Tab bar - like Research page: tabs + New tab dropdown */}
-      <div className="mt-6 mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
-        {compareTabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tab"
-            aria-selected={tab.id === activeCompareTabId}
-            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-              tab.id === activeCompareTabId
-                ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setActiveCompareTabId(tab.id)}
-              className="font-medium"
+      {/* Compare sheets */}
+      <div className="mt-8 rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm ring-1 ring-slate-950/5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {compareTabs.map((tab) => (
+            <div
+              key={tab.id}
+              role="tab"
+              aria-selected={tab.id === activeCompareTabId}
+              className={`flex items-center gap-1 rounded-lg text-sm transition-colors ${
+                tab.id === activeCompareTabId
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
             >
-              {tab.name}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => closeCompareTab(e, tab.id)}
-              className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
-              aria-label="Close tab"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        ))}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setNewTabMenuOpen((o) => !o)}
-            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            title="New tab"
-          >
-            + New tab
-          </button>
-          {newTabMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
               <button
                 type="button"
-                onClick={addNewCompareTab}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                onClick={() => setActiveCompareTabId(tab.id)}
+                className="px-3 py-2 font-medium"
               >
-                <span className="text-gray-400">+</span>
-                New sheet
+                {tab.name}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setNewTabMenuOpen(false)
-                  setFilePickerOpen(true)
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                onClick={(e) => closeCompareTab(e, tab.id)}
+                className={`rounded-md p-1.5 ${
+                  tab.id === activeCompareTabId
+                    ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-200/80 hover:text-slate-700'
+                }`}
+                aria-label="Close tab"
               >
-                <span className="text-gray-400">↺</span>
-                Open file…
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
-          )}
+          ))}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setNewTabMenuOpen((o) => !o)}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              title="New tab"
+            >
+              + New tab
+            </button>
+            {newTabMenuOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1.5 min-w-[220px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5">
+                <button
+                  type="button"
+                  onClick={addNewCompareTab}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  <span className="text-slate-400">+</span>
+                  New sheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTabMenuOpen(false)
+                    setFilePickerOpen(true)
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  <span className="text-slate-400">↺</span>
+                  Open file…
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Select file from workspace */}
-      <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Select file from workspace</h3>
-        <p className="mt-1 text-xs text-gray-600">
-          Choose files from the Home page. Select multiple rows from one file to compare different parts from the same vendor, or select rows from multiple files to compare across vendors.
+      {/* Data source */}
+      <section className="mt-8 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm ring-1 ring-slate-950/5 sm:p-8">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Data source</h2>
+        <h3 className="mt-1 text-lg font-semibold text-slate-900">Workspace files</h3>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+          Attach CSVs from Home. Select rows in one file for same-vendor part comparisons, or use multiple files to
+          compare across vendors.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => setFilePickerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -617,7 +627,7 @@ export function ComparePage() {
             Choose file…
           </button>
           {fileContentLoading.size > 0 && (
-            <span className="text-sm text-gray-500">Loading file…</span>
+            <span className="text-sm text-slate-500">Loading file…</span>
           )}
           {selectedFilesData.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -630,10 +640,10 @@ export function ComparePage() {
                   <span
                     key={file.fileId}
                     onClick={() => updateActiveTabData((d) => ({ ...d, activeFileId: file.fileId }))}
-                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                       isActive
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                        : 'border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white'
                     }`}
                   >
                     <span className="font-medium">{file.name}</span>
@@ -643,7 +653,11 @@ export function ComparePage() {
                         e.stopPropagation()
                         handleRemoveFile(file.fileId)
                       }}
-                      className="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                      className={`rounded p-0.5 ${
+                        isActive
+                          ? 'text-slate-300 hover:bg-white/15 hover:text-white'
+                          : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                      }`}
                       aria-label={`Remove ${file.name}`}
                     >
                       ×
@@ -661,14 +675,14 @@ export function ComparePage() {
           )
           if (!fileData) return null
           return (
-          <div key={fileData.fileId} className="mt-4">
-            <p className="mb-1 text-xs font-medium text-gray-600">{fileData.name}</p>
+          <div key={fileData.fileId} className="mt-6">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{fileData.name}</p>
             {fileData.content.length > 1 ? (
-              <div className="max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
-                <p className="border-b border-gray-200 px-3 py-2 text-xs font-medium text-gray-600">
-                  Select rows to compare different parts from this vendor (header row excluded)
+              <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
+                <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2.5 text-xs font-medium text-slate-600">
+                  Select data rows (header excluded)
                 </p>
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-slate-100">
                   {fileData.content.slice(1).map((row: string[], idx: number) => {
                     const rowIdx = idx
                     const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
@@ -679,8 +693,8 @@ export function ComparePage() {
                     return (
                       <div
                         key={rowIdx}
-                        className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-50 ${
-                          isSelectedForScraped ? 'bg-emerald-50/70' : ''
+                        className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50/80 ${
+                          isSelectedForScraped ? 'bg-sky-50/90' : ''
                         }`}
                       >
                         <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
@@ -688,9 +702,9 @@ export function ComparePage() {
                             type="checkbox"
                             checked={isChecked}
                             onChange={(e) => toggleFileRow(fileData.fileId, rowIdx, e.target.checked)}
-                            className="rounded border-gray-300"
+                            className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                           />
-                          <span className="truncate text-sm text-gray-900">{label}</span>
+                          <span className="truncate text-sm text-slate-800">{label}</span>
                         </label>
                         <button
                           type="button"
@@ -702,12 +716,12 @@ export function ComparePage() {
                             }))
                             comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                           }}
-                          className={`shrink-0 rounded p-1 ${
+                          className={`shrink-0 rounded-md p-1.5 ${
                             isSelectedForScraped
-                              ? 'bg-emerald-100 text-emerald-600'
-                              : 'text-gray-400 hover:bg-blue-100 hover:text-blue-600'
+                              ? 'bg-sky-100 text-sky-700'
+                              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
                           }`}
-                          title="View  data"
+                          title="View scraped data"
                           aria-label="View scraped data"
                         >
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -721,7 +735,7 @@ export function ComparePage() {
                             e.stopPropagation()
                             handleAddSingleRow(fileData.fileId, rowIdx)
                           }}
-                          className="shrink-0 rounded p-1 text-gray-400 hover:bg-emerald-100 hover:text-emerald-600"
+                          className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-900 hover:text-white"
                           title="Add to comparison"
                           aria-label="Add to comparison"
                         >
@@ -733,12 +747,12 @@ export function ComparePage() {
                     )
                   })}
                 </div>
-                <div className="border-t border-gray-200 px-3 py-2">
+                <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
                   <button
                     type="button"
                     onClick={() => handleAddSelectedFileRows(fileData.fileId)}
                     disabled={!(selectedFileRows[fileData.fileId]?.length ?? 0)}
-                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {(selectedFileRows[fileData.fileId]?.length ?? 0) > 0
                       ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected to comparison`
@@ -747,23 +761,24 @@ export function ComparePage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No data rows in this file.</p>
+              <p className="text-sm text-slate-500">No data rows in this file.</p>
             )}
           </div>
           )
         })()}
       
         {compareMode !== 'different-same-vendor' && selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <h4 className="text-sm font-semibold text-emerald-900">Different parts from different vendors</h4>
-            <p className="mt-1 text-xs text-emerald-700">
-              {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected from {filesWithSelection} file{filesWithSelection !== 1 ? 's' : ''}. Add all to compare side-by-side.
+          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 ring-1 ring-slate-950/5">
+            <h4 className="text-sm font-semibold text-slate-900">Cross-vendor selection</h4>
+            <p className="mt-1.5 text-sm text-slate-600">
+              {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected across{' '}
+              {filesWithSelection} file{filesWithSelection !== 1 ? 's' : ''}. Add everything to the comparison table.
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleAddAllSelectedFromAllFiles}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -776,26 +791,31 @@ export function ComparePage() {
                   closeAndClear()
                   updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
                 }}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 Cancel
               </button>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Comparison section: compare type tabs, then table + mode-specific panels */}
-      <div ref={comparisonSectionRef} className="mt-8">
-        <h3 className="mb-1 text-lg font-semibold text-gray-900">Compare parts</h3>
-        <p className="mb-3 text-sm text-gray-600">
-          The workspace section above follows the tab you choose. Scraped vendor data is shown when &quot;Same part
-          across vendors&quot; is active.
-        </p>
+      {/* Comparison matrix */}
+      <div ref={comparisonSectionRef} className="mt-10">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Comparison matrix</h2>
+            <h3 className="mt-1 text-xl font-semibold text-slate-900">Specification table</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+              Mode controls how workspace files behave. Same-part mode unlocks scraped vendor fields below the table.
+            </p>
+          </div>
+        </div>
+
         <div
           role="tablist"
           aria-label="Comparison type"
-          className="mb-4 flex flex-wrap gap-1 border-b border-gray-200"
+          className="mt-6 flex flex-wrap gap-1 rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/80"
         >
           {COMPARE_MODE_TABS.map(({ id, label }) => {
             const isActive = compareMode === id
@@ -807,10 +827,10 @@ export function ComparePage() {
                 aria-selected={isActive}
                 id={`compare-mode-tab-${id}`}
                 onClick={() => setCompareMode(id)}
-                className={`rounded-t border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                className={`rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all sm:px-4 ${
                   isActive
-                    ? 'relative z-[1] -mb-px border-gray-300 border-b-white bg-white text-gray-900'
-                    : 'border-transparent border-b-0 bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {label}
@@ -820,20 +840,21 @@ export function ComparePage() {
         </div>
 
         {items.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
+            <div className="overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] sm:min-w-[160px]">
-                      Spec
+                  <tr className="border-b border-slate-200 bg-slate-50/95">
+                    <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
+                      Attribute
                     </th>
                     {items.map((item) => (
-                      <th key={item.id} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
+                      <th key={item.id} className="min-w-[140px] border-b border-l border-slate-100 px-4 py-3.5 text-left sm:min-w-[188px]">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-gray-900">{item.title || '—'}</p>
+                            <p className="truncate font-semibold text-slate-900">{item.title || '—'}</p>
                             {item.sourceName && (
-                              <p className="truncate text-xs font-normal text-gray-500">{item.sourceName}</p>
+                              <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.sourceName}</p>
                             )}
                             {parseFileItemId(item.id) && (
                               <button
@@ -852,16 +873,16 @@ export function ComparePage() {
                                     comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                                   }
                                 }}
-                                className="mt-1 text-xs text-blue-600 hover:underline"
+                                className="mt-2 text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
                               >
-                                View data
+                                View scraped data
                               </button>
                             )}
                           </div>
                           <button
                             type="button"
                             onClick={() => handleRemoveComparisonItem(item.id)}
-                            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                            className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                             aria-label={`Remove ${item.title}`}
                           >
                             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -873,7 +894,7 @@ export function ComparePage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {(() => {
                     const allLabels = new Set<string>()
                     for (const item of items) {
@@ -881,15 +902,15 @@ export function ComparePage() {
                     }
                     const labels = Array.from(allLabels)
                     return labels.map((label) => (
-                      <tr key={label} className="group hover:bg-gray-50/50">
-                        <td className="sticky left-0 z-10 min-w-[120px] border-r border-gray-200 bg-white px-4 py-2 font-medium text-gray-600 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/50 sm:min-w-[160px]">
+                      <tr key={label} className="group transition-colors hover:bg-slate-50/60">
+                        <td className="sticky left-0 z-10 min-w-[120px] border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:min-w-[168px]">
                           {label.replace(/_/g, ' ')}
                         </td>
                         {items.map((item) => {
                           const spec = item.specs.find((s) => s.label === label)
                           const value = spec?.value ?? '—'
                           return (
-                            <td key={item.id} className="border-l border-gray-100 px-4 py-2 text-gray-900">
+                            <td key={item.id} className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800">
                               {value}
                             </td>
                           )
@@ -899,20 +920,36 @@ export function ComparePage() {
                   })()}
                 </tbody>
             </table>
+            </div>
           </div>
         )}
 
-        {/* Scraped data - shown when "Same part across vendors" tab is selected */}
+        {items.length === 0 && (
+          <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-14 text-center ring-1 ring-slate-950/[0.03]">
+            <p className="text-sm font-medium text-slate-700">No items in comparison</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Add rows from workspace files above or send parts from Research to populate this table.
+            </p>
+          </div>
+        )}
+
+        {/* Scraped vendor data (same-part mode) */}
         {compareMode === 'same-part' && (
-          <div className={items.length > 0 ? 'mt-8' : 'mt-2'}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Scraped data{selectedRowForScraped ? `: ${selectedRowForScraped.partLabel}` : ''}
-              </h3>
-              <div className="flex flex-wrap items-center gap-4">
+          <div className={items.length > 0 ? 'mt-10' : 'mt-8'}>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Vendor scrape</h3>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  Structured fields
+                  {selectedRowForScraped ? (
+                    <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
+                  ) : null}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
                 {items.length > 0 && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-600">Part:</span>
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <span className="font-medium">Part</span>
                     <select
                       value={(() => {
                         const currentId = selectedRowForScraped
@@ -936,7 +973,7 @@ export function ComparePage() {
                           }))
                         }
                       }}
-                      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     >
                       {items.map((item) => (
                         <option key={item.id} value={item.id}>
@@ -951,12 +988,12 @@ export function ComparePage() {
                   const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
                   if (domains.length < 2) return null
                   return (
-                    <label className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-600">Vendor:</span>
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <span className="font-medium">Vendor</span>
                       <select
                         value={scrapedVendorFilter ?? (isDifferentPartsSameVendor && domains[0] ? domains[0] : 'all')}
                         onChange={(e) => setScrapedVendorFilter(e.target.value === 'all' ? 'all' : e.target.value)}
-                        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                       >
                         <option value="all">All vendors</option>
                         {domains.map((d) => (
@@ -971,11 +1008,11 @@ export function ComparePage() {
               </div>
             </div>
             {!selectedRowForScraped ? (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                Select a part above to view scraped data across vendors.
+              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
+                Select a part row in the workspace list to load scraped vendor fields.
               </p>
             ) : scrapedDataLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              <div className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-10 text-sm text-slate-600 ring-1 ring-slate-950/5">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
                 </svg>
@@ -989,12 +1026,13 @@ export function ComparePage() {
                     : scrapedTableRows.map((_, i) => i)
                 const displayScrapedRows = colOrder.map((i) => scrapedTableRows[i]!)
                 return (
-                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
+                    <div className="overflow-x-auto">
                     <table className="min-w-full border-separate border-spacing-0 text-sm">
                       <thead>
-                        <tr className="border-b border-gray-200 bg-gray-50">
-                          <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-4 py-3 text-left font-medium text-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] sm:min-w-[160px]">
-                            Spec
+                        <tr className="border-b border-slate-200 bg-slate-50/95">
+                          <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
+                            Field
                           </th>
                           {displayScrapedRows.map((item, displayIdx) => (
                             <th
@@ -1003,17 +1041,17 @@ export function ComparePage() {
                               onDragStart={(e) => handleScrapedHeaderDragStart(e, displayIdx)}
                               onDragOver={handleScrapedHeaderDragOver}
                               onDrop={(e) => handleScrapedHeaderDrop(e, displayIdx)}
-                              className="min-w-[140px] cursor-grab border-l border-gray-200 px-4 py-3 text-left active:cursor-grabbing sm:min-w-[180px]"
+                              className="min-w-[140px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left active:cursor-grabbing sm:min-w-[188px]"
                               title="Drag to reorder sources"
                             >
                               <div className="flex min-w-0 items-start gap-2">
-                                <span className="mt-0.5 shrink-0 text-gray-400 select-none" aria-hidden>
+                                <span className="mt-0.5 shrink-0 text-slate-400 select-none" aria-hidden>
                                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                                     <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
                                   </svg>
                                 </span>
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-xs font-medium text-gray-500">
+                                  <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Source {displayIdx + 1}
                                   </p>
                                   <a
@@ -1022,7 +1060,7 @@ export function ComparePage() {
                                     rel="noopener noreferrer"
                                     draggable={false}
                                     onDragStart={(e) => e.stopPropagation()}
-                                    className="mt-0.5 block truncate text-xs text-blue-600 hover:underline"
+                                    className="mt-1 block truncate text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
                                     title={item.url}
                                   >
                                     {item.url}
@@ -1033,7 +1071,7 @@ export function ComparePage() {
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-slate-100">
                         {(() => {
                           const allKeys = new Set<string>()
                           for (const item of displayScrapedRows) {
@@ -1043,8 +1081,8 @@ export function ComparePage() {
                           }
                           const keys = Array.from(allKeys).sort()
                           return keys.map((key) => (
-                            <tr key={key} className="group hover:bg-gray-50/50">
-                              <td className="sticky left-0 z-10 min-w-[120px] border-r border-gray-200 bg-white px-4 py-2 font-medium text-gray-600 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/50 sm:min-w-[160px]">
+                            <tr key={key} className="group transition-colors hover:bg-slate-50/60">
+                              <td className="sticky left-0 z-10 min-w-[120px] border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:min-w-[168px]">
                                 {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
                               </td>
                               {displayScrapedRows.map((item) => {
@@ -1072,7 +1110,7 @@ export function ComparePage() {
                                 return (
                                   <td
                                     key={item.url}
-                                    className="border-l border-gray-100 px-4 py-2 text-gray-900 align-top"
+                                    className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
                                   >
                                     {showAsImage ? (
                                       <span className="inline-flex flex-wrap gap-2">
@@ -1081,7 +1119,7 @@ export function ComparePage() {
                                             <img
                                               src={imgSrc}
                                               alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                              className="max-h-24 rounded border border-gray-200 object-contain"
+                                              className="max-h-24 rounded-lg border border-slate-200 object-contain"
                                               loading="lazy"
                                               onError={(e) => {
                                                 const el = e.currentTarget
@@ -1095,7 +1133,7 @@ export function ComparePage() {
                                               href={imgSrc}
                                               target="_blank"
                                               rel="noopener noreferrer"
-                                              className="hidden max-w-[200px] truncate text-xs text-blue-600 hover:underline"
+                                              className="hidden max-w-[200px] truncate text-xs text-sky-700 hover:underline"
                                               title={imgSrc}
                                             >
                                               {imgSrc}
@@ -1114,12 +1152,13 @@ export function ComparePage() {
                         })()}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )
               })()
             ) : (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                No scraped data for this part. Run Research on the Research page first to scrape vendor data.
+              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
+                No scraped data for this part. Run Research on the Research page to collect vendor data.
               </p>
             )}
           </div>
@@ -1133,24 +1172,24 @@ export function ComparePage() {
       {/* File picker modal */}
       {filePickerOpen && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
           onClick={() => setFilePickerOpen(false)}
           role="dialog"
           aria-modal="true"
           aria-labelledby="compare-file-picker-title"
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+            className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl ring-1 ring-slate-950/5"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 id="compare-file-picker-title" className="text-base font-semibold text-gray-900">
-                Select file from workspace
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-5 py-4">
+              <h3 id="compare-file-picker-title" className="text-base font-semibold text-slate-900">
+                Workspace files
               </h3>
               <button
                 type="button"
                 onClick={() => setFilePickerOpen(false)}
-                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200/80 hover:text-slate-700"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1158,20 +1197,22 @@ export function ComparePage() {
                 </svg>
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex-1 overflow-y-auto p-3">
               {filePickerLoading && (
-                <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
+                <p className="py-10 text-center text-sm text-slate-500">Loading files…</p>
               )}
               {filePickerError && (
                 <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
               )}
               {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
-                <p className="py-8 text-center text-sm text-gray-500">No files in workspace. Upload files on the Home page first.</p>
+                <p className="py-10 text-center text-sm text-slate-500">
+                  No files in workspace. Upload from the Home page first.
+                </p>
               )}
               {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
                 <>
-                  <p className="mb-2 px-2 text-xs text-gray-500">Click files to add. Close when done.</p>
-                  <ul className="space-y-0.5">
+                  <p className="mb-3 px-2 text-xs font-medium text-slate-500">Select a file to attach to this sheet.</p>
+                  <ul className="space-y-1">
                   {filePickerFiles.map((file: FileEntry) => {
                     const isSelected = selectedFilesData.some((f: LoadedFile) => f.fileId === file.id)
                     const isLoading = fileContentLoading.has(file.id)
@@ -1181,20 +1222,20 @@ export function ComparePage() {
                         type="button"
                         onClick={() => handleFilePickerFileClick(file)}
                         disabled={isSelected || isLoading}
-                        className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm ${
+                        className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
                           isSelected
-                            ? 'cursor-default bg-gray-100 text-gray-500'
+                            ? 'cursor-default bg-slate-100 text-slate-500'
                             : isLoading
-                              ? 'cursor-wait text-gray-500'
-                              : 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-800'
+                              ? 'cursor-wait text-slate-500'
+                              : 'text-slate-800 hover:bg-slate-50'
                         }`}
                       >
                         <span className="truncate w-full font-medium">{file.name}</span>
                         {file.folderPath && (
-                          <span className="truncate w-full text-xs text-gray-500">{file.folderPath}</span>
+                          <span className="truncate w-full text-xs text-slate-500">{file.folderPath}</span>
                         )}
                         {isSelected && (
-                          <span className="text-xs text-emerald-600">Added</span>
+                          <span className="text-xs font-medium text-slate-700">Attached</span>
                         )}
                       </button>
                     </li>
@@ -1204,11 +1245,11 @@ export function ComparePage() {
                 </>
               )}
             </div>
-            <div className="border-t border-gray-200 px-4 py-2">
+            <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
               <button
                 type="button"
                 onClick={() => setFilePickerOpen(false)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
               >
                 Done
               </button>
