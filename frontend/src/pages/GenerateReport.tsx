@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReportGalleryHome, ReportStudio } from '@/components/reports'
+import { aiGroqChat } from '@/lib/api'
+import { getToken } from '@/lib/auth'
 import {
   createEmptyBlock,
   createNewReport,
@@ -13,7 +15,136 @@ import {
 
 type StudioMode = 'home' | 'studio'
 
+function newBlockId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  } catch {
+    // fall through
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createTitleBlock(text: string): ReportBlock {
+  return { id: newBlockId(), type: 'title', text, align: 'left' }
+}
+
+function createHeadingBlock(text: string): ReportBlock {
+  return { id: newBlockId(), type: 'heading', text, align: 'left' }
+}
+
+function createParagraphBlock(text: string): ReportBlock {
+  return { id: newBlockId(), type: 'paragraph', text, align: 'left' }
+}
+
+function createBulletsBlock(items: string[]): ReportBlock {
+  return { id: newBlockId(), type: 'bullets', items, align: 'left' }
+}
+
+function extractJsonCandidate(raw: string): string {
+  const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fencedMatch && fencedMatch[1]) return fencedMatch[1].trim()
+  return raw.trim()
+}
+
+function readString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function parseAiToReportDraft(userPrompt: string, raw: string): { title: string; blocks: ReportBlock[] } {
+  let parsed: Record<string, unknown> | null = null
+  const candidate = extractJsonCandidate(raw)
+  try {
+    const json = JSON.parse(candidate) as unknown
+    if (json && typeof json === 'object' && !Array.isArray(json)) parsed = json as Record<string, unknown>
+  } catch {
+    parsed = null
+  }
+
+  const fallbackTitle = userPrompt.trim().slice(0, 80) || 'AI generated report'
+  const title = readString(parsed?.title) ?? fallbackTitle
+  const blocks: ReportBlock[] = [createTitleBlock(title)]
+
+  const summary = readString(parsed?.summary)
+  if (summary) blocks.push(createParagraphBlock(summary))
+
+  const sections = parsed && Array.isArray(parsed.sections) ? parsed.sections : []
+  for (const section of sections) {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) continue
+    const row = section as Record<string, unknown>
+    const heading = readString(row.heading)
+    if (heading) blocks.push(createHeadingBlock(heading))
+    for (const p of readStringArray(row.paragraphs)) {
+      blocks.push(createParagraphBlock(p))
+    }
+    const bullets = readStringArray(row.bullets)
+    if (bullets.length) blocks.push(createBulletsBlock(bullets))
+  }
+
+  const keyPoints = readStringArray(parsed?.key_points)
+  if (keyPoints.length) {
+    blocks.push(createHeadingBlock('Key points'))
+    blocks.push(createBulletsBlock(keyPoints))
+  }
+
+  const conclusion = readString(parsed?.conclusion)
+  if (conclusion) {
+    blocks.push(createHeadingBlock('Conclusion'))
+    blocks.push(createParagraphBlock(conclusion))
+  }
+
+  if (blocks.length > 1) return { title, blocks }
+
+  const chunks = raw
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+
+  for (const chunk of chunks) {
+    const lines = chunk
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) continue
+
+    const markdownHeading = lines[0]?.match(/^#{1,6}\s+(.+)$/)
+    if (markdownHeading?.[1]) {
+      blocks.push(createHeadingBlock(markdownHeading[1].trim()))
+      const body = lines.slice(1).join(' ').trim()
+      if (body) blocks.push(createParagraphBlock(body))
+      continue
+    }
+
+    const bulletItems = lines
+      .filter((line) => /^[-*•]\s+/.test(line))
+      .map((line) => line.replace(/^[-*•]\s+/, '').trim())
+      .filter(Boolean)
+    if (bulletItems.length >= 2 && bulletItems.length === lines.length) {
+      blocks.push(createBulletsBlock(bulletItems))
+      continue
+    }
+
+    blocks.push(createParagraphBlock(lines.join(' ')))
+  }
+
+  if (blocks.length === 1) {
+    blocks.push(createParagraphBlock(raw.trim() || 'No AI content generated.'))
+  }
+
+  return { title, blocks }
+}
+
 export function GenerateReportPage() {
+  const token = useMemo(() => getToken(), [])
   const [studioMode, setStudioMode] = useState<StudioMode>('home')
   const [tab, setTab] = useState<'list' | 'create'>('list')
   const [reports, setReports] = useState<SavedReport[]>([])
@@ -26,6 +157,10 @@ export function GenerateReportPage() {
   ])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [showAiComposer, setShowAiComposer] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   useEffect(() => {
     setReports(loadSavedReports())
@@ -45,6 +180,20 @@ export function GenerateReportPage() {
     setDocTitle('Untitled report')
     setBlocks([createEmptyBlock('title'), createEmptyBlock('paragraph')])
     setSelectedId(null)
+    setShowAiComposer(false)
+    setAiPrompt('')
+    setAiError(null)
+    setStudioMode('studio')
+  }, [])
+
+  const openStudioAi = useCallback(() => {
+    setEditingId(null)
+    setDocTitle('Untitled report')
+    setBlocks([createEmptyBlock('title'), createEmptyBlock('paragraph')])
+    setSelectedId(null)
+    setShowAiComposer(true)
+    setAiPrompt('')
+    setAiError(null)
     setStudioMode('studio')
   }, [])
 
@@ -53,13 +202,53 @@ export function GenerateReportPage() {
     setDocTitle(r.title)
     setBlocks(r.blocks.map((b) => normalizeBlock(structuredClone(b))))
     setSelectedId(r.blocks[0]?.id ?? null)
+    setShowAiComposer(false)
+    setAiError(null)
     setStudioMode('studio')
   }, [])
 
   const closeStudio = useCallback(() => {
     setStudioMode('home')
     setSelectedId(null)
+    setAiGenerating(false)
+    setAiError(null)
   }, [])
+
+  const generateWithAi = useCallback(async () => {
+    const prompt = aiPrompt.trim()
+    if (!prompt) return
+    if (!token) {
+      setAiError('Sign in to generate reports with AI.')
+      return
+    }
+
+    setAiGenerating(true)
+    setAiError(null)
+    try {
+      const instruction = [
+        'Generate a professional report from the user prompt.',
+        'Return JSON only (no markdown), using this schema:',
+        '{"title":"string","summary":"string","sections":[{"heading":"string","paragraphs":["string"],"bullets":["string"]}],"key_points":["string"],"conclusion":"string"}',
+        'Use concise, factual language and avoid unsafe or unverifiable claims.',
+      ].join('\n')
+
+      const res = await aiGroqChat(token, {
+        mode: 'chat',
+        message: `${instruction}\n\nUser prompt:\n${prompt}`,
+        history: [],
+      })
+
+      const generated = parseAiToReportDraft(prompt, res.content)
+      const normalizedBlocks = generated.blocks.map((b) => normalizeBlock(structuredClone(b)))
+      setDocTitle(generated.title)
+      setBlocks(normalizedBlocks)
+      setSelectedId(normalizedBlocks[0]?.id ?? null)
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Failed to generate report')
+    } finally {
+      setAiGenerating(false)
+    }
+  }, [aiPrompt, token])
 
   const addBlock = useCallback((type: ReportBlockType) => {
     const nb = createEmptyBlock(type)
@@ -130,6 +319,12 @@ export function GenerateReportPage() {
         onUpdateBlock={updateBlock}
         onRemoveBlock={removeBlock}
         onMoveBlock={moveBlock}
+        showAiComposer={showAiComposer}
+        aiPrompt={aiPrompt}
+        aiGenerating={aiGenerating}
+        aiError={aiError}
+        onAiPromptChange={setAiPrompt}
+        onGenerateWithAi={() => void generateWithAi()}
       />
     )
   }
@@ -142,6 +337,7 @@ export function GenerateReportPage() {
       previewId={previewId}
       onPreviewIdChange={setPreviewId}
       onOpenStudioNew={openStudioNew}
+      onOpenStudioAi={openStudioAi}
       onOpenStudioEdit={openStudioEdit}
       onDeleteReport={handleDelete}
     />

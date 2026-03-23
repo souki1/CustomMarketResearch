@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileText, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from 'lucide-react'
+import { FileText, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { formatCreated } from '@/components/reports/reportBlockUtils'
 import { BTN_GHOST, BTN_PRIMARY, PAGE_SHADOW } from '@/components/reports/reportStudioStyles'
 import { blocksToPlainText, type SavedReport } from '@/lib/savedReports'
@@ -21,6 +21,7 @@ export type ReportGalleryHomeProps = {
   previewId: string | null
   onPreviewIdChange: (id: string | null) => void
   onOpenStudioNew: () => void
+  onOpenStudioAi: () => void
   onOpenStudioEdit: (r: SavedReport) => void
   onDeleteReport: (id: string) => void
 }
@@ -32,6 +33,7 @@ export function ReportGalleryHome({
   previewId,
   onPreviewIdChange,
   onOpenStudioNew,
+  onOpenStudioAi,
   onOpenStudioEdit,
   onDeleteReport,
 }: ReportGalleryHomeProps) {
@@ -155,6 +157,14 @@ export function ReportGalleryHome({
                       <Plus className="mr-2 h-4 w-4" aria-hidden />
                       Create report
                     </button>
+                    <button
+                      type="button"
+                      className={`${BTN_GHOST} mt-3 rounded-lg px-5`}
+                      onClick={onOpenStudioAi}
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" aria-hidden />
+                      Make report with AI
+                    </button>
                   </div>
                 ) : (
                   <ul className="grid gap-5 sm:grid-cols-2 lg:gap-6">
@@ -231,6 +241,14 @@ export function ReportGalleryHome({
                   <button type="button" className={`${BTN_PRIMARY} mt-8 rounded-lg px-6`} onClick={onOpenStudioNew}>
                     <Plus className="mr-2 h-4 w-4" aria-hidden />
                     Start designing
+                  </button>
+                  <button
+                    type="button"
+                    className={`${BTN_GHOST} mt-3 rounded-lg px-6`}
+                    onClick={onOpenStudioAi}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" aria-hidden />
+                    Make report with AI
                   </button>
                 </div>
               </section>
