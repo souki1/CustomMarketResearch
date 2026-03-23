@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+
+- Use modern React patterns (hooks, functional components)
+- Use TailwindCSS for styling unless specified otherwise
+- Follow responsive design principles
+- Keep components small and reusable
+- Use lucide-react for icons

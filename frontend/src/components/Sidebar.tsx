@@ -29,6 +29,13 @@ function ReportsIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+function AnalysisIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5M4 19h16M8 15v-4m4 4V9m4 6v-6" />
+    </svg>
+  )
+}
 function PurchaseOrderIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -80,6 +87,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
+  const isAnalysis = location.pathname === '/analysis'
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
@@ -104,6 +112,9 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             </Link>
             <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
               <ReportsIcon className={iconClass} />
+            </Link>
+            <Link to="/analysis" className={collapsedLinkClass(isAnalysis)} title="Analysis">
+              <AnalysisIcon className={iconClass} />
             </Link>
             <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
               <AiIcon className={iconClass} />
@@ -146,6 +157,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
           <Link to="/reports" className={linkClass(isReports)} title="Reports">
             <ReportsIcon className={iconClass} />
             <span>Reports</span>
+          </Link>
+          <Link to="/analysis" className={linkClass(isAnalysis)} title="Analysis">
+            <AnalysisIcon className={iconClass} />
+            <span>Analysis</span>
           </Link>
           <Link to="/ai" className={linkClass(isAi)} title="AI">
             <AiIcon className={iconClass} />
