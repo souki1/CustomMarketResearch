@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import { ReportBlockEditor } from '@/components/reports/ReportBlockEditor'
 import { ReportBlockFormatBar } from '@/components/reports/ReportBlockFormatBar'
 import { ELEMENT_TOOLS } from '@/components/reports/reportElementTools'
@@ -17,6 +17,12 @@ export type ReportStudioProps = {
   onUpdateBlock: (id: string, next: ReportBlock) => void
   onRemoveBlock: (id: string) => void
   onMoveBlock: (id: string, dir: -1 | 1) => void
+  showAiComposer?: boolean
+  aiPrompt?: string
+  aiGenerating?: boolean
+  aiError?: string | null
+  onAiPromptChange?: (prompt: string) => void
+  onGenerateWithAi?: () => void
 }
 
 export function ReportStudio({
@@ -31,6 +37,12 @@ export function ReportStudio({
   onUpdateBlock,
   onRemoveBlock,
   onMoveBlock,
+  showAiComposer = false,
+  aiPrompt = '',
+  aiGenerating = false,
+  aiError = null,
+  onAiPromptChange,
+  onGenerateWithAi,
 }: ReportStudioProps) {
   const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null
 
@@ -83,6 +95,41 @@ export function ReportStudio({
 
         <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
           <div className="flex-1 overflow-auto px-4 py-8 sm:px-8">
+            {showAiComposer && (
+              <div className="mx-auto mb-4 w-full max-w-[560px] rounded-xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Make report with AI</p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    className="min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                    value={aiPrompt}
+                    onChange={(e) => onAiPromptChange?.(e.target.value)}
+                    placeholder="Describe the report you want (topic, audience, sections...)"
+                    maxLength={800}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        if (!aiGenerating) onGenerateWithAi?.()
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`${BTN_PRIMARY} shrink-0`}
+                    onClick={() => onGenerateWithAi?.()}
+                    disabled={aiGenerating || !aiPrompt.trim()}
+                  >
+                    {aiGenerating ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
+                    {aiGenerating ? 'Generating...' : 'Generate'}
+                  </button>
+                </div>
+                {aiError && <p className="mt-2 text-xs text-red-700">{aiError}</p>}
+              </div>
+            )}
             <div
               className={`mx-auto min-h-[720px] w-full max-w-[560px] bg-white ${PAGE_SHADOW} rounded-sm px-10 py-12 sm:px-14 sm:py-16`}
               onClick={() => onSelectId(null)}
