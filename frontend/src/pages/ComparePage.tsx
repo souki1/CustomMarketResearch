@@ -1,13 +1,15 @@
 import type { DragEvent, MouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FileSpreadsheet, Layers, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
+import { Layers, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { getToken } from '@/lib/auth'
 import {
   getWorkspaceFileContent,
+  listDataSheetSelections,
+  listPortfolioItems,
   listResearchUrls,
   listWorkspaceItems,
 } from '@/lib/api'
-import type { ScrapedDataItem } from '@/lib/api'
+import type { PortfolioItem, ScrapedDataItem } from '@/lib/api'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 
 function parseCsv(text: string): string[][] {
@@ -149,6 +151,10 @@ export function ComparePage() {
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
   const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
   const [compareMode, setCompareMode] = useState<CompareMode>('different-different-vendors')
 
   const activeTab =
@@ -206,11 +212,62 @@ export function ComparePage() {
     }
   }, [compareTabs, activeCompareTabId])
 
+  const startRenaming = useCallback((tabId: string) => {
+    const tab = compareTabs.find((t) => t.id === tabId)
+    if (!tab) return
+    setRenamingTabId(tabId)
+    setRenameValue(tab.name)
+    requestAnimationFrame(() => renameInputRef.current?.select())
+  }, [compareTabs])
+
+  const commitRename = useCallback(() => {
+    if (!renamingTabId) return
+    const trimmed = renameValue.trim()
+    if (trimmed) {
+      setCompareTabs((prev) =>
+        prev.map((t) => (t.id === renamingTabId ? { ...t, name: trimmed } : t))
+      )
+    }
+    setRenamingTabId(null)
+    setRenameValue('')
+  }, [renamingTabId, renameValue])
+
+  const cancelRename = useCallback(() => {
+    setRenamingTabId(null)
+    setRenameValue('')
+  }, [])
+
   useEffect(() => {
     if (compareTabs.length > 0 && (!activeCompareTabId || !compareTabs.some((t) => t.id === activeCompareTabId))) {
       setActiveCompareTabId(compareTabs[0].id)
     }
   }, [compareTabs, activeCompareTabId])
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const selections = await listDataSheetSelections(token)
+        if (cancelled || selections.length === 0) return
+        const batches = await Promise.all(
+          selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[]))
+        )
+        if (cancelled) return
+        const nums = new Set<string>()
+        for (const batch of batches) {
+          for (const item of batch) {
+            if (item.part_number) nums.add(item.part_number.trim().toLowerCase())
+          }
+        }
+        setPortfolioPartNumbers(nums)
+      } catch {
+        // non-critical
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     try {
@@ -562,10 +619,13 @@ export function ComparePage() {
               <PanelLeftOpen className="h-4 w-4" aria-hidden />
             </button>
 
-            <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-2">
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-2">
               {compareTabs.map((tab) => {
                 const active = tab.id === activeCompareTabId
-                const initial = (tab.name || 'S').charAt(0).toUpperCase()
+                const words = (tab.name || 'S').trim().split(/\s+/)
+                const abbr = words.length >= 2
+                  ? (words[0]![0]! + words[1]![0]!).toUpperCase()
+                  : words[0]!.slice(0, 2).toUpperCase()
                 return (
                   <button
                     key={tab.id}
@@ -573,22 +633,13 @@ export function ComparePage() {
                     onClick={() => setActiveCompareTabId(tab.id)}
                     title={tab.name}
                     aria-label={tab.name}
-                    className={`group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold transition-all sm:h-9 sm:w-9 ${
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight transition-all sm:h-9 sm:w-9 ${
                       active
                         ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
                         : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
                     }`}
                   >
-                    <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold leading-none ${
-                        active
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-slate-300 text-white group-hover:bg-slate-500'
-                      }`}
-                    >
-                      {initial}
-                    </span>
+                    {abbr}
                   </button>
                 )
               })}
@@ -665,24 +716,43 @@ export function ComparePage() {
             <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-1.5 pb-3 pt-1 sm:px-2" role="list">
               {compareTabs.map((tab) => {
                 const active = tab.id === activeCompareTabId
+                const isRenaming = renamingTabId === tab.id
                 return (
                   <li key={tab.id}>
                     <div
-                      className={`flex items-stretch gap-0.5 rounded-xl text-left text-xs transition-colors focus-within:ring-2 focus-within:ring-violet-400/50 sm:text-sm ${
+                      className={`flex items-stretch gap-0.5 rounded-xl text-left text-xs transition-colors sm:text-sm ${
                         active
                           ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200'
                           : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
                       }`}
                     >
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => setActiveCompareTabId(tab.id)}
-                        className="min-w-0 flex-1 truncate px-2 py-2 text-left sm:px-3 sm:py-2.5"
-                      >
-                        <span className="line-clamp-2 wrap-break-word">{tab.name}</span>
-                      </button>
+                      {isRenaming ? (
+                        <input
+                          ref={renameInputRef}
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename()
+                            if (e.key === 'Escape') cancelRename()
+                          }}
+                          className="min-w-0 flex-1 rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-inner outline-none ring-2 ring-violet-400/30 sm:px-3 sm:py-2"
+                          aria-label={`Rename sheet ${tab.name}`}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setActiveCompareTabId(tab.id)}
+                          onDoubleClick={() => startRenaming(tab.id)}
+                          className="min-w-0 flex-1 truncate px-2 py-2 text-left sm:px-3 sm:py-2.5"
+                          title="Double-click to rename"
+                        >
+                          <span className="line-clamp-2 wrap-break-word">{tab.name}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => closeCompareTab(e, tab.id)}
@@ -706,25 +776,19 @@ export function ComparePage() {
         )}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto overscroll-contain px-4 py-8 sm:px-6 lg:px-8">
-      <header className="border-b border-slate-200/80 pb-8">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare workspace</p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          Product comparison
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Align specifications across vendors and parts using workspace data and scraped research in one view.
-        </p>
-      </header>
+          <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
 
-      {/* Data source */}
-      <section className="mt-8 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm ring-1 ring-slate-950/5 sm:p-8">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Data source</h2>
-        <h3 className="mt-1 text-lg font-semibold text-slate-900">Workspace files</h3>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Attach CSVs from Home. Select rows in one file for same-vendor part comparisons, or use multiple files to
-          compare across vendors.
-        </p>
+      {/* Data source — heading merged in */}
+      <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-slate-950/5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare workspace</p>
+            <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Product comparison</h1>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
+              Align specifications across vendors and parts using workspace data and scraped research in one view.
+            </p>
+          </div>
+        </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -788,86 +852,64 @@ export function ComparePage() {
           <div key={fileData.fileId} className="mt-6">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{fileData.name}</p>
             {fileData.content.length > 1 ? (
-              <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-                <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2.5 text-xs font-medium text-slate-600">
-                  Select data rows (header excluded)
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
+                <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
+                  Select parts · {fileData.content.length - 1} rows
                 </p>
-                <div className="divide-y divide-slate-100">
-                  {fileData.content.slice(1).map((row: string[], idx: number) => {
-                    const rowIdx = idx
-                    const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
-                    const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
-                    const isSelectedForScraped =
-                      selectedRowForScraped?.fileId === fileData.fileId &&
-                      selectedRowForScraped?.rowIdx === rowIdx
-                    return (
-                      <div
-                        key={rowIdx}
-                        className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-50/80 ${
-                          isSelectedForScraped ? 'bg-sky-50/90' : ''
-                        }`}
-                      >
-                        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                <div className="max-h-52 overflow-y-auto px-2 py-2">
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                    {fileData.content.slice(1).map((row: string[], idx: number) => {
+                      const rowIdx = idx
+                      const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
+                      const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
+                      const isSelectedForScraped =
+                        selectedRowForScraped?.fileId === fileData.fileId &&
+                        selectedRowForScraped?.rowIdx === rowIdx
+                      const inPortfolio = portfolioPartNumbers.has(label.trim().toLowerCase())
+                      return (
+                        <label
+                          key={rowIdx}
+                          title={inPortfolio ? `${label} — In Portfolio` : label}
+                          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${
+                            inPortfolio
+                              ? isSelectedForScraped
+                                ? 'border-emerald-500 bg-emerald-200 text-emerald-950'
+                                : isChecked
+                                  ? 'border-emerald-400 bg-emerald-200 text-emerald-950'
+                                  : 'border-emerald-300 bg-emerald-100 text-slate-900 hover:border-emerald-400 hover:bg-emerald-200'
+                              : isSelectedForScraped
+                                ? 'border-sky-300 bg-sky-50 text-sky-900'
+                                : isChecked
+                                  ? 'border-slate-300 bg-slate-100 text-slate-900'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onChange={(e) => toggleFileRow(fileData.fileId, rowIdx, e.target.checked)}
-                            className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                            className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                           />
-                          <span className="truncate text-sm text-slate-800">{label}</span>
+                          <span className="min-w-0 truncate font-medium">{label}</span>
                         </label>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            updateActiveTabData((d) => ({
-                              ...d,
-                              selectedRowForScraped: { fileId: fileData.fileId, rowIdx, partLabel: label },
-                            }))
-                            comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }}
-                          className={`shrink-0 rounded-md p-1.5 ${
-                            isSelectedForScraped
-                              ? 'bg-sky-100 text-sky-700'
-                              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
-                          }`}
-                          title="View scraped data"
-                          aria-label="View scraped data"
-                        >
-                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleAddSingleRow(fileData.fileId, rowIdx)
-                          }}
-                          className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-900 hover:text-white"
-                          title="Add to comparison"
-                          aria-label="Add to comparison"
-                        >
-                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
-                <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+                <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-3 py-2.5">
                   <button
                     type="button"
                     onClick={() => handleAddSelectedFileRows(fileData.fileId)}
                     disabled={!(selectedFileRows[fileData.fileId]?.length ?? 0)}
-                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {(selectedFileRows[fileData.fileId]?.length ?? 0) > 0
-                      ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected to comparison`
-                      : 'Select rows above to add'}
+                      ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected`
+                      : 'Select parts above'}
                   </button>
+                  <span className="text-[11px] text-slate-400">
+                    {(selectedFileRows[fileData.fileId]?.length ?? 0)}/{fileData.content.length - 1} selected
+                  </span>
                 </div>
               </div>
             ) : (
