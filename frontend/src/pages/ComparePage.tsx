@@ -1,5 +1,6 @@
 import type { DragEvent, MouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FileSpreadsheet, Layers, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { getToken } from '@/lib/auth'
 import {
   getWorkspaceFileContent,
@@ -120,11 +121,23 @@ const COMPARE_MODE_TABS: { id: CompareMode; label: string }[] = [
   { id: 'different-different-vendors', label: 'Different parts from different vendors' },
 ]
 
+const COMPARE_SHEETS_SIDEBAR_KEY = 'ir-compare-sheets-open'
+
+/** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
+const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
+
 export function ComparePage() {
   const { items, addItems, removeItem, closeAndClear } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
+  const [sheetsSidebarOpen, setSheetsSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem(COMPARE_SHEETS_SIDEBAR_KEY) !== 'false'
+    } catch {
+      return true
+    }
+  })
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<FileEntry[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
@@ -198,6 +211,15 @@ export function ComparePage() {
       setActiveCompareTabId(compareTabs[0].id)
     }
   }, [compareTabs, activeCompareTabId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COMPARE_SHEETS_SIDEBAR_KEY, sheetsSidebarOpen ? 'true' : 'false')
+    } catch {
+      // ignore
+    }
+    if (!sheetsSidebarOpen) setNewTabMenuOpen(false)
+  }, [sheetsSidebarOpen])
 
   // When navigating from Research with items, scroll to comparison section
   useEffect(() => {
@@ -523,7 +545,168 @@ export function ComparePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-white text-slate-900`}>
+        {!sheetsSidebarOpen && (
+          <div
+            className="flex h-full w-10 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 sm:w-11"
+            aria-label="Compare sheets (collapsed)"
+          >
+            <button
+              type="button"
+              onClick={() => setSheetsSidebarOpen(true)}
+              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-slate-200/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
+              title="Expand sheets panel"
+              aria-label="Show compare sheets"
+              aria-expanded={false}
+            >
+              <PanelLeftOpen className="h-4 w-4" aria-hidden />
+            </button>
+
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-2">
+              {compareTabs.map((tab) => {
+                const active = tab.id === activeCompareTabId
+                const initial = (tab.name || 'S').charAt(0).toUpperCase()
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveCompareTabId(tab.id)}
+                    title={tab.name}
+                    aria-label={tab.name}
+                    className={`group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold transition-all sm:h-9 sm:w-9 ${
+                      active
+                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
+                    }`}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold leading-none ${
+                        active
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-300 text-white group-hover:bg-slate-500'
+                      }`}
+                    >
+                      {initial}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={addNewCompareTab}
+              className="flex h-10 w-full shrink-0 items-center justify-center border-t border-slate-200/80 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
+              title="New sheet"
+              aria-label="Add new sheet"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        )}
+
+        {sheetsSidebarOpen && (
+          <aside
+            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 md:w-56 lg:w-60"
+            aria-label="Compare sheets"
+          >
+            <div className="flex items-center gap-1 border-b border-slate-200 px-2 py-2 sm:px-3 sm:py-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Layers className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                <h2 className="truncate text-sm font-semibold text-slate-900">Sheets</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSheetsSidebarOpen(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                title="Hide sheets"
+                aria-label="Hide compare sheets"
+                aria-expanded
+              >
+                <PanelLeftClose className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            <div className="relative border-b border-slate-200/80 p-1.5 sm:p-2">
+              <button
+                type="button"
+                onClick={() => setNewTabMenuOpen((o) => !o)}
+                className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-white hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 sm:px-3 sm:py-2.5 sm:text-sm"
+              >
+                <span className="text-slate-400" aria-hidden>
+                  +
+                </span>
+                <span className="min-w-0 leading-snug">New sheet</span>
+              </button>
+              {newTabMenuOpen && (
+                <div className="absolute left-1.5 right-1.5 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5 sm:left-2 sm:right-2">
+                  <button
+                    type="button"
+                    onClick={addNewCompareTab}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <span className="text-slate-400">+</span>
+                    Blank sheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewTabMenuOpen(false)
+                      setFilePickerOpen(true)
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <span className="text-slate-400">↺</span>
+                    Open file…
+                  </button>
+                </div>
+              )}
+            </div>
+            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-1.5 pb-3 pt-1 sm:px-2" role="list">
+              {compareTabs.map((tab) => {
+                const active = tab.id === activeCompareTabId
+                return (
+                  <li key={tab.id}>
+                    <div
+                      className={`flex items-stretch gap-0.5 rounded-xl text-left text-xs transition-colors focus-within:ring-2 focus-within:ring-violet-400/50 sm:text-sm ${
+                        active
+                          ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200'
+                          : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setActiveCompareTabId(tab.id)}
+                        className="min-w-0 flex-1 truncate px-2 py-2 text-left sm:px-3 sm:py-2.5"
+                      >
+                        <span className="line-clamp-2 wrap-break-word">{tab.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => closeCompareTab(e, tab.id)}
+                        className={`flex shrink-0 items-center justify-center rounded-lg px-1.5 transition-colors ${
+                          active
+                            ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                            : 'text-slate-400 hover:bg-slate-200/80 hover:text-slate-700'
+                        }`}
+                        aria-label={`Close ${tab.name}`}
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </aside>
+        )}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto overscroll-contain px-4 py-8 sm:px-6 lg:px-8">
       <header className="border-b border-slate-200/80 pb-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare workspace</p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
@@ -533,79 +716,6 @@ export function ComparePage() {
           Align specifications across vendors and parts using workspace data and scraped research in one view.
         </p>
       </header>
-
-      {/* Compare sheets */}
-      <div className="mt-8 rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm ring-1 ring-slate-950/5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {compareTabs.map((tab) => (
-            <div
-              key={tab.id}
-              role="tab"
-              aria-selected={tab.id === activeCompareTabId}
-              className={`flex items-center gap-1 rounded-lg text-sm transition-colors ${
-                tab.id === activeCompareTabId
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setActiveCompareTabId(tab.id)}
-                className="px-3 py-2 font-medium"
-              >
-                {tab.name}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => closeCompareTab(e, tab.id)}
-                className={`rounded-md p-1.5 ${
-                  tab.id === activeCompareTabId
-                    ? 'text-slate-300 hover:bg-white/10 hover:text-white'
-                    : 'text-slate-400 hover:bg-slate-200/80 hover:text-slate-700'
-                }`}
-                aria-label="Close tab"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setNewTabMenuOpen((o) => !o)}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
-              title="New tab"
-            >
-              + New tab
-            </button>
-            {newTabMenuOpen && (
-              <div className="absolute left-0 top-full z-20 mt-1.5 min-w-[220px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5">
-                <button
-                  type="button"
-                  onClick={addNewCompareTab}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <span className="text-slate-400">+</span>
-                  New sheet
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewTabMenuOpen(false)
-                    setFilePickerOpen(true)
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <span className="text-slate-400">↺</span>
-                  Open file…
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
       {/* Data source */}
       <section className="mt-8 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm ring-1 ring-slate-950/5 sm:p-8">
@@ -832,6 +942,7 @@ export function ComparePage() {
                     ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
+
               >
                 {label}
               </button>
@@ -1257,6 +1368,8 @@ export function ComparePage() {
           </div>
         </div>
       )}
+          </div>
+        </div>
     </div>
   )
 }
