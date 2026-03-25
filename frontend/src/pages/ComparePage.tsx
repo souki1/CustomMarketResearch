@@ -70,6 +70,13 @@ function extractDomain(url: string): string {
   }
 }
 
+function shortenUrl(url: string, maxLen = 48): string {
+  const s = String(url ?? '').trim()
+  if (!s) return '—'
+  if (s.length <= maxLen) return s
+  return `${s.slice(0, Math.max(1, maxLen - 3))}...`
+}
+
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.')
   let current: unknown = obj
@@ -129,7 +136,7 @@ const COMPARE_SHEETS_SIDEBAR_KEY = 'ir-compare-sheets-open'
 const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
 
 export function ComparePage() {
-  const { items, addItems, removeItem, closeAndClear } = useComparison()
+  const { items, addItems, closeAndClear } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
@@ -150,7 +157,10 @@ export function ComparePage() {
   const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
-  const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
+  const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string>('all')
+  const [scrapedViewMode, setScrapedViewMode] = useState<'row' | 'column'>('row')
+  const [scrapedDataByPart, setScrapedDataByPart] = useState<Record<string, ScrapedDataItem[]>>({})
+  const [commonVendorsLoading, setCommonVendorsLoading] = useState(false)
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -365,7 +375,7 @@ export function ComparePage() {
   useEffect(() => {
     if (!selectedRowForScraped) {
       setScrapedData(null)
-      setScrapedVendorFilter(null)
+      setScrapedVendorFilter('all')
       return
     }
     const token = getToken()
@@ -381,71 +391,150 @@ export function ComparePage() {
       .then((res) => {
         const data = res[0]?.scraped_data ?? null
         setScrapedData(data)
-        setScrapedVendorFilter(null)
       })
       .catch(() => setScrapedData(null))
       .finally(() => setScrapedDataLoading(false))
   }, [selectedRowForScraped])
 
-  // Step 3: When different parts same vendor, default scraped view to first vendor only
-  const isDifferentPartsSameVendor =
-    items.length > 1 && new Set(items.map((i) => i.sourceName ?? '')).size === 1
-
+  // For "different parts from same vendor", collect scraped sources for every selected part.
   useEffect(() => {
-    if (
-      scrapedData &&
-      scrapedData.length > 0 &&
-      isDifferentPartsSameVendor &&
-      scrapedVendorFilter === null
-    ) {
-      const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))]
-      if (domains.length > 0) {
-        setScrapedVendorFilter(domains[0]!)
+    if (compareMode !== 'different-same-vendor') {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    const token = getToken()
+    if (!token || items.length === 0) {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    const partRefs = items
+      .map((item) => ({ itemId: item.id, parsed: parseFileItemId(item.id) }))
+      .filter((x): x is { itemId: string; parsed: { fileId: number; rowIdx: number } } => x.parsed != null)
+    if (partRefs.length === 0) {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setCommonVendorsLoading(true)
+    Promise.all(
+      partRefs.map(async ({ itemId, parsed }) => {
+        try {
+          const res = await listResearchUrls(token, {
+            fileId: parsed.fileId,
+            tableRowIndex: parsed.rowIdx,
+          })
+          return { itemId, scraped: res[0]?.scraped_data ?? [] }
+        } catch {
+          return { itemId, scraped: [] as ScrapedDataItem[] }
+        }
+      })
+    )
+      .then((all) => {
+        if (cancelled) return
+        const map: Record<string, ScrapedDataItem[]> = {}
+        for (const x of all) map[x.itemId] = x.scraped
+        setScrapedDataByPart(map)
+      })
+      .finally(() => {
+        if (!cancelled) setCommonVendorsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [compareMode, items])
+
+  const commonVendorDomains = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return []
+    const partIds = items
+      .map((item) => (parseFileItemId(item.id) ? item.id : null))
+      .filter((id): id is string => id != null)
+    if (partIds.length === 0) return []
+
+    const domainSets = partIds.map((id) =>
+      new Set((scrapedDataByPart[id] ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
+    )
+    if (domainSets.some((s) => s.size === 0)) return []
+
+    const intersection = new Set(domainSets[0]!)
+    for (const s of domainSets.slice(1)) {
+      for (const v of [...intersection]) {
+        if (!s.has(v)) intersection.delete(v)
       }
     }
-  }, [scrapedData, isDifferentPartsSameVendor, scrapedVendorFilter])
+    return Array.from(intersection).sort()
+  }, [compareMode, items, scrapedDataByPart])
+
+  // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
+  useEffect(() => {
+    if (scrapedVendorFilter === 'all') return
+    const domains =
+      compareMode === 'different-same-vendor'
+        ? new Set(commonVendorDomains)
+        : new Set((scrapedData ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
+    if (!domains.has(scrapedVendorFilter)) setScrapedVendorFilter('all')
+  }, [compareMode, scrapedData, commonVendorDomains, scrapedVendorFilter])
 
   /** Rows shown in the scraped comparison table (same filter as before, lifted for column reorder state). */
   const scrapedTableRows = useMemo(() => {
     if (!scrapedData?.length) return []
-    const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
-    const effectiveFilter =
-      scrapedVendorFilter === 'all'
-        ? null
-        : scrapedVendorFilter || (isDifferentPartsSameVendor && domains[0] ? domains[0] : null)
+    const commonSet = new Set(commonVendorDomains)
+    const baseRows =
+      compareMode === 'different-same-vendor'
+        ? scrapedData.filter((d) => commonSet.has(extractDomain(d.url)))
+        : scrapedData
+    const effectiveFilter = scrapedVendorFilter === 'all' ? null : scrapedVendorFilter
     return effectiveFilter
-      ? scrapedData.filter((d) => extractDomain(d.url) === effectiveFilter)
-      : scrapedData
-  }, [scrapedData, scrapedVendorFilter, isDifferentPartsSameVendor])
+      ? baseRows.filter((d) => extractDomain(d.url) === effectiveFilter)
+      : baseRows
+  }, [scrapedData, compareMode, commonVendorDomains, scrapedVendorFilter])
 
   const scrapedTableSignature = useMemo(
     () => scrapedTableRows.map((d) => d.url).join('\n'),
     [scrapedTableRows]
   )
+  const scrapedFieldKeys = useMemo(() => {
+    const allKeys = new Set<string>()
+    for (const item of scrapedTableRows) {
+      if (item.data && typeof item.data === 'object') {
+        flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
+      }
+    }
+    return Array.from(allKeys).sort()
+  }, [scrapedTableRows])
+  const scrapedFieldSignature = useMemo(() => scrapedFieldKeys.join('\n'), [scrapedFieldKeys])
 
   const [scrapedColumnOrder, setScrapedColumnOrder] = useState<number[]>([])
+  const [scrapedFieldOrder, setScrapedFieldOrder] = useState<number[]>([])
 
   useEffect(() => {
     setScrapedColumnOrder(scrapedTableRows.map((_, i) => i))
   }, [scrapedTableSignature])
+  useEffect(() => {
+    setScrapedFieldOrder(scrapedFieldKeys.map((_, i) => i))
+  }, [scrapedFieldSignature])
 
-  const handleScrapedHeaderDragStart = useCallback(
+  const handleScrapedSourceDragStart = useCallback(
     (e: DragEvent<HTMLTableCellElement>, displayIndex: number) => {
       e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData('text/plain', String(displayIndex))
+      e.dataTransfer.setData('text/scraped-source-index', String(displayIndex))
     },
     []
   )
 
-  const handleScrapedHeaderDragOver = useCallback((e: DragEvent<HTMLTableCellElement>) => {
+  const handleScrapedDragOver = useCallback((e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
-  const handleScrapedHeaderDrop = useCallback(
-    (e: DragEvent<HTMLTableCellElement>, toDisplayIndex: number) => {
+  const handleScrapedSourceDrop = useCallback(
+    (e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>, toDisplayIndex: number) => {
       e.preventDefault()
-      const from = Number(e.dataTransfer.getData('text/plain'))
+      const from = Number(e.dataTransfer.getData('text/scraped-source-index'))
       if (Number.isNaN(from) || from === toDisplayIndex) return
       setScrapedColumnOrder((prev) => {
         if (prev.length !== scrapedTableRows.length) return prev
@@ -458,9 +547,37 @@ export function ComparePage() {
     [scrapedTableRows.length]
   )
 
-  // When "Same part across vendors" with items but no part selected, default to first part
+  const handleScrapedFieldDragStart = useCallback(
+    (e: DragEvent<HTMLTableCellElement>, displayIndex: number) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/scraped-field-index', String(displayIndex))
+    },
+    []
+  )
+
+  const handleScrapedFieldDrop = useCallback(
+    (e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>, toDisplayIndex: number) => {
+      e.preventDefault()
+      const from = Number(e.dataTransfer.getData('text/scraped-field-index'))
+      if (Number.isNaN(from) || from === toDisplayIndex) return
+      setScrapedFieldOrder((prev) => {
+        if (prev.length !== scrapedFieldKeys.length) return prev
+        const next = [...prev]
+        const [removed] = next.splice(from, 1)
+        next.splice(toDisplayIndex, 0, removed)
+        return next
+      })
+    },
+    [scrapedFieldKeys.length]
+  )
+
+  // When scraped compare modes have items but no part selected, default to first part.
   useEffect(() => {
-    if (compareMode === 'same-part' && items.length > 0 && !selectedRowForScraped) {
+    if (
+      (compareMode === 'same-part' || compareMode === 'different-same-vendor') &&
+      items.length > 0 &&
+      !selectedRowForScraped
+    ) {
       const first = items[0]
       const parsed = first ? parseFileItemId(first.id) : null
       if (parsed && first) {
@@ -541,27 +658,6 @@ export function ComparePage() {
     }
   }, [selectedFilesData, selectedFileRows, buildItemsFromFileRows, addItems])
 
-  const handleAddSingleRow = useCallback(
-    (fileId: number, rowIdx: number) => {
-      const fileData = selectedFilesData.find((f: LoadedFile) => f.fileId === fileId)
-      if (!fileData) return
-      const newItems = buildItemsFromFileRows(fileData, [rowIdx])
-      if (newItems.length > 0) {
-        addItems(newItems)
-        updateActiveTabData((d) => {
-          const arr = d.selectedFileRows[fileId] ?? []
-          if (arr.includes(rowIdx)) return d
-          return {
-            ...d,
-            selectedFileRows: { ...d.selectedFileRows, [fileId]: [...arr, rowIdx] },
-          }
-        })
-        comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    },
-    [selectedFilesData, buildItemsFromFileRows, addItems, updateActiveTabData]
-  )
-
   const toggleFileRow = useCallback((fileId: number, rowIdx: number, checked: boolean) => {
     updateActiveTabData((d) => {
       const arr = d.selectedFileRows[fileId] ?? []
@@ -574,25 +670,6 @@ export function ComparePage() {
       }
     })
   }, [updateActiveTabData])
-
-  const handleRemoveComparisonItem = useCallback(
-    (itemId: string) => {
-      removeItem(itemId)
-      const match = itemId.match(/^file-(\d+)-(\d+)$/)
-      if (match) {
-        const fileId = Number(match[1])
-        const rowIdx = Number(match[2])
-        updateActiveTabData((d) => {
-          const arr = (d.selectedFileRows[fileId] ?? []).filter((i) => i !== rowIdx)
-          return {
-            ...d,
-            selectedFileRows: { ...d.selectedFileRows, [fileId]: arr },
-          }
-        })
-      }
-    },
-    [removeItem, updateActiveTabData]
-  )
 
   /** Parse file-{fileId}-{rowIdx} to get fileId and rowIdx for scraped data lookup */
   function parseFileItemId(itemId: string): { fileId: number; rowIdx: number } | null {
@@ -992,90 +1069,7 @@ export function ComparePage() {
           })}
         </div>
 
-        {items.length > 0 && (
-          <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-            <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/95">
-                    <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
-                      Attribute
-                    </th>
-                    {items.map((item) => (
-                      <th key={item.id} className="min-w-[140px] border-b border-l border-slate-100 px-4 py-3.5 text-left sm:min-w-[188px]">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold text-slate-900">{item.title || '—'}</p>
-                            {item.sourceName && (
-                              <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{item.sourceName}</p>
-                            )}
-                            {parseFileItemId(item.id) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const parsed = parseFileItemId(item.id)
-                                  if (parsed) {
-                                    updateActiveTabData((d) => ({
-                                      ...d,
-                                      selectedRowForScraped: {
-                                        fileId: parsed.fileId,
-                                        rowIdx: parsed.rowIdx,
-                                        partLabel: item.title || '—',
-                                      },
-                                    }))
-                                    comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                  }
-                                }}
-                                className="mt-2 text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
-                              >
-                                View scraped data
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveComparisonItem(item.id)}
-                            className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            aria-label={`Remove ${item.title}`}
-                          >
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(() => {
-                    const allLabels = new Set<string>()
-                    for (const item of items) {
-                      for (const s of item.specs) allLabels.add(s.label)
-                    }
-                    const labels = Array.from(allLabels)
-                    return labels.map((label) => (
-                      <tr key={label} className="group transition-colors hover:bg-slate-50/60">
-                        <td className="sticky left-0 z-10 min-w-[120px] border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:min-w-[168px]">
-                          {label.replace(/_/g, ' ')}
-                        </td>
-                        {items.map((item) => {
-                          const spec = item.specs.find((s) => s.label === label)
-                          const value = spec?.value ?? '—'
-                          return (
-                            <td key={item.id} className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800">
-                              {value}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))
-                  })()}
-                </tbody>
-            </table>
-            </div>
-          </div>
-        )}
+     
 
         {items.length === 0 && (
           <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-6 py-14 text-center ring-1 ring-slate-950/[0.03]">
@@ -1086,18 +1080,24 @@ export function ComparePage() {
           </div>
         )}
 
-        {/* Scraped vendor data (same-part mode) */}
-        {compareMode === 'same-part' && (
+        {/* Scraped vendor data */}
+        {(compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
           <div className={items.length > 0 ? 'mt-10' : 'mt-8'}>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Vendor scrape</h3>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
-                  Structured fields
+                  {compareMode === 'different-same-vendor' ? 'Common vendor fields' : 'Structured fields'}
                   {selectedRowForScraped ? (
                     <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
                   ) : null}
                 </p>
+                {compareMode === 'different-same-vendor' && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Comparing {items.length} part{items.length === 1 ? '' : 's'} · {commonVendorDomains.length} common vendor
+                    {commonVendorDomains.length === 1 ? '' : 's'}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 {items.length > 0 && (
@@ -1138,14 +1138,17 @@ export function ComparePage() {
                   </label>
                 )}
                 {scrapedData && scrapedData.length > 0 && (() => {
-                  const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
-                  if (domains.length < 2) return null
+                  const domains =
+                    compareMode === 'different-same-vendor'
+                      ? commonVendorDomains
+                      : [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
+                  if (domains.length === 0) return null
                   return (
                     <label className="flex items-center gap-2 text-sm text-slate-600">
                       <span className="font-medium">Vendor</span>
                       <select
-                        value={scrapedVendorFilter ?? (isDifferentPartsSameVendor && domains[0] ? domains[0] : 'all')}
-                        onChange={(e) => setScrapedVendorFilter(e.target.value === 'all' ? 'all' : e.target.value)}
+                        value={scrapedVendorFilter}
+                        onChange={(e) => setScrapedVendorFilter(e.target.value)}
                         className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                       >
                         <option value="all">All vendors</option>
@@ -1158,19 +1161,49 @@ export function ComparePage() {
                     </label>
                   )
                 })()}
+                {scrapedData && scrapedData.length > 0 && (
+                  <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setScrapedViewMode('row')}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                        scrapedViewMode === 'row'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      Row view
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScrapedViewMode('column')}
+                      className={`border-l border-slate-300 px-3 py-1.5 text-xs font-medium transition-colors ${
+                        scrapedViewMode === 'column'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      Column view
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             {!selectedRowForScraped ? (
               <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
                 Select a part row in the workspace list to load scraped vendor fields.
               </p>
-            ) : scrapedDataLoading ? (
+            ) : scrapedDataLoading || (compareMode === 'different-same-vendor' && commonVendorsLoading) ? (
               <div className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-10 text-sm text-slate-600 ring-1 ring-slate-950/5">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
                 </svg>
                 <span>Loading scraped data…</span>
               </div>
+            ) : compareMode === 'different-same-vendor' && commonVendorDomains.length === 0 ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-8 text-center text-sm text-amber-900 ring-1 ring-amber-100">
+                No common vendors found across selected parts. Select different parts or run more Research to collect overlapping vendors.
+              </p>
             ) : scrapedData && scrapedData.length > 0 ? (
               (() => {
                 const colOrder =
@@ -1178,32 +1211,171 @@ export function ComparePage() {
                     ? scrapedColumnOrder
                     : scrapedTableRows.map((_, i) => i)
                 const displayScrapedRows = colOrder.map((i) => scrapedTableRows[i]!)
+                const fieldOrder =
+                  scrapedFieldOrder.length === scrapedFieldKeys.length
+                    ? scrapedFieldOrder
+                    : scrapedFieldKeys.map((_, i) => i)
+                const orderedFieldKeys = fieldOrder.map((i) => scrapedFieldKeys[i]!)
+                const renderScrapedCell = (item: ScrapedDataItem, key: string) => {
+                  const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
+                  const imageUrls = Array.isArray(val)
+                    ? (val as unknown[]).filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+                    : isImageUrl(val)
+                      ? [String(val)]
+                      : []
+                  const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                  const strVal =
+                    val == null
+                      ? '—'
+                      : typeof val === 'string'
+                        ? val
+                        : typeof val === 'object'
+                          ? JSON.stringify(val)
+                          : String(val)
+                  if (showAsImage) {
+                    return (
+                      <span className="inline-flex flex-wrap gap-2">
+                        {imageUrls.map((imgSrc, i) => (
+                          <span key={i} className="relative">
+                            <img
+                              src={imgSrc}
+                              alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                              className="max-h-24 rounded-lg border border-slate-200 object-contain"
+                              loading="lazy"
+                              onError={(e) => {
+                                const el = e.currentTarget
+                                el.style.display = 'none'
+                                const fallback = el.nextElementSibling
+                                if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+                              }}
+                            />
+                            <a
+                              href={imgSrc}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hidden max-w-[200px] truncate text-xs text-sky-700 hover:underline"
+                              title={imgSrc}
+                            >
+                              {imgSrc}
+                            </a>
+                          </span>
+                        ))}
+                      </span>
+                    )
+                  }
+                  return typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
+                }
                 return (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
                     <div className="overflow-x-auto">
-                    <table className="min-w-full border-separate border-spacing-0 text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50/95">
-                          <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
-                            Field
-                          </th>
-                          {displayScrapedRows.map((item, displayIdx) => (
-                            <th
-                              key={item.url}
-                              draggable
-                              onDragStart={(e) => handleScrapedHeaderDragStart(e, displayIdx)}
-                              onDragOver={handleScrapedHeaderDragOver}
-                              onDrop={(e) => handleScrapedHeaderDrop(e, displayIdx)}
-                              className="min-w-[140px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left active:cursor-grabbing sm:min-w-[188px]"
-                              title="Drag to reorder sources"
-                            >
-                              <div className="flex min-w-0 items-start gap-2">
-                                <span className="mt-0.5 shrink-0 text-slate-400 select-none" aria-hidden>
-                                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                                    <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
-                                  </svg>
-                                </span>
-                                <div className="min-w-0 flex-1">
+                      {scrapedViewMode === 'row' ? (
+                        <table className="min-w-full border-separate border-spacing-0 text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                              <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
+                                Field
+                              </th>
+                              {displayScrapedRows.map((item, displayIdx) => (
+                                <th
+                                  key={item.url}
+                                  draggable
+                                  onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
+                                  onDragOver={handleScrapedDragOver}
+                                  onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
+                                  className="min-w-[140px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left active:cursor-grabbing sm:min-w-[188px]"
+                                  title="Drag to reorder sources"
+                                >
+                                  <div className="flex min-w-0 items-start gap-2">
+                                    <span className="mt-0.5 shrink-0 text-slate-400 select-none" aria-hidden>
+                                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                        <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+                                      </svg>
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Source {displayIdx + 1}
+                                      </p>
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        draggable={false}
+                                        onDragStart={(e) => e.stopPropagation()}
+                                        className="mt-1 block truncate text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
+                                        title={item.url}
+                                      >
+                                        {shortenUrl(item.url)}
+                                      </a>
+                                    </div>
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {orderedFieldKeys.map((key, displayFieldIdx) => (
+                              <tr
+                                key={key}
+                                onDragOver={handleScrapedDragOver}
+                                onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
+                                className="group transition-colors hover:bg-slate-50/60"
+                              >
+                                <td
+                                  draggable
+                                  onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
+                                  className="sticky left-0 z-10 min-w-[120px] cursor-grab border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 active:cursor-grabbing sm:min-w-[168px]"
+                                  title="Drag to reorder fields"
+                                >
+                                  {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
+                                </td>
+                                {displayScrapedRows.map((item) => (
+                                  <td
+                                    key={`${item.url}-${key}`}
+                                    className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
+                                  >
+                                    {renderScrapedCell(item, key)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="min-w-full border-separate border-spacing-0 text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                              <th className="sticky left-0 z-30 min-w-[220px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]">
+                                Source
+                              </th>
+                              {orderedFieldKeys.map((key, displayFieldIdx) => (
+                                <th
+                                  key={key}
+                                  draggable
+                                  onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
+                                  onDragOver={handleScrapedDragOver}
+                                  onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
+                                  className="min-w-[160px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 active:cursor-grabbing"
+                                  title="Drag to reorder fields"
+                                >
+                                  {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {displayScrapedRows.map((item, displayIdx) => (
+                              <tr
+                                key={item.url}
+                                onDragOver={handleScrapedDragOver}
+                                onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
+                                className="group transition-colors hover:bg-slate-50/60"
+                              >
+                                <td
+                                  draggable
+                                  onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
+                                  className="sticky left-0 z-10 min-w-[220px] cursor-grab border-r border-slate-100 bg-white px-4 py-2.5 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 active:cursor-grabbing"
+                                  title="Drag to reorder sources"
+                                >
                                   <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Source {displayIdx + 1}
                                   </p>
@@ -1211,100 +1383,25 @@ export function ComparePage() {
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    draggable={false}
-                                    onDragStart={(e) => e.stopPropagation()}
                                     className="mt-1 block truncate text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
                                     title={item.url}
                                   >
-                                    {item.url}
+                                    {shortenUrl(item.url)}
                                   </a>
-                                </div>
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {(() => {
-                          const allKeys = new Set<string>()
-                          for (const item of displayScrapedRows) {
-                            if (item.data && typeof item.data === 'object') {
-                              flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
-                            }
-                          }
-                          const keys = Array.from(allKeys).sort()
-                          return keys.map((key) => (
-                            <tr key={key} className="group transition-colors hover:bg-slate-50/60">
-                              <td className="sticky left-0 z-10 min-w-[120px] border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 sm:min-w-[168px]">
-                                {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
-                              </td>
-                              {displayScrapedRows.map((item) => {
-                                const val = getNestedValue(
-                                  (item.data ?? {}) as Record<string, unknown>,
-                                  key
-                                )
-                                const imageUrls = Array.isArray(val)
-                                  ? (val as unknown[]).filter(
-                                      (v): v is string => typeof v === 'string' && isImageUrl(v)
-                                    )
-                                  : isImageUrl(val)
-                                    ? [String(val)]
-                                    : []
-                                const showAsImage =
-                                  (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
-                                const strVal =
-                                  val == null
-                                    ? '—'
-                                    : typeof val === 'string'
-                                      ? val
-                                      : typeof val === 'object'
-                                        ? JSON.stringify(val)
-                                        : String(val)
-                                return (
+                                </td>
+                                {orderedFieldKeys.map((key) => (
                                   <td
-                                    key={item.url}
+                                    key={`${item.url}-${key}`}
                                     className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
                                   >
-                                    {showAsImage ? (
-                                      <span className="inline-flex flex-wrap gap-2">
-                                        {imageUrls.map((imgSrc, i) => (
-                                          <span key={i} className="relative">
-                                            <img
-                                              src={imgSrc}
-                                              alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                              className="max-h-24 rounded-lg border border-slate-200 object-contain"
-                                              loading="lazy"
-                                              onError={(e) => {
-                                                const el = e.currentTarget
-                                                el.style.display = 'none'
-                                                const fallback = el.nextElementSibling
-                                                if (fallback)
-                                                  (fallback as HTMLElement).classList.remove('hidden')
-                                              }}
-                                            />
-                                            <a
-                                              href={imgSrc}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="hidden max-w-[200px] truncate text-xs text-sky-700 hover:underline"
-                                              title={imgSrc}
-                                            >
-                                              {imgSrc}
-                                            </a>
-                                          </span>
-                                        ))}
-                                      </span>
-                                    ) : (
-                                      typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
-                                    )}
+                                    {renderScrapedCell(item, key)}
                                   </td>
-                                )
-                              })}
-                            </tr>
-                          ))
-                        })()}
-                      </tbody>
-                    </table>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </div>
                 )
