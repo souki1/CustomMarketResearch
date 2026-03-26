@@ -147,19 +147,11 @@ export function ReportGalleryHome({
                     </div>
                     <p className="mt-5 text-base font-medium text-zinc-900">No reports yet</p>
                     <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-zinc-500">
-                      Create your first design — it will appear here automatically.
+                      Make your first design — it will appear here automatically.
                     </p>
                     <button
                       type="button"
                       className={`${BTN_PRIMARY} mt-8 rounded-lg px-5`}
-                      onClick={onOpenStudioNew}
-                    >
-                      <Plus className="mr-2 h-4 w-4" aria-hidden />
-                      Create report
-                    </button>
-                    <button
-                      type="button"
-                      className={`${BTN_GHOST} mt-3 rounded-lg px-5`}
                       onClick={onOpenStudioAi}
                     >
                       <Sparkles className="mr-2 h-4 w-4" aria-hidden />
