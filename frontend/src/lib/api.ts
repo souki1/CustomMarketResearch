@@ -353,6 +353,40 @@ export async function listPortfolioItems(token: string, selectionId: number): Pr
   return request<PortfolioItem[]>(`/portfolio/items?selection_id=${selectionId}`, { token })
 }
 
+export type CompareStatePayload = {
+  compare_tabs: Array<Record<string, unknown>>
+  active_compare_tab_id: string | null
+  compare_mode: 'same-part' | 'different-same-vendor' | 'different-different-vendors'
+  scraped_vendor_filter: string
+  scraped_view_mode: 'row' | 'column'
+  scraped_selected_fields: string[]
+  scraped_value_search: string
+  scraped_non_empty_only: boolean
+  scraped_data_by_part: Record<string, Array<{ url: string; data: Record<string, unknown> }>>
+  scraped_data: Array<{ url: string; data: Record<string, unknown> }>
+}
+
+export type CompareStateResponse = CompareStatePayload & {
+  owner_id: number
+  created_at: string
+  updated_at: string
+}
+
+export async function getCompareState(token: string): Promise<CompareStateResponse | null> {
+  return request<CompareStateResponse | null>('/compare/state', { token })
+}
+
+export async function upsertCompareState(
+  payload: CompareStatePayload,
+  token: string
+): Promise<CompareStateResponse> {
+  return request<CompareStateResponse>('/compare/state', {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {
   const headers: HeadersInit = { Authorization: `Bearer ${token}` }
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })

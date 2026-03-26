@@ -1,13 +1,18 @@
-import type { DragEvent, MouseEvent } from 'react'
+import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Layers, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { getToken } from '@/lib/auth'
+import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
+import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
+import { CompareWorkspaceSection } from '@/components/compare/CompareWorkspaceSection'
+import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
 import {
+  getCompareState,
   getWorkspaceFileContent,
   listDataSheetSelections,
   listPortfolioItems,
   listResearchUrls,
   listWorkspaceItems,
+  upsertCompareState,
 } from '@/lib/api'
 import type { PortfolioItem, ScrapedDataItem } from '@/lib/api'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
@@ -87,28 +92,6 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current
 }
 
-type FileEntry = { id: number; name: string; folderPath: string | null }
-
-type LoadedFile = {
-  fileId: number
-  name: string
-  content: string[][]
-  folderPath: string | null
-}
-
-type CompareTabData = {
-  selectedFilesData: LoadedFile[]
-  selectedFileRows: Record<number, number[]>
-  activeFileId: number | null
-  selectedRowForScraped: { fileId: number; rowIdx: number; partLabel: string } | null
-}
-
-type CompareTab = {
-  id: string
-  name: string
-  data: CompareTabData
-}
-
 function newBlankCompareTab(): CompareTab {
   return {
     id: crypto.randomUUID(),
@@ -122,8 +105,6 @@ function newBlankCompareTab(): CompareTab {
   }
 }
 
-type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
-
 const COMPARE_MODE_TABS: { id: CompareMode; label: string }[] = [
   { id: 'same-part', label: 'Same part across vendors' },
   { id: 'different-same-vendor', label: 'Different parts from same vendor' },
@@ -131,14 +112,42 @@ const COMPARE_MODE_TABS: { id: CompareMode; label: string }[] = [
 ]
 
 const COMPARE_SHEETS_SIDEBAR_KEY = 'ir-compare-sheets-open'
+const COMPARE_PAGE_STATE_KEY = 'ir-compare-page-state-v1'
 
 /** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
 const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
 
+function readPersistedCompareState(): {
+  compareTabs?: CompareTab[]
+  activeCompareTabId?: string | null
+  compareMode?: CompareMode
+} | null {
+  try {
+    const raw = localStorage.getItem(COMPARE_PAGE_STATE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as {
+      compareTabs?: CompareTab[]
+      activeCompareTabId?: string | null
+      compareMode?: CompareMode
+    }
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 export function ComparePage() {
   const { items, addItems, closeAndClear } = useComparison()
-  const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
-  const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
+  const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
+    const persisted = readPersistedCompareState()
+    return Array.isArray(persisted?.compareTabs) && persisted.compareTabs.length > 0
+      ? persisted.compareTabs
+      : [newBlankCompareTab()]
+  })
+  const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(() => {
+    const persisted = readPersistedCompareState()
+    return typeof persisted?.activeCompareTabId === 'string' ? persisted.activeCompareTabId : null
+  })
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [sheetsSidebarOpen, setSheetsSidebarOpen] = useState(() => {
     try {
@@ -159,13 +168,26 @@ export function ComparePage() {
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
   const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string>('all')
   const [scrapedViewMode, setScrapedViewMode] = useState<'row' | 'column'>('row')
+  const [scrapedSelectedFields, setScrapedSelectedFields] = useState<string[]>([])
+  const [scrapedFieldPickerSearch, setScrapedFieldPickerSearch] = useState('')
+  const [scrapedValueSearch, setScrapedValueSearch] = useState('')
+  const [scrapedNonEmptyOnly, setScrapedNonEmptyOnly] = useState(false)
   const [scrapedDataByPart, setScrapedDataByPart] = useState<Record<string, ScrapedDataItem[]>>({})
   const [commonVendorsLoading, setCommonVendorsLoading] = useState(false)
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
-  const [compareMode, setCompareMode] = useState<CompareMode>('different-different-vendors')
+  const [compareMode, setCompareMode] = useState<CompareMode>(() => {
+    const persisted = readPersistedCompareState()
+    const mode = persisted?.compareMode
+    return mode === 'same-part' || mode === 'different-same-vendor' || mode === 'different-different-vendors'
+      ? mode
+      : 'different-different-vendors'
+  })
+  const hasHydratedCompareStateRef = useRef(false)
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const restoredItemsOnceRef = useRef(false)
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -173,6 +195,53 @@ export function ComparePage() {
   const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
   const activeFileId = activeTab?.data.activeFileId ?? null
   const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      hasHydratedCompareStateRef.current = true
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const state = await getCompareState(token)
+        if (cancelled || !state) {
+          hasHydratedCompareStateRef.current = true
+          return
+        }
+        if (Array.isArray(state.compare_tabs) && state.compare_tabs.length > 0) {
+          const tabs = state.compare_tabs as CompareTab[]
+          restoredItemsOnceRef.current = false
+          setCompareTabs(tabs)
+          setActiveCompareTabId(
+            typeof state.active_compare_tab_id === 'string' ? state.active_compare_tab_id : tabs[0]?.id ?? null
+          )
+        }
+        if (
+          state.compare_mode === 'same-part' ||
+          state.compare_mode === 'different-same-vendor' ||
+          state.compare_mode === 'different-different-vendors'
+        ) {
+          setCompareMode(state.compare_mode)
+        }
+        setScrapedVendorFilter(state.scraped_vendor_filter || 'all')
+        setScrapedViewMode(state.scraped_view_mode === 'column' ? 'column' : 'row')
+        setScrapedSelectedFields(state.scraped_selected_fields ?? [])
+        setScrapedValueSearch(state.scraped_value_search ?? '')
+        setScrapedNonEmptyOnly(Boolean(state.scraped_non_empty_only))
+        setScrapedDataByPart(state.scraped_data_by_part ?? {})
+        setScrapedData(state.scraped_data ?? null)
+      } catch {
+        // fall back to local state
+      } finally {
+        if (!cancelled) hasHydratedCompareStateRef.current = true
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const updateActiveTabData = useCallback((updater: (d: CompareTabData) => CompareTabData) => {
     if (!activeTab) return
@@ -206,7 +275,7 @@ export function ComparePage() {
     setNewTabMenuOpen(false)
   }, [])
 
-  const closeCompareTab = useCallback((e: MouseEvent, id: string) => {
+  const closeCompareTab = useCallback((e: ReactMouseEvent, id: string) => {
     e.stopPropagation()
     const idx = compareTabs.findIndex((t) => t.id === id)
     if (idx < 0) return
@@ -287,6 +356,56 @@ export function ComparePage() {
     }
     if (!sheetsSidebarOpen) setNewTabMenuOpen(false)
   }, [sheetsSidebarOpen])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COMPARE_PAGE_STATE_KEY,
+        JSON.stringify({
+          compareTabs,
+          activeCompareTabId,
+          compareMode,
+        })
+      )
+    } catch {
+      // ignore
+    }
+    if (!hasHydratedCompareStateRef.current) return
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = setTimeout(() => {
+      const token = getToken()
+      if (!token) return
+      void upsertCompareState(
+        {
+          compare_tabs: compareTabs as Array<Record<string, unknown>>,
+          active_compare_tab_id: activeCompareTabId,
+          compare_mode: compareMode,
+          scraped_vendor_filter: scrapedVendorFilter,
+          scraped_view_mode: scrapedViewMode,
+          scraped_selected_fields: scrapedSelectedFields,
+          scraped_value_search: scrapedValueSearch,
+          scraped_non_empty_only: scrapedNonEmptyOnly,
+          scraped_data_by_part: scrapedDataByPart as Record<string, Array<{ url: string; data: Record<string, unknown> }>>,
+          scraped_data: (scrapedData ?? []) as Array<{ url: string; data: Record<string, unknown> }>,
+        },
+        token
+      ).catch(() => {})
+    }, 600)
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
+    }
+  }, [
+    compareTabs,
+    activeCompareTabId,
+    compareMode,
+    scrapedVendorFilter,
+    scrapedViewMode,
+    scrapedSelectedFields,
+    scrapedValueSearch,
+    scrapedNonEmptyOnly,
+    scrapedDataByPart,
+    scrapedData,
+  ])
 
   // When navigating from Research with items, scroll to comparison section
   useEffect(() => {
@@ -468,6 +587,17 @@ export function ComparePage() {
     }
     return Array.from(intersection).sort()
   }, [compareMode, items, scrapedDataByPart])
+  const comparedPartLabels = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return []
+    return Array.from(
+      new Set(
+        items.map((i) => {
+          const label = (i.title ?? '').trim()
+          return label || '—'
+        })
+      )
+    )
+  }, [compareMode, items])
 
   // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
   useEffect(() => {
@@ -510,6 +640,10 @@ export function ComparePage() {
 
   const [scrapedColumnOrder, setScrapedColumnOrder] = useState<number[]>([])
   const [scrapedFieldOrder, setScrapedFieldOrder] = useState<number[]>([])
+  const [scrapedRowFieldColWidth, setScrapedRowFieldColWidth] = useState(188)
+  const [scrapedColumnViewSourceColWidth, setScrapedColumnViewSourceColWidth] = useState(220)
+  const [scrapedSourceColWidths, setScrapedSourceColWidths] = useState<Record<string, number>>({})
+  const [scrapedFieldColWidths, setScrapedFieldColWidths] = useState<Record<string, number>>({})
 
   useEffect(() => {
     setScrapedColumnOrder(scrapedTableRows.map((_, i) => i))
@@ -517,6 +651,9 @@ export function ComparePage() {
   useEffect(() => {
     setScrapedFieldOrder(scrapedFieldKeys.map((_, i) => i))
   }, [scrapedFieldSignature])
+  useEffect(() => {
+    setScrapedSelectedFields((prev) => prev.filter((k) => scrapedFieldKeys.includes(k)))
+  }, [scrapedFieldKeys])
 
   const handleScrapedSourceDragStart = useCallback(
     (e: DragEvent<HTMLTableCellElement>, displayIndex: number) => {
@@ -571,6 +708,35 @@ export function ComparePage() {
     [scrapedFieldKeys.length]
   )
 
+  const startColumnResize = useCallback(
+    (
+      e: ReactMouseEvent<HTMLSpanElement>,
+      kind: 'row-field' | 'row-source' | 'column-source' | 'column-field',
+      key: string,
+      startWidth: number
+    ) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const startX = e.clientX
+      const MIN_W = 120
+      const onMove = (ev: globalThis.MouseEvent) => {
+        const next = Math.max(MIN_W, startWidth + (ev.clientX - startX))
+        if (kind === 'row-field') setScrapedRowFieldColWidth(next)
+        else if (kind === 'row-source')
+          setScrapedSourceColWidths((prev) => ({ ...prev, [key]: next }))
+        else if (kind === 'column-source') setScrapedColumnViewSourceColWidth(next)
+        else setScrapedFieldColWidths((prev) => ({ ...prev, [key]: next }))
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    []
+  )
+
   // When scraped compare modes have items but no part selected, default to first part.
   useEffect(() => {
     if (
@@ -618,6 +784,24 @@ export function ComparePage() {
     },
     []
   )
+
+  useEffect(() => {
+    if (restoredItemsOnceRef.current) return
+    if (!activeTab) return
+    if (items.length > 0) {
+      restoredItemsOnceRef.current = true
+      return
+    }
+    const restored: ComparisonItem[] = []
+    const rowsByFile = activeTab.data.selectedFileRows
+    for (const fileData of activeTab.data.selectedFilesData) {
+      const rows = rowsByFile[fileData.fileId] ?? []
+      if (rows.length === 0) continue
+      restored.push(...buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b)))
+    }
+    if (restored.length > 0) addItems(restored)
+    restoredItemsOnceRef.current = true
+  }, [activeTab, items.length, buildItemsFromFileRows, addItems])
 
   const handleAddSelectedFileRows = useCallback(
     (fileId: number) => {
@@ -680,354 +864,51 @@ export function ComparePage() {
 
   return (
     <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-white text-slate-900`}>
-        {!sheetsSidebarOpen && (
-          <div
-            className="flex h-full w-10 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 sm:w-11"
-            aria-label="Compare sheets (collapsed)"
-          >
-            <button
-              type="button"
-              onClick={() => setSheetsSidebarOpen(true)}
-              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-slate-200/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
-              title="Expand sheets panel"
-              aria-label="Show compare sheets"
-              aria-expanded={false}
-            >
-              <PanelLeftOpen className="h-4 w-4" aria-hidden />
-            </button>
-
-            <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-2">
-              {compareTabs.map((tab) => {
-                const active = tab.id === activeCompareTabId
-                const words = (tab.name || 'S').trim().split(/\s+/)
-                const abbr = words.length >= 2
-                  ? (words[0]![0]! + words[1]![0]!).toUpperCase()
-                  : words[0]!.slice(0, 2).toUpperCase()
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveCompareTabId(tab.id)}
-                    title={tab.name}
-                    aria-label={tab.name}
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight transition-all sm:h-9 sm:w-9 ${
-                      active
-                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
-                        : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
-                    }`}
-                  >
-                    {abbr}
-                  </button>
-                )
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={addNewCompareTab}
-              className="flex h-10 w-full shrink-0 items-center justify-center border-t border-slate-200/80 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
-              title="New sheet"
-              aria-label="Add new sheet"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-        )}
-
-        {sheetsSidebarOpen && (
-          <aside
-            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 md:w-56 lg:w-60"
-            aria-label="Compare sheets"
-          >
-            <div className="flex items-center gap-1 border-b border-slate-200 px-2 py-2 sm:px-3 sm:py-2.5">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <Layers className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                <h2 className="truncate text-sm font-semibold text-slate-900">Sheets</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSheetsSidebarOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                title="Hide sheets"
-                aria-label="Hide compare sheets"
-                aria-expanded
-              >
-                <PanelLeftClose className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <div className="relative border-b border-slate-200/80 p-1.5 sm:p-2">
-              <button
-                type="button"
-                onClick={() => setNewTabMenuOpen((o) => !o)}
-                className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-white hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 sm:px-3 sm:py-2.5 sm:text-sm"
-              >
-                <span className="text-slate-400" aria-hidden>
-                  +
-                </span>
-                <span className="min-w-0 leading-snug">New sheet</span>
-              </button>
-              {newTabMenuOpen && (
-                <div className="absolute left-1.5 right-1.5 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5 sm:left-2 sm:right-2">
-                  <button
-                    type="button"
-                    onClick={addNewCompareTab}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <span className="text-slate-400">+</span>
-                    Blank sheet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewTabMenuOpen(false)
-                      setFilePickerOpen(true)
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <span className="text-slate-400">↺</span>
-                    Open file…
-                  </button>
-                </div>
-              )}
-            </div>
-            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-1.5 pb-3 pt-1 sm:px-2" role="list">
-              {compareTabs.map((tab) => {
-                const active = tab.id === activeCompareTabId
-                const isRenaming = renamingTabId === tab.id
-                return (
-                  <li key={tab.id}>
-                    <div
-                      className={`flex items-stretch gap-0.5 rounded-xl text-left text-xs transition-colors sm:text-sm ${
-                        active
-                          ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200'
-                          : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
-                      }`}
-                    >
-                      {isRenaming ? (
-                        <input
-                          ref={renameInputRef}
-                          type="text"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitRename()
-                            if (e.key === 'Escape') cancelRename()
-                          }}
-                          className="min-w-0 flex-1 rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-inner outline-none ring-2 ring-violet-400/30 sm:px-3 sm:py-2"
-                          aria-label={`Rename sheet ${tab.name}`}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => setActiveCompareTabId(tab.id)}
-                          onDoubleClick={() => startRenaming(tab.id)}
-                          className="min-w-0 flex-1 truncate px-2 py-2 text-left sm:px-3 sm:py-2.5"
-                          title="Double-click to rename"
-                        >
-                          <span className="line-clamp-2 wrap-break-word">{tab.name}</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => closeCompareTab(e, tab.id)}
-                        className={`flex shrink-0 items-center justify-center rounded-lg px-1.5 transition-colors ${
-                          active
-                            ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
-                            : 'text-slate-400 hover:bg-slate-200/80 hover:text-slate-700'
-                        }`}
-                        aria-label={`Close ${tab.name}`}
-                      >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </aside>
-        )}
+        <CompareSheetsSidebar
+          open={sheetsSidebarOpen}
+          compareTabs={compareTabs}
+          activeCompareTabId={activeCompareTabId}
+          newTabMenuOpen={newTabMenuOpen}
+          setNewTabMenuOpen={setNewTabMenuOpen}
+          onOpenSidebar={() => setSheetsSidebarOpen(true)}
+          onCloseSidebar={() => setSheetsSidebarOpen(false)}
+          onAddNewTab={addNewCompareTab}
+          onOpenFilePicker={() => setFilePickerOpen(true)}
+          onSetActiveTab={setActiveCompareTabId}
+          onCloseTab={closeCompareTab}
+          renamingTabId={renamingTabId}
+          renameValue={renameValue}
+          setRenameValue={setRenameValue}
+          onStartRenaming={startRenaming}
+          onCommitRename={commitRename}
+          onCancelRename={cancelRename}
+          renameInputRef={renameInputRef}
+        />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
+          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
 
-      {/* Data source — heading merged in */}
-      <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-slate-950/5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare workspace</p>
-            <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Product comparison</h1>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
-              Align specifications across vendors and parts using workspace data and scraped research in one view.
-            </p>
-          </div>
-        </div>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setFilePickerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            Choose file…
-          </button>
-          {fileContentLoading.size > 0 && (
-            <span className="text-sm text-slate-500">Loading file…</span>
-          )}
-          {selectedFilesData.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              {(compareMode === 'different-same-vendor'
-                ? selectedFilesData.slice(0, 1)
-                : selectedFilesData
-              ).map((file: LoadedFile) => {
-                const isActive = file.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
-                return (
-                  <span
-                    key={file.fileId}
-                    onClick={() => updateActiveTabData((d) => ({ ...d, activeFileId: file.fileId }))}
-                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                      isActive
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                        : 'border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white'
-                    }`}
-                  >
-                    <span className="font-medium">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleRemoveFile(file.fileId)
-                      }}
-                      className={`rounded p-0.5 ${
-                        isActive
-                          ? 'text-slate-300 hover:bg-white/15 hover:text-white'
-                          : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
-                      }`}
-                      aria-label={`Remove ${file.name}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                )
-              })}
-            </div>
-          )}
-        </div>
-        {selectedFilesData.length > 0 && (() => {
-          const filesToUse = compareMode === 'different-same-vendor' ? selectedFilesData.slice(0, 1) : selectedFilesData
-          const fileData = filesToUse.find(
-            (f: LoadedFile) => f.fileId === (activeFileId ?? filesToUse[0]?.fileId)
-          )
-          if (!fileData) return null
-          return (
-          <div key={fileData.fileId} className="mt-6">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{fileData.name}</p>
-            {fileData.content.length > 1 ? (
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-                <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
-                  Select parts · {fileData.content.length - 1} rows
-                </p>
-                <div className="max-h-52 overflow-y-auto px-2 py-2">
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                    {fileData.content.slice(1).map((row: string[], idx: number) => {
-                      const rowIdx = idx
-                      const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
-                      const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
-                      const isSelectedForScraped =
-                        selectedRowForScraped?.fileId === fileData.fileId &&
-                        selectedRowForScraped?.rowIdx === rowIdx
-                      const inPortfolio = portfolioPartNumbers.has(label.trim().toLowerCase())
-                      return (
-                        <label
-                          key={rowIdx}
-                          title={inPortfolio ? `${label} — In Portfolio` : label}
-                          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${
-                            inPortfolio
-                              ? isSelectedForScraped
-                                ? 'border-emerald-500 bg-emerald-200 text-emerald-950'
-                                : isChecked
-                                  ? 'border-emerald-400 bg-emerald-200 text-emerald-950'
-                                  : 'border-emerald-300 bg-emerald-100 text-slate-900 hover:border-emerald-400 hover:bg-emerald-200'
-                              : isSelectedForScraped
-                                ? 'border-sky-300 bg-sky-50 text-sky-900'
-                                : isChecked
-                                  ? 'border-slate-300 bg-slate-100 text-slate-900'
-                                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => toggleFileRow(fileData.fileId, rowIdx, e.target.checked)}
-                            className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                          />
-                          <span className="min-w-0 truncate font-medium">{label}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-3 py-2.5">
-                  <button
-                    type="button"
-                    onClick={() => handleAddSelectedFileRows(fileData.fileId)}
-                    disabled={!(selectedFileRows[fileData.fileId]?.length ?? 0)}
-                    className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {(selectedFileRows[fileData.fileId]?.length ?? 0) > 0
-                      ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected`
-                      : 'Select parts above'}
-                  </button>
-                  <span className="text-[11px] text-slate-400">
-                    {(selectedFileRows[fileData.fileId]?.length ?? 0)}/{fileData.content.length - 1} selected
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No data rows in this file.</p>
-            )}
-          </div>
-          )
-        })()}
-      
-        {compareMode !== 'different-same-vendor' && selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
-          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 ring-1 ring-slate-950/5">
-            <h4 className="text-sm font-semibold text-slate-900">Cross-vendor selection</h4>
-            <p className="mt-1.5 text-sm text-slate-600">
-              {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected across{' '}
-              {filesWithSelection} file{filesWithSelection !== 1 ? 's' : ''}. Add everything to the comparison table.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleAddAllSelectedFromAllFiles}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-                Add all selected to comparison
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  closeAndClear()
-                  updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+      <CompareWorkspaceSection
+        compareMode={compareMode}
+        selectedFilesData={selectedFilesData}
+        selectedFileRows={selectedFileRows}
+        activeFileId={activeFileId}
+        selectedRowForScraped={selectedRowForScraped}
+        fileContentLoadingSize={fileContentLoading.size}
+        portfolioPartNumbers={portfolioPartNumbers}
+        totalSelectedAcrossFiles={totalSelectedAcrossFiles}
+        filesWithSelection={filesWithSelection}
+        onOpenFilePicker={() => setFilePickerOpen(true)}
+        onSetActiveFile={(fileId) => updateActiveTabData((d) => ({ ...d, activeFileId: fileId }))}
+        onRemoveFile={handleRemoveFile}
+        onToggleFileRow={toggleFileRow}
+        onAddSelectedFileRows={handleAddSelectedFileRows}
+        onAddAllSelectedFromAllFiles={handleAddAllSelectedFromAllFiles}
+        onCancelAllSelected={() => {
+          closeAndClear()
+          updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
+        }}
+      />
 
       {/* Comparison matrix */}
       <div ref={comparisonSectionRef} className="mt-10">
@@ -1088,13 +969,13 @@ export function ComparePage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Vendor scrape</h3>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
                   {compareMode === 'different-same-vendor' ? 'Common vendor fields' : 'Structured fields'}
-                  {selectedRowForScraped ? (
+                  {compareMode !== 'different-same-vendor' && selectedRowForScraped ? (
                     <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
                   ) : null}
                 </p>
                 {compareMode === 'different-same-vendor' && (
                   <p className="mt-1 text-xs text-slate-500">
-                    Comparing {items.length} part{items.length === 1 ? '' : 's'} · {commonVendorDomains.length} common vendor
+                    Parts: {comparedPartLabels.join(', ')} · {commonVendorDomains.length} common vendor
                     {commonVendorDomains.length === 1 ? '' : 's'}
                   </p>
                 )}
@@ -1187,6 +1068,84 @@ export function ComparePage() {
                     </button>
                   </div>
                 )}
+                {scrapedData && scrapedData.length > 0 && (
+                  <>
+                    <details className="group relative">
+                      <summary className="list-none cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+                        Fields {scrapedSelectedFields.length > 0 ? `(${scrapedSelectedFields.length})` : '(All)'}
+                      </summary>
+                      <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5">
+                        <input
+                          type="search"
+                          value={scrapedFieldPickerSearch}
+                          onChange={(e) => setScrapedFieldPickerSearch(e.target.value)}
+                          placeholder="Search fields…"
+                          className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                        />
+                        <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                          <button
+                            type="button"
+                            onClick={() => setScrapedSelectedFields(scrapedFieldKeys)}
+                            className="hover:text-slate-700"
+                          >
+                            Select all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScrapedSelectedFields([])}
+                            className="hover:text-slate-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                          {scrapedFieldKeys
+                            .filter((k) =>
+                              scrapedFieldPickerSearch.trim()
+                                ? k.toLowerCase().includes(scrapedFieldPickerSearch.trim().toLowerCase())
+                                : true
+                            )
+                            .map((k) => {
+                              const checked = scrapedSelectedFields.includes(k)
+                              return (
+                                <label key={k} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setScrapedSelectedFields((prev) =>
+                                        e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)
+                                      )
+                                    }
+                                    className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                  />
+                                  <span className="truncate text-slate-700" title={k}>
+                                    {k}
+                                  </span>
+                                </label>
+                              )
+                            })}
+                        </div>
+                      </div>
+                    </details>
+                    <input
+                      type="search"
+                      value={scrapedValueSearch}
+                      onChange={(e) => setScrapedValueSearch(e.target.value)}
+                      placeholder="Filter values…"
+                      className="w-40 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                    />
+                    <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 shadow-sm">
+                      <input
+                        type="checkbox"
+                        checked={scrapedNonEmptyOnly}
+                        onChange={(e) => setScrapedNonEmptyOnly(e.target.checked)}
+                        className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                      />
+                      Non-empty only
+                    </label>
+                  </>
+                )}
               </div>
             </div>
             {!selectedRowForScraped ? (
@@ -1216,6 +1175,27 @@ export function ComparePage() {
                     ? scrapedFieldOrder
                     : scrapedFieldKeys.map((_, i) => i)
                 const orderedFieldKeys = fieldOrder.map((i) => scrapedFieldKeys[i]!)
+                const valueNeedle = scrapedValueSearch.trim().toLowerCase()
+                const visibleFieldKeys = orderedFieldKeys.filter((key) => {
+                  if (scrapedSelectedFields.length > 0 && !scrapedSelectedFields.includes(key)) return false
+                  if (!valueNeedle && !scrapedNonEmptyOnly) return true
+                  const hasMatch = displayScrapedRows.some((item) => {
+                    const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
+                    const printable =
+                      val == null
+                        ? ''
+                        : typeof val === 'string'
+                          ? val
+                          : typeof val === 'object'
+                            ? JSON.stringify(val)
+                            : String(val)
+                    if (scrapedNonEmptyOnly && !printable.trim()) return false
+                    return valueNeedle ? printable.toLowerCase().includes(valueNeedle) : true
+                  })
+                  return hasMatch
+                })
+                const sourceWidth = (url: string) => scrapedSourceColWidths[url] ?? 188
+                const fieldWidth = (key: string) => scrapedFieldColWidths[key] ?? 160
                 const renderScrapedCell = (item: ScrapedDataItem, key: string) => {
                   const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
                   const imageUrls = Array.isArray(val)
@@ -1268,12 +1248,26 @@ export function ComparePage() {
                 return (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
                     <div className="overflow-x-auto">
-                      {scrapedViewMode === 'row' ? (
+                      {visibleFieldKeys.length === 0 ? (
+                        <div className="px-5 py-8 text-center text-sm text-slate-500">
+                          No fields match the current filters.
+                        </div>
+                      ) : scrapedViewMode === 'row' ? (
                         <table className="min-w-full border-separate border-spacing-0 text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 bg-slate-50/95">
-                              <th className="sticky left-0 z-30 min-w-[120px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)] sm:min-w-[168px]">
+                              <th
+                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
+                              >
                                 Field
+                                <span
+                                  onMouseDown={(e) =>
+                                    startColumnResize(e, 'row-field', 'field', scrapedRowFieldColWidth)
+                                  }
+                                  className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                  title="Resize column"
+                                />
                               </th>
                               {displayScrapedRows.map((item, displayIdx) => (
                                 <th
@@ -1282,7 +1276,8 @@ export function ComparePage() {
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
                                   onDragOver={handleScrapedDragOver}
                                   onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
-                                  className="min-w-[140px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left active:cursor-grabbing sm:min-w-[188px]"
+                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-4 py-3.5 text-left"
+                                  style={{ width: sourceWidth(item.url), minWidth: sourceWidth(item.url) }}
                                   title="Drag to reorder sources"
                                 >
                                   <div className="flex min-w-0 items-start gap-2">
@@ -1308,12 +1303,19 @@ export function ComparePage() {
                                       </a>
                                     </div>
                                   </div>
+                                  <span
+                                    onMouseDown={(e) =>
+                                      startColumnResize(e, 'row-source', item.url, sourceWidth(item.url))
+                                    }
+                                    className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                    title="Resize column"
+                                  />
                                 </th>
                               ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {orderedFieldKeys.map((key, displayFieldIdx) => (
+                            {visibleFieldKeys.map((key, displayFieldIdx) => (
                               <tr
                                 key={key}
                                 onDragOver={handleScrapedDragOver}
@@ -1323,7 +1325,8 @@ export function ComparePage() {
                                 <td
                                   draggable
                                   onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
-                                  className="sticky left-0 z-10 min-w-[120px] cursor-grab border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 active:cursor-grabbing sm:min-w-[168px]"
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
                                   title="Drag to reorder fields"
                                 >
                                   {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
@@ -1332,6 +1335,7 @@ export function ComparePage() {
                                   <td
                                     key={`${item.url}-${key}`}
                                     className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
+                                    style={{ width: sourceWidth(item.url), minWidth: sourceWidth(item.url) }}
                                   >
                                     {renderScrapedCell(item, key)}
                                   </td>
@@ -1344,20 +1348,46 @@ export function ComparePage() {
                         <table className="min-w-full border-separate border-spacing-0 text-sm">
                           <thead>
                             <tr className="border-b border-slate-200 bg-slate-50/95">
-                              <th className="sticky left-0 z-30 min-w-[220px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]">
+                              <th
+                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                style={{
+                                  width: scrapedColumnViewSourceColWidth,
+                                  minWidth: scrapedColumnViewSourceColWidth,
+                                }}
+                              >
                                 Source
+                                <span
+                                  onMouseDown={(e) =>
+                                    startColumnResize(
+                                      e,
+                                      'column-source',
+                                      'source',
+                                      scrapedColumnViewSourceColWidth
+                                    )
+                                  }
+                                  className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                  title="Resize column"
+                                />
                               </th>
-                              {orderedFieldKeys.map((key, displayFieldIdx) => (
+                              {visibleFieldKeys.map((key, displayFieldIdx) => (
                                 <th
                                   key={key}
                                   draggable
                                   onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
                                   onDragOver={handleScrapedDragOver}
                                   onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
-                                  className="min-w-[160px] cursor-grab border-b border-l border-slate-100 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 active:cursor-grabbing"
+                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                                  style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   title="Drag to reorder fields"
                                 >
                                   {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
+                                  <span
+                                    onMouseDown={(e) =>
+                                      startColumnResize(e, 'column-field', key, fieldWidth(key))
+                                    }
+                                    className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                    title="Resize column"
+                                  />
                                 </th>
                               ))}
                             </tr>
@@ -1373,7 +1403,11 @@ export function ComparePage() {
                                 <td
                                   draggable
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
-                                  className="sticky left-0 z-10 min-w-[220px] cursor-grab border-r border-slate-100 bg-white px-4 py-2.5 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50 active:cursor-grabbing"
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-4 py-2.5 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  style={{
+                                    width: scrapedColumnViewSourceColWidth,
+                                    minWidth: scrapedColumnViewSourceColWidth,
+                                  }}
                                   title="Drag to reorder sources"
                                 >
                                   <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1389,10 +1423,11 @@ export function ComparePage() {
                                     {shortenUrl(item.url)}
                                   </a>
                                 </td>
-                                {orderedFieldKeys.map((key) => (
+                                {visibleFieldKeys.map((key) => (
                                   <td
                                     key={`${item.url}-${key}`}
                                     className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
+                                    style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   >
                                     {renderScrapedCell(item, key)}
                                   </td>
@@ -1419,94 +1454,16 @@ export function ComparePage() {
 
 
 
-      {/* File picker modal */}
-      {filePickerOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
-          onClick={() => setFilePickerOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="compare-file-picker-title"
-        >
-          <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl ring-1 ring-slate-950/5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-5 py-4">
-              <h3 id="compare-file-picker-title" className="text-base font-semibold text-slate-900">
-                Workspace files
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200/80 hover:text-slate-700"
-                aria-label="Close"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3">
-              {filePickerLoading && (
-                <p className="py-10 text-center text-sm text-slate-500">Loading files…</p>
-              )}
-              {filePickerError && (
-                <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
-                <p className="py-10 text-center text-sm text-slate-500">
-                  No files in workspace. Upload from the Home page first.
-                </p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
-                <>
-                  <p className="mb-3 px-2 text-xs font-medium text-slate-500">Select a file to attach to this sheet.</p>
-                  <ul className="space-y-1">
-                  {filePickerFiles.map((file: FileEntry) => {
-                    const isSelected = selectedFilesData.some((f: LoadedFile) => f.fileId === file.id)
-                    const isLoading = fileContentLoading.has(file.id)
-                    return (
-                    <li key={file.id}>
-                      <button
-                        type="button"
-                        onClick={() => handleFilePickerFileClick(file)}
-                        disabled={isSelected || isLoading}
-                        className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                          isSelected
-                            ? 'cursor-default bg-slate-100 text-slate-500'
-                            : isLoading
-                              ? 'cursor-wait text-slate-500'
-                              : 'text-slate-800 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="truncate w-full font-medium">{file.name}</span>
-                        {file.folderPath && (
-                          <span className="truncate w-full text-xs text-slate-500">{file.folderPath}</span>
-                        )}
-                        {isSelected && (
-                          <span className="text-xs font-medium text-slate-700">Attached</span>
-                        )}
-                      </button>
-                    </li>
-                  )
-                  })}
-                </ul>
-                </>
-              )}
-            </div>
-            <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CompareFilePickerModal
+        open={filePickerOpen}
+        filePickerLoading={filePickerLoading}
+        filePickerError={filePickerError}
+        filePickerFiles={filePickerFiles}
+        selectedFilesData={selectedFilesData}
+        fileContentLoading={fileContentLoading}
+        onClose={() => setFilePickerOpen(false)}
+        onFileClick={handleFilePickerFileClick}
+      />
           </div>
         </div>
     </div>
