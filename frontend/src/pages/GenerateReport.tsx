@@ -474,6 +474,20 @@ export function GenerateReportPage() {
     })
   }, [])
 
+  const moveBlockToIndex = useCallback((id: string, toIndex: number) => {
+    setBlocks((prev) => {
+      const fromIndex = prev.findIndex((b) => b.id === id)
+      if (fromIndex < 0) return prev
+      const nextIndex = Math.max(0, Math.min(toIndex, prev.length - 1))
+      if (nextIndex === fromIndex) return prev
+
+      const next = [...prev]
+      const [item] = next.splice(fromIndex, 1)
+      next.splice(nextIndex, 0, item!)
+      return next
+    })
+  }, [])
+
   const saveDocument = useCallback(() => {
     const title = docTitle.trim() || 'Untitled report'
     const normalized = blocks.map((b) => normalizeBlock(structuredClone(b)))
@@ -509,6 +523,7 @@ export function GenerateReportPage() {
         onUpdateBlock={updateBlock}
         onRemoveBlock={removeBlock}
         onMoveBlock={moveBlock}
+        onMoveBlockToIndex={moveBlockToIndex}
         showAiComposer={showAiComposer}
         aiPrompt={aiPrompt}
         aiGenerating={aiGenerating}

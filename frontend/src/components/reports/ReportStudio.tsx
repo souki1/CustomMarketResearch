@@ -1,4 +1,5 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { ReportBlockEditor } from '@/components/reports/ReportBlockEditor'
 import { ReportBlockFormatBar } from '@/components/reports/ReportBlockFormatBar'
 import { ELEMENT_TOOLS } from '@/components/reports/reportElementTools'
@@ -17,6 +18,7 @@ export type ReportStudioProps = {
   onUpdateBlock: (id: string, next: ReportBlock) => void
   onRemoveBlock: (id: string) => void
   onMoveBlock: (id: string, dir: -1 | 1) => void
+  onMoveBlockToIndex?: (id: string, toIndex: number) => void
   showAiComposer?: boolean
   aiPrompt?: string
   aiGenerating?: boolean
@@ -38,6 +40,7 @@ export function ReportStudio({
   onUpdateBlock,
   onRemoveBlock,
   onMoveBlock,
+  onMoveBlockToIndex,
   showAiComposer = false,
   aiPrompt = '',
   aiGenerating = false,
@@ -47,6 +50,10 @@ export function ReportStudio({
   onGenerateWithAi,
 }: ReportStudioProps) {
   const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null
+
+  const draggableEnabled = typeof onMoveBlockToIndex === 'function'
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-[#e8eaed]">
@@ -140,7 +147,36 @@ export function ReportStudio({
             >
               <div className="space-y-6" onClick={(e) => e.stopPropagation()}>
                 {blocks.map((b, idx) => (
-                  <div key={b.id} className="relative">
+                  <div
+                    key={b.id}
+                    className={`relative ${dragOverId === b.id && draggingId !== b.id ? 'ring-2 ring-violet-200/80 ring-offset-2 ring-offset-white' : ''} ${
+                      draggingId === b.id ? 'opacity-60' : ''
+                    }`}
+                    onDragEnter={() => {
+                      if (!draggableEnabled || !draggingId) return
+                      setDragOverId(b.id)
+                    }}
+                    onDragOver={(e) => {
+                      if (!draggableEnabled) return
+                      e.preventDefault() // allow dropping
+                      e.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(e) => {
+                      if (!draggableEnabled) return
+                      e.preventDefault()
+                      const fromId = e.dataTransfer.getData('text/plain')
+                      if (!fromId || fromId === b.id) return
+                      onMoveBlockToIndex?.(fromId, idx)
+                      setDraggingId(null)
+                      setDragOverId(null)
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null)
+                      setDragOverId(null)
+                    }}
+                    role="listitem"
+                    aria-roledescription="Draggable report block"
+                  >
                     {selectedId === b.id && (
                       <>
                         <div className="mb-2 flex flex-wrap items-center gap-1">
@@ -177,12 +213,49 @@ export function ReportStudio({
                         )}
                       </>
                     )}
-                    <ReportBlockEditor
-                      block={b}
-                      selected={selectedId === b.id}
-                      onSelect={() => onSelectId(b.id)}
-                      onChange={(next) => onUpdateBlock(b.id, next)}
-                    />
+                    {selectedId === b.id ? (
+                      <div className="flex items-start gap-2">
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            draggable={draggableEnabled}
+                            onDragStart={(e) => {
+                              if (!draggableEnabled) return
+                              setDraggingId(b.id)
+                              setDragOverId(null)
+                              e.dataTransfer.effectAllowed = 'move'
+                              e.dataTransfer.setData('text/plain', b.id)
+                            }}
+                            onDragEnd={() => {
+                              setDraggingId(null)
+                              setDragOverId(null)
+                            }}
+                            title="Drag to reorder"
+                            aria-label="Drag to reorder"
+                            className={`${BTN_ICON} cursor-move select-none`}
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                              <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <ReportBlockEditor
+                            block={b}
+                            selected={selectedId === b.id}
+                            onSelect={() => onSelectId(b.id)}
+                            onChange={(next) => onUpdateBlock(b.id, next)}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <ReportBlockEditor
+                        block={b}
+                        selected={selectedId === b.id}
+                        onSelect={() => onSelectId(b.id)}
+                        onChange={(next) => onUpdateBlock(b.id, next)}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
