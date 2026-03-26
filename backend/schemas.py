@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
@@ -179,3 +180,22 @@ class AiSessionMessagesResponse(BaseModel):
     session_id: str
     mode: str
     messages: list[AiChatHistoryMessage]
+
+
+class CompareStateUpsert(BaseModel):
+    compare_tabs: list[dict[str, Any]] = Field(default_factory=list)
+    active_compare_tab_id: str | None = None
+    compare_mode: Literal["same-part", "different-same-vendor", "different-different-vendors"] = "different-different-vendors"
+    scraped_vendor_filter: str = "all"
+    scraped_view_mode: Literal["row", "column"] = "row"
+    scraped_selected_fields: list[str] = Field(default_factory=list)
+    scraped_value_search: str = ""
+    scraped_non_empty_only: bool = False
+    scraped_data_by_part: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    scraped_data: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CompareStateResponse(CompareStateUpsert):
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
