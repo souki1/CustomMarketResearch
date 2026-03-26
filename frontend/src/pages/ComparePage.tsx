@@ -136,12 +136,77 @@ function readPersistedCompareState(): {
   }
 }
 
+function serializeCompareTabsForPersistence(tabs: CompareTab[]): Array<Record<string, unknown>> {
+  return tabs.map((t) => ({
+    id: t.id,
+    name: t.name,
+    data: {
+      selectedFilesData: t.data.selectedFilesData.map((f) => ({
+        fileId: f.fileId,
+        name: f.name,
+        folderPath: f.folderPath,
+      })),
+      selectedFileRows: t.data.selectedFileRows,
+      activeFileId: t.data.activeFileId,
+      selectedRowForScraped: t.data.selectedRowForScraped,
+    },
+  }))
+}
+
+function coercePersistedTabs(raw: unknown): CompareTab[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((t): CompareTab | null => {
+      if (!t || typeof t !== 'object') return null
+      const obj = t as Record<string, unknown>
+      const id = typeof obj.id === 'string' && obj.id ? obj.id : crypto.randomUUID()
+      const name = typeof obj.name === 'string' && obj.name ? obj.name : 'New tab'
+      const data = (obj.data && typeof obj.data === 'object' ? obj.data : {}) as Record<string, unknown>
+      const selectedFilesDataRaw = Array.isArray(data.selectedFilesData) ? data.selectedFilesData : []
+      const selectedFilesData: LoadedFile[] = selectedFilesDataRaw
+        .map((f): LoadedFile | null => {
+          if (!f || typeof f !== 'object') return null
+          const fo = f as Record<string, unknown>
+          const fileId = Number(fo.fileId)
+          if (!Number.isFinite(fileId)) return null
+          return {
+            fileId,
+            name: String(fo.name ?? ''),
+            folderPath: fo.folderPath == null ? null : String(fo.folderPath),
+            content: Array.isArray(fo.content) ? (fo.content as string[][]) : [],
+          }
+        })
+        .filter((x): x is LoadedFile => x != null)
+      const selectedFileRows =
+        data.selectedFileRows && typeof data.selectedFileRows === 'object'
+          ? (data.selectedFileRows as Record<number, number[]>)
+          : {}
+      const activeFileId = data.activeFileId == null ? null : Number(data.activeFileId)
+      const selectedRowForScraped =
+        data.selectedRowForScraped && typeof data.selectedRowForScraped === 'object'
+          ? (data.selectedRowForScraped as { fileId: number; rowIdx: number; partLabel: string })
+          : null
+      return {
+        id,
+        name,
+        data: {
+          selectedFilesData,
+          selectedFileRows,
+          activeFileId: Number.isFinite(activeFileId) ? activeFileId : null,
+          selectedRowForScraped,
+        },
+      }
+    })
+    .filter((x): x is CompareTab => x != null)
+}
+
 export function ComparePage() {
-  const { items, addItems, closeAndClear } = useComparison()
+  const { items, addItems, closeAndClear, openWithItems } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
-    return Array.isArray(persisted?.compareTabs) && persisted.compareTabs.length > 0
-      ? persisted.compareTabs
+    const tabs = coercePersistedTabs(persisted?.compareTabs)
+    return tabs.length > 0
+      ? tabs
       : [newBlankCompareTab()]
   })
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(() => {
@@ -187,7 +252,6 @@ export function ComparePage() {
   })
   const hasHydratedCompareStateRef = useRef(false)
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const restoredItemsOnceRef = useRef(false)
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -211,12 +275,13 @@ export function ComparePage() {
           return
         }
         if (Array.isArray(state.compare_tabs) && state.compare_tabs.length > 0) {
-          const tabs = state.compare_tabs as CompareTab[]
-          restoredItemsOnceRef.current = false
+          const tabs = coercePersistedTabs(state.compare_tabs)
+          if (tabs.length > 0) {
           setCompareTabs(tabs)
           setActiveCompareTabId(
             typeof state.active_compare_tab_id === 'string' ? state.active_compare_tab_id : tabs[0]?.id ?? null
           )
+          }
         }
         if (
           state.compare_mode === 'same-part' ||
@@ -273,7 +338,26 @@ export function ComparePage() {
     setCompareTabs((prev) => [...prev, tab])
     setActiveCompareTabId(tab.id)
     setNewTabMenuOpen(false)
-  }, [])
+    // "New sheet" should start completely clean.
+    closeAndClear()
+    setCompareMode('different-different-vendors')
+    setScrapedData(null)
+    setScrapedDataByPart({})
+    setScrapedDataLoading(false)
+    setCommonVendorsLoading(false)
+    setScrapedVendorFilter('all')
+    setScrapedViewMode('row')
+    setScrapedSelectedFields([])
+    setScrapedFieldPickerSearch('')
+    setScrapedValueSearch('')
+    setScrapedNonEmptyOnly(false)
+    setScrapedColumnOrder([])
+    setScrapedFieldOrder([])
+    setScrapedSourceColWidths({})
+    setScrapedFieldColWidths({})
+    setScrapedRowFieldColWidth(188)
+    setScrapedColumnViewSourceColWidth(220)
+  }, [closeAndClear])
 
   const closeCompareTab = useCallback((e: ReactMouseEvent, id: string) => {
     e.stopPropagation()
@@ -362,7 +446,7 @@ export function ComparePage() {
       localStorage.setItem(
         COMPARE_PAGE_STATE_KEY,
         JSON.stringify({
-          compareTabs,
+          compareTabs: serializeCompareTabsForPersistence(compareTabs),
           activeCompareTabId,
           compareMode,
         })
@@ -377,7 +461,7 @@ export function ComparePage() {
       if (!token) return
       void upsertCompareState(
         {
-          compare_tabs: compareTabs as Array<Record<string, unknown>>,
+          compare_tabs: serializeCompareTabsForPersistence(compareTabs),
           active_compare_tab_id: activeCompareTabId,
           compare_mode: compareMode,
           scraped_vendor_filter: scrapedVendorFilter,
@@ -478,6 +562,50 @@ export function ComparePage() {
     [selectedFilesData, updateActiveTabData]
   )
 
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    const missing = compareTabs.flatMap((t) =>
+      t.data.selectedFilesData
+        .filter((f) => !Array.isArray(f.content) || f.content.length === 0)
+        .map((f) => ({ tabId: t.id, file: f }))
+    )
+    if (missing.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const cache = new Map<number, string[][]>()
+      for (const { file } of missing) {
+        if (cache.has(file.fileId)) continue
+        try {
+          const text = await getWorkspaceFileContent(file.fileId, token)
+          const parsed = parseCsv(text)
+          cache.set(file.fileId, parsed.length > 0 ? parsed : [['']])
+        } catch {
+          cache.set(file.fileId, [['']])
+        }
+      }
+      if (cancelled) return
+      setCompareTabs((prev) =>
+        prev.map((tab) => ({
+          ...tab,
+          data: {
+            ...tab.data,
+            selectedFilesData: tab.data.selectedFilesData.map((f) =>
+              !Array.isArray(f.content) || f.content.length === 0
+                ? { ...f, content: cache.get(f.fileId) ?? [['']] }
+                : f
+            ),
+          },
+        }))
+      )
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [compareTabs])
+
   const handleRemoveFile = useCallback((fileId: number) => {
     updateActiveTabData((d) => {
       const next = { ...d }
@@ -518,6 +646,11 @@ export function ComparePage() {
   // For "different parts from same vendor", collect scraped sources for every selected part.
   useEffect(() => {
     if (compareMode !== 'different-same-vendor') {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    if (selectedFilesData.length === 0) {
       setScrapedDataByPart({})
       setCommonVendorsLoading(false)
       return
@@ -565,7 +698,7 @@ export function ComparePage() {
     return () => {
       cancelled = true
     }
-  }, [compareMode, items])
+  }, [compareMode, items, selectedFilesData.length])
 
   const commonVendorDomains = useMemo(() => {
     if (compareMode !== 'different-same-vendor') return []
@@ -741,6 +874,7 @@ export function ComparePage() {
   useEffect(() => {
     if (
       (compareMode === 'same-part' || compareMode === 'different-same-vendor') &&
+      selectedFilesData.length > 0 &&
       items.length > 0 &&
       !selectedRowForScraped
     ) {
@@ -757,7 +891,7 @@ export function ComparePage() {
         }))
       }
     }
-  }, [compareMode, items, selectedRowForScraped, updateActiveTabData])
+  }, [compareMode, selectedFilesData.length, items, selectedRowForScraped, updateActiveTabData])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -786,10 +920,9 @@ export function ComparePage() {
   )
 
   useEffect(() => {
-    if (restoredItemsOnceRef.current) return
     if (!activeTab) return
-    if (items.length > 0) {
-      restoredItemsOnceRef.current = true
+    if (activeTab.data.selectedFilesData.length === 0) {
+      openWithItems([])
       return
     }
     const restored: ComparisonItem[] = []
@@ -799,9 +932,8 @@ export function ComparePage() {
       if (rows.length === 0) continue
       restored.push(...buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b)))
     }
-    if (restored.length > 0) addItems(restored)
-    restoredItemsOnceRef.current = true
-  }, [activeTab, items.length, buildItemsFromFileRows, addItems])
+    openWithItems(restored)
+  }, [activeTab, buildItemsFromFileRows, openWithItems])
 
   const handleAddSelectedFileRows = useCallback(
     (fileId: number) => {
