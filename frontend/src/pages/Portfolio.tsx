@@ -33,6 +33,7 @@ const PAGE_BG = "bg-[#f8fafc]"
 const BORDER = "border-slate-200"
 const BEST_PRICE_GREEN = "text-[#16a34a]"
 const AVG_PRICE_SLATE = "text-[#334155]"
+const PORTFOLIO_REPORT_CONTEXT_KEY = 'ir-portfolio-report-context-v1'
 
 function parsePrice(s: string | null): number | null {
   if (s == null || !String(s).trim()) return null
@@ -250,6 +251,50 @@ export function PortfolioPage() {
     }
     return bestI
   }, [])
+
+  useEffect(() => {
+    try {
+      if (selectedPartIds.size === 0) {
+        sessionStorage.removeItem(PORTFOLIO_REPORT_CONTEXT_KEY)
+        return
+      }
+
+      const parts = partGroups
+        .filter((g) => selectedPartIds.has(g.rowId))
+        .map((g) => {
+          const savedChoice = vendorChoiceByPart[g.rowId]
+          const choiceIdx =
+            savedChoice != null && savedChoice >= 0 && savedChoice < g.entries.length
+              ? savedChoice
+              : bestEntryIndexForGroup(g)
+          const selectedOffer = g.entries[choiceIdx] ?? g.entries[0]
+
+          return {
+            part_number: g.part_number ?? null,
+            selected_offer: {
+              vendor_name: selectedOffer?.vendor_name ?? null,
+              price: selectedOffer?.price ?? null,
+              quantity: selectedOffer?.quantity ?? null,
+              url: selectedOffer?.url ?? null,
+            },
+          }
+        })
+
+      if (parts.length === 0) {
+        sessionStorage.removeItem(PORTFOLIO_REPORT_CONTEXT_KEY)
+        return
+      }
+
+      const payload = {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        parts,
+      }
+      sessionStorage.setItem(PORTFOLIO_REPORT_CONTEXT_KEY, JSON.stringify(payload))
+    } catch {
+      // ignore (private mode, storage disabled, etc.)
+    }
+  }, [partGroups, selectedPartIds, vendorChoiceByPart, bestEntryIndexForGroup])
 
   const handleExportCsv = useCallback(() => {
     const lines = ["Part Number,Vendor,Price,Quantity,URL"]

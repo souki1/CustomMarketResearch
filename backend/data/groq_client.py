@@ -31,6 +31,12 @@ _AI_MODE_SYSTEM: dict[str, tuple[str, float]] = {
         "Be specific and actionable; avoid generic filler.",
         0.9,
     ),
+    "report": (
+        "Generate professional, factual reports from provided procurement/research context. "
+        "Use only provided data, clearly separate facts from assumptions, and avoid unverifiable claims. "
+        "Structure output so it is easy to parse into sections.",
+        0.3,
+    ),
 }
 
 

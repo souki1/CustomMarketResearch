@@ -147,7 +147,7 @@ class AiChatHistoryMessage(BaseModel):
 class AiChatRequest(BaseModel):
     """Groq-backed assistant; `mode` selects system prompt / behavior."""
 
-    mode: Literal["chat", "summarize", "rewrite", "brainstorm"] = "chat"
+    mode: Literal["chat", "summarize", "rewrite", "brainstorm", "report"] = "chat"
     message: str = Field(..., min_length=1, max_length=48_000)
     history: list[AiChatHistoryMessage] = Field(default_factory=list, max_length=32)
     session_id: str | None = Field(

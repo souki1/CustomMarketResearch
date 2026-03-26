@@ -21,6 +21,7 @@ from schemas import (
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 AI_COLLECTION = "ai_interactions"
+REPORT_GENERATION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def _require_mongo_db() -> AsyncIOMotorDatabase:
@@ -78,12 +79,13 @@ async def ai_chat(
         session_id = str(uuid.uuid4())
 
     history = [(m.role, m.content) for m in body.history]
+    model_to_use = REPORT_GENERATION_MODEL if body.mode == "report" else settings.groq_model
     text = await groq_assistant_chat(
         settings.groq_api_key,
         mode=body.mode,
         user_message=body.message,
         history=history,
-        model=settings.groq_model,
+        model=model_to_use,
     )
     if text is None:
         raise HTTPException(
@@ -100,12 +102,12 @@ async def ai_chat(
         "mode": body.mode,
         "user_message": body.message,
         "assistant_message": text,
-        "model": settings.groq_model,
+        "model": model_to_use,
         "created_at": now,
     }
     await mongo_db[AI_COLLECTION].insert_one(doc)
 
-    return AiChatResponse(content=text, model=settings.groq_model, session_id=session_id)
+    return AiChatResponse(content=text, model=model_to_use, session_id=session_id)
 
 
 @router.get("/sessions", response_model=list[AiSessionSummary])

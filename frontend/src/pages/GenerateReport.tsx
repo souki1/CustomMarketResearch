@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReportGalleryHome, ReportStudio } from '@/components/reports'
-import { aiGroqChat } from '@/lib/api'
+import {
+  aiGroqChat,
+  listDataSheetSelections,
+  listPortfolioItems,
+  listResearchUrls,
+  type PortfolioItem,
+  type ScrapedDataItem,
+} from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import {
   createEmptyBlock,
@@ -13,7 +20,25 @@ import {
   type SavedReport,
 } from '@/lib/savedReports'
 
+const PORTFOLIO_REPORT_CONTEXT_KEY = 'ir-portfolio-report-context-v1'
+const PORTFOLIO_CTX_MARKER = '[[PORTFOLIO_CONTEXT]]'
+const REPORT_DATASET_MARKER = '[[REPORT_DATASET]]'
+
 type StudioMode = 'home' | 'studio'
+
+type PortfolioReportContext = {
+  version: 1
+  updatedAt: string
+  parts: Array<{
+    part_number: string | null
+    selected_offer: {
+      vendor_name: string | null
+      price: string | null
+      quantity: number | null
+      url: string | null
+    }
+  }>
+}
 
 function newBlockId(): string {
   try {
@@ -143,6 +168,129 @@ function parseAiToReportDraft(userPrompt: string, raw: string): { title: string;
   return { title, blocks }
 }
 
+function buildPortfolioContextText(ctx: PortfolioReportContext): string {
+  return ctx.parts
+    .map((p, idx) => {
+      const pn = p.part_number ?? null
+      const offer = p.selected_offer
+      return [
+        `Part ${idx + 1}:`,
+        `part_number: ${pn ?? '—'}`,
+        `vendor_name: ${offer.vendor_name ?? '—'}`,
+        `price: ${offer.price ?? '—'}`,
+        `quantity: ${offer.quantity ?? '—'}`,
+        `url: ${offer.url ?? '—'}`,
+      ].join('\n')
+    })
+    .join('\n\n')
+}
+
+function buildDefaultAiPromptFromPortfolio(ctx: PortfolioReportContext): string {
+  const ctxText = buildPortfolioContextText(ctx)
+  return [
+    'Generate a professional report from the portfolio selection provided.',
+    'Create exactly one report section per selected part, in the same order as provided.',
+    'Use only the provided vendor/price/quantity/url values. Do not invent additional specifications.',
+    'For each section:',
+    '- Use the part number as the section heading (or "Part" if missing).',
+    '- Write a short paragraph that summarizes the offer.',
+    '- Add bullets for: vendor, price, quantity, and link (when available).',
+    '',
+    PORTFOLIO_CTX_MARKER,
+    ctxText,
+  ].join('\n')
+}
+
+type ReportDataset = {
+  portfolio: Array<{
+    part_number: string | null
+    offers: PortfolioItem[]
+  }>
+  scraped: Array<{
+    row_index: number
+    search_query: string
+    scraped_data: ScrapedDataItem[]
+  }>
+}
+
+function buildReportDatasetContextText(dataset: ReportDataset): string {
+  const portfolioSection = dataset.portfolio
+    .map((row, idx) => {
+      const offersText = row.offers
+        .map((o, offerIdx) =>
+          [
+            `  Offer ${offerIdx + 1}:`,
+            `    vendor_name: ${o.vendor_name ?? '—'}`,
+            `    price: ${o.price ?? '—'}`,
+            `    quantity: ${o.quantity ?? '—'}`,
+            `    url: ${o.url ?? '—'}`,
+          ].join('\n')
+        )
+        .join('\n')
+      return [`Part ${idx + 1}: ${row.part_number ?? '—'}`, offersText || '  Offers: none'].join('\n')
+    })
+    .join('\n\n')
+
+  const scrapedSection = dataset.scraped
+    .map((row, idx) => {
+      const scrapedItems = row.scraped_data
+        .map((entry, entryIdx) => {
+          const json = JSON.stringify(entry.data ?? {})
+          return [`  Source ${entryIdx + 1}:`, `    url: ${entry.url}`, `    data_json: ${json}`].join('\n')
+        })
+        .join('\n')
+      return [
+        `Scraped row ${idx + 1}:`,
+        `  row_index: ${row.row_index}`,
+        `  search_query: ${row.search_query || '—'}`,
+        scrapedItems || '  Sources: none',
+      ].join('\n')
+    })
+    .join('\n\n')
+
+  return [
+    'PORTFOLIO_DATA:',
+    portfolioSection || 'No portfolio data.',
+    '',
+    'SCRAPED_DATA:',
+    scrapedSection || 'No scraped data.',
+  ].join('\n')
+}
+
+async function loadReportDataset(token: string): Promise<ReportDataset> {
+  const selections = await listDataSheetSelections(token)
+  const portfolioBatches = await Promise.all(
+    selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[]))
+  )
+
+  const byPart = new Map<string, { part_number: string | null; offers: PortfolioItem[] }>()
+  for (const batch of portfolioBatches) {
+    for (const offer of batch) {
+      const key = offer.part_number ?? '__null_part__'
+      const existing = byPart.get(key)
+      if (existing) {
+        existing.offers.push(offer)
+      } else {
+        byPart.set(key, { part_number: offer.part_number ?? null, offers: [offer] })
+      }
+    }
+  }
+
+  const allResearch = await listResearchUrls(token).catch(() => [])
+  const scraped = allResearch
+    .filter((r) => Array.isArray(r.scraped_data) && r.scraped_data.length > 0)
+    .map((r) => ({
+      row_index: r.row_index,
+      search_query: r.search_query,
+      scraped_data: r.scraped_data ?? [],
+    }))
+
+  return {
+    portfolio: Array.from(byPart.values()),
+    scraped,
+  }
+}
+
 export function GenerateReportPage() {
   const token = useMemo(() => getToken(), [])
   const [studioMode, setStudioMode] = useState<StudioMode>('home')
@@ -161,6 +309,7 @@ export function GenerateReportPage() {
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiGenerating, setAiGenerating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [portfolioCtx, setPortfolioCtx] = useState<PortfolioReportContext | null>(null)
 
   useEffect(() => {
     setReports(loadSavedReports())
@@ -169,6 +318,21 @@ export function GenerateReportPage() {
   useEffect(() => {
     persistSavedReports(reports)
   }, [reports])
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PORTFOLIO_REPORT_CONTEXT_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== 'object') return
+      const obj = parsed as Partial<PortfolioReportContext>
+      if (obj.version !== 1) return
+      if (!Array.isArray(obj.parts)) return
+      setPortfolioCtx(parsed as PortfolioReportContext)
+    } catch {
+      // ignore
+    }
+  }, [])
 
   const sorted = useMemo(
     () => [...reports].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -192,10 +356,10 @@ export function GenerateReportPage() {
     setBlocks([createEmptyBlock('title'), createEmptyBlock('paragraph')])
     setSelectedId(null)
     setShowAiComposer(true)
-    setAiPrompt('')
+    setAiPrompt(portfolioCtx ? buildDefaultAiPromptFromPortfolio(portfolioCtx) : '')
     setAiError(null)
     setStudioMode('studio')
-  }, [])
+  }, [portfolioCtx])
 
   const openStudioEdit = useCallback((r: SavedReport) => {
     setEditingId(r.id)
@@ -215,7 +379,8 @@ export function GenerateReportPage() {
   }, [])
 
   const generateWithAi = useCallback(async () => {
-    const prompt = aiPrompt.trim()
+    let prompt = aiPrompt.trim()
+    if (!prompt && portfolioCtx) prompt = buildDefaultAiPromptFromPortfolio(portfolioCtx)
     if (!prompt) return
     if (!token) {
       setAiError('Sign in to generate reports with AI.')
@@ -225,16 +390,38 @@ export function GenerateReportPage() {
     setAiGenerating(true)
     setAiError(null)
     try {
+      const dataset = await loadReportDataset(token)
+      const datasetText = buildReportDatasetContextText(dataset)
+
       const instruction = [
         'Generate a professional report from the user prompt.',
         'Return JSON only (no markdown), using this schema:',
         '{"title":"string","summary":"string","sections":[{"heading":"string","paragraphs":["string"],"bullets":["string"]}],"key_points":["string"],"conclusion":"string"}',
         'Use concise, factual language and avoid unsafe or unverifiable claims.',
+        'Use all provided portfolio data, all vendor offers, and all scraped research data when present.',
+        'In sections, clearly present vendor comparisons (price, quantity, source URL) and scraped highlights by source.',
+        portfolioCtx ? 'If portfolio context is provided, create one section per selected part using those details.' : '',
+      ].join('\n')
+
+      const effectivePrompt = portfolioCtx
+        ? prompt.includes(PORTFOLIO_CTX_MARKER)
+          ? prompt
+          : `${prompt}\n\n${PORTFOLIO_CTX_MARKER}\n${buildPortfolioContextText(portfolioCtx)}`
+        : prompt
+
+      const messageWithDataset = [
+        instruction,
+        '',
+        'User prompt:',
+        effectivePrompt,
+        '',
+        REPORT_DATASET_MARKER,
+        datasetText,
       ].join('\n')
 
       const res = await aiGroqChat(token, {
-        mode: 'chat',
-        message: `${instruction}\n\nUser prompt:\n${prompt}`,
+        mode: 'report',
+        message: messageWithDataset,
         history: [],
       })
 
@@ -248,7 +435,7 @@ export function GenerateReportPage() {
     } finally {
       setAiGenerating(false)
     }
-  }, [aiPrompt, token])
+  }, [aiPrompt, token, portfolioCtx])
 
   const addBlock = useCallback((type: ReportBlockType) => {
     const nb = createEmptyBlock(type)
@@ -306,6 +493,9 @@ export function GenerateReportPage() {
   }, [])
 
   if (studioMode === 'studio') {
+    const portfolioHint = portfolioCtx
+      ? `Using ${portfolioCtx.parts.length} selected part${portfolioCtx.parts.length === 1 ? '' : 's'} from Portfolio`
+      : null
     return (
       <ReportStudio
         docTitle={docTitle}
@@ -323,6 +513,7 @@ export function GenerateReportPage() {
         aiPrompt={aiPrompt}
         aiGenerating={aiGenerating}
         aiError={aiError}
+        aiContextHint={portfolioHint}
         onAiPromptChange={setAiPrompt}
         onGenerateWithAi={() => void generateWithAi()}
       />

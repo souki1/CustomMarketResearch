@@ -397,7 +397,7 @@ export async function deleteWorkspaceItem(itemId: number, token: string): Promis
   }
 }
 
-export type AiChatMode = 'chat' | 'summarize' | 'rewrite' | 'brainstorm'
+export type AiChatMode = 'chat' | 'summarize' | 'rewrite' | 'brainstorm' | 'report'
 
 export type AiChatHistoryMessage = { role: 'user' | 'assistant'; content: string }
 

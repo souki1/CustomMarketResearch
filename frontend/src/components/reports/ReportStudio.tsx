@@ -21,6 +21,7 @@ export type ReportStudioProps = {
   aiPrompt?: string
   aiGenerating?: boolean
   aiError?: string | null
+  aiContextHint?: string | null
   onAiPromptChange?: (prompt: string) => void
   onGenerateWithAi?: () => void
 }
@@ -41,6 +42,7 @@ export function ReportStudio({
   aiPrompt = '',
   aiGenerating = false,
   aiError = null,
+  aiContextHint,
   onAiPromptChange,
   onGenerateWithAi,
 }: ReportStudioProps) {
@@ -98,6 +100,7 @@ export function ReportStudio({
             {showAiComposer && (
               <div className="mx-auto mb-4 w-full max-w-[560px] rounded-xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Make report with AI</p>
+                {aiContextHint ? <p className="mt-2 text-xs text-violet-900/80">{aiContextHint}</p> : null}
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                   <input
                     type="text"
