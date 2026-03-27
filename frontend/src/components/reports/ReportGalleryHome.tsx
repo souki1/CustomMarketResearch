@@ -229,7 +229,7 @@ export function ReportGalleryHome({
                           key={r.id}
                           className="flex w-full flex-col overflow-visible rounded-2xl border border-zinc-200/90 bg-white transition-[border-color,box-shadow] duration-200 hover:border-zinc-300 hover:shadow-sm sm:w-[240px]"
                         >
-                          <div className="aspect-4/3 bg-zinc-100 p-5">
+                          <div className="aspect-4/3 overflow-hidden rounded-t-2xl bg-zinc-100 p-5">
                             <div
                               className={`mx-auto flex h-full max-h-full w-full max-w-[200px] flex-col overflow-hidden rounded-[3px] bg-white ${PAGE_SHADOW} px-3 py-3 text-[7px] leading-tight text-zinc-700`}
                               aria-hidden
