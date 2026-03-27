@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Download, FileText, Loader2, Sparkles, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ReportBlockEditor } from '@/components/reports/ReportBlockEditor'
 import { ReportBlockFormatBar } from '@/components/reports/ReportBlockFormatBar'
 import { ELEMENT_TOOLS } from '@/components/reports/reportElementTools'
@@ -26,6 +26,7 @@ export type ReportStudioProps = {
   onSave: () => void
   saving?: boolean
   editingId?: number | null
+  readOnly?: boolean
   blocks: ReportBlock[]
   selectedId: string | null
   onSelectId: (id: string | null) => void
@@ -50,6 +51,7 @@ export function ReportStudio({
   onSave,
   saving = false,
   editingId,
+  readOnly = false,
   blocks,
   selectedId,
   onSelectId,
@@ -74,9 +76,12 @@ export function ReportStudio({
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false)
 
   const handleExport = async (format: 'docx' | 'pdf') => {
     if (!token || !editingId) return
+    setExportError(null)
     setExporting(format)
     try {
       const blob = format === 'docx'
@@ -85,12 +90,31 @@ export function ReportStudio({
       const ext = format === 'docx' ? '.docx' : '.pdf'
       const filename = `${(docTitle.trim() || 'report').slice(0, 80)}${ext}`
       triggerBlobDownload(blob, filename)
-    } catch {
-      // export failed silently
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed'
+      if (format === 'pdf' && /libreoffice|soffice/i.test(message)) {
+        setExportError(
+          "PDF export isn't available yet. LibreOffice is required on the server. Install LibreOffice and make sure 'soffice' is on PATH."
+        )
+      } else {
+        setExportError(message || 'Export failed')
+      }
     } finally {
       setExporting(null)
     }
   }
+
+  useEffect(() => {
+    if (!downloadMenuOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('[data-studio-download-root]')) {
+        setDownloadMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [downloadMenuOpen])
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-[#e8eaed]">
@@ -102,69 +126,106 @@ export function ReportStudio({
         <div className="h-6 w-px bg-slate-200" aria-hidden />
         <input
           type="text"
-          className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-gray-900 placeholder:text-gray-400 transition-colors hover:border-slate-200 hover:bg-slate-50 focus:border-violet-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/30"
+          className={`min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-sm font-semibold text-gray-900 placeholder:text-gray-400 transition-colors ${
+            readOnly
+              ? 'cursor-default bg-transparent'
+              : 'bg-transparent hover:border-slate-200 hover:bg-slate-50 focus:border-violet-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/30'
+          }`}
           value={docTitle}
           onChange={(e) => onDocTitleChange(e.target.value)}
-          onFocus={(e) => e.target.select()}
+          onFocus={(e) => {
+            if (!readOnly) e.target.select()
+          }}
+          readOnly={readOnly}
           placeholder="Untitled report"
           maxLength={200}
           aria-label="Report name (also used as export filename)"
           title="Click to rename — this is also the export filename"
         />
         {canExport && (
-          <>
+          <div className="relative" data-studio-download-root>
             <button
               type="button"
               className={`${BTN_GHOST} gap-1.5 px-2.5`}
-              onClick={() => void handleExport('docx')}
+              onClick={() => setDownloadMenuOpen((o) => !o)}
               disabled={exporting !== null}
-              title="Export as DOCX"
+              title="Download"
             >
-              {exporting === 'docx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              <span className="hidden sm:inline text-xs">DOCX</span>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline text-xs">Download</span>
             </button>
-            <button
-              type="button"
-              className={`${BTN_GHOST} gap-1.5 px-2.5`}
-              onClick={() => void handleExport('pdf')}
-              disabled={exporting !== null}
-              title="Export as PDF"
-            >
-              {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              <span className="hidden sm:inline text-xs">PDF</span>
-            </button>
-          </>
-        )}
-        <button type="button" className={BTN_PRIMARY} onClick={onSave} disabled={saving}>
-          {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        <aside
-          className="hidden w-52 shrink-0 flex-col border-r border-slate-200/80 bg-white py-4 pl-3 pr-2 sm:flex"
-          aria-label="Elements"
-        >
-          <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Elements</p>
-          <p className="mt-1 px-2 text-[11px] leading-snug text-slate-400">Click to add to your page</p>
-          <ul className="mt-4 max-h-[calc(100vh-12rem)] space-y-1 overflow-y-auto pr-1">
-            {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
-              <li key={type}>
+            {downloadMenuOpen && (
+              <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-gray-700 hover:bg-slate-100"
-                  onClick={() => onAddBlock(type)}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setDownloadMenuOpen(false)
+                    void handleExport('docx')
+                  }}
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  {label}
+                  <FileText className="h-3.5 w-3.5" />
+                  Word (.docx)
                 </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setDownloadMenuOpen(false)
+                    void handleExport('pdf')
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  PDF (.pdf)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {!readOnly && (
+          <button type="button" className={BTN_PRIMARY} onClick={onSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        )}
+      </header>
+      {readOnly && (
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-600">
+          Read-only preview mode
+        </div>
+      )}
+      {exportError && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {exportError}
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1">
+        {!readOnly && (
+          <aside
+            className="hidden w-52 shrink-0 flex-col border-r border-slate-200/80 bg-white py-4 pl-3 pr-2 sm:flex"
+            aria-label="Elements"
+          >
+            <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Elements</p>
+            <p className="mt-1 px-2 text-[11px] leading-snug text-slate-400">Click to add to your page</p>
+            <ul className="mt-4 max-h-[calc(100vh-12rem)] space-y-1 overflow-y-auto pr-1">
+              {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
+                <li key={type}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-gray-700 hover:bg-slate-100"
+                    onClick={() => onAddBlock(type)}
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    {label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )}
 
         <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
           <div className="flex-1 overflow-auto px-4 py-8 sm:px-8">
@@ -241,7 +302,7 @@ export function ReportStudio({
                     role="listitem"
                     aria-roledescription="Draggable report block"
                   >
-                    {selectedId === b.id && (
+                    {!readOnly && selectedId === b.id && (
                       <>
                         <div className="mb-2 flex flex-wrap items-center gap-1">
                           <button
@@ -277,7 +338,7 @@ export function ReportStudio({
                         )}
                       </>
                     )}
-                    {selectedId === b.id ? (
+                    {!readOnly && selectedId === b.id ? (
                       <div className="flex items-start gap-2">
                         <div className="pt-2">
                           <button
@@ -304,21 +365,27 @@ export function ReportStudio({
                           </button>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <ReportBlockEditor
-                            block={b}
-                            selected={selectedId === b.id}
-                            onSelect={() => onSelectId(b.id)}
-                            onChange={(next) => onUpdateBlock(b.id, next)}
-                          />
+                          <fieldset disabled={readOnly}>
+                            <ReportBlockEditor
+                              block={b}
+                              selected={selectedId === b.id}
+                              onSelect={() => onSelectId(b.id)}
+                              onChange={(next) => onUpdateBlock(b.id, next)}
+                            />
+                          </fieldset>
                         </div>
                       </div>
                     ) : (
-                      <ReportBlockEditor
-                        block={b}
-                        selected={selectedId === b.id}
-                        onSelect={() => onSelectId(b.id)}
-                        onChange={(next) => onUpdateBlock(b.id, next)}
-                      />
+                      <fieldset disabled={readOnly}>
+                        <ReportBlockEditor
+                          block={b}
+                          selected={readOnly ? false : selectedId === b.id}
+                          onSelect={() => {
+                            if (!readOnly) onSelectId(b.id)
+                          }}
+                          onChange={(next) => onUpdateBlock(b.id, next)}
+                        />
+                      </fieldset>
                     )}
                   </div>
                 ))}
@@ -326,23 +393,25 @@ export function ReportStudio({
             </div>
           </div>
 
-          <aside className="max-h-64 overflow-y-auto border-t border-slate-200/80 bg-white p-3 sm:max-h-none sm:border-l lg:w-52 lg:border-t-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</p>
-            <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-3 lg:grid-cols-2">
-              {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
-                <button
-                  key={type}
-                  type="button"
-                  title={label}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 py-2 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-                  onClick={() => onAddBlock(type)}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="truncate px-0.5">{label}</span>
-                </button>
-              ))}
-            </div>
-          </aside>
+          {!readOnly && (
+            <aside className="max-h-64 overflow-y-auto border-t border-slate-200/80 bg-white p-3 sm:max-h-none sm:border-l lg:w-52 lg:border-t-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</p>
+              <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-3 lg:grid-cols-2">
+                {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
+                  <button
+                    key={type}
+                    type="button"
+                    title={label}
+                    className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 py-2 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
+                    onClick={() => onAddBlock(type)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="truncate px-0.5">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          )}
         </div>
       </div>
     </div>

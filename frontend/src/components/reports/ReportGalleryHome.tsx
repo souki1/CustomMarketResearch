@@ -32,11 +32,10 @@ export type ReportGalleryHomeProps = {
   onTabChange: (tab: 'list' | 'create') => void
   sorted: SavedReport[]
   loading?: boolean
-  previewId: number | null
-  onPreviewIdChange: (id: number | null) => void
   onOpenStudioNew: () => void
   onOpenStudioAi: () => void
   onOpenStudioEdit: (r: SavedReport) => void
+  onOpenStudioPreview: (r: SavedReport) => void
   onDeleteReport: (id: number) => void
 }
 
@@ -45,18 +44,20 @@ export function ReportGalleryHome({
   onTabChange,
   sorted,
   loading = false,
-  previewId,
-  onPreviewIdChange,
   onOpenStudioNew,
   onOpenStudioAi,
   onOpenStudioEdit,
+  onOpenStudioPreview,
   onDeleteReport,
 }: ReportGalleryHomeProps) {
   const token = useMemo(() => getToken(), [])
   const [exportingId, setExportingId] = useState<number | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [downloadMenuId, setDownloadMenuId] = useState<number | null>(null)
 
   const handleExport = async (id: number, title: string, format: 'docx' | 'pdf') => {
     if (!token) return
+    setExportError(null)
     setExportingId(id)
     try {
       const blob = format === 'docx'
@@ -65,8 +66,15 @@ export function ReportGalleryHome({
       const ext = format === 'docx' ? '.docx' : '.pdf'
       const filename = `${(title.trim() || 'report').slice(0, 80)}${ext}`
       triggerBlobDownload(blob, filename)
-    } catch {
-      // export failed
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed'
+      if (format === 'pdf' && /libreoffice|soffice/i.test(message)) {
+        setExportError(
+          "PDF export isn't available yet. LibreOffice is required on the server. Install LibreOffice and make sure 'soffice' is on PATH."
+        )
+      } else {
+        setExportError(message || 'Export failed')
+      }
     } finally {
       setExportingId(null)
     }
@@ -86,6 +94,18 @@ export function ReportGalleryHome({
       // ignore
     }
   }, [navOpen])
+
+  useEffect(() => {
+    if (downloadMenuId == null) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('[data-download-menu-root]')) {
+        setDownloadMenuId(null)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [downloadMenuId])
 
   return (
     <div className={`${PAGE_MIN_H} bg-white text-gray-900`}>
@@ -154,7 +174,7 @@ export function ReportGalleryHome({
         )}
 
         <div className={`flex ${PAGE_MIN_H} min-w-0 flex-1 flex-col bg-zinc-50`}>
-          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-y-auto px-5 py-10 sm:px-8 sm:py-14 lg:max-w-5xl">
+          <div className="mx-auto flex w-full max-w-none flex-1 flex-col overflow-y-auto px-5 py-10 sm:px-8 sm:py-14">
             <header className="max-w-xl">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400">
                 {tab === 'list' ? 'Library' : 'Studio'}
@@ -171,6 +191,11 @@ export function ReportGalleryHome({
 
             {tab === 'list' && (
               <section className="mt-10 sm:mt-12" aria-label="Saved reports">
+                {exportError && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {exportError}
+                  </div>
+                )}
                 {loading ? (
                   <div className="flex items-center justify-center py-20">
                     <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
@@ -197,13 +222,12 @@ export function ReportGalleryHome({
                     </button>
                   </div>
                 ) : (
-                  <ul className="grid gap-5 sm:grid-cols-2 lg:gap-6">
+                  <ul className="flex flex-wrap justify-start gap-5 lg:gap-6">
                     {sorted.map((r) => {
-                      const open = previewId === r.id
                       return (
                         <li
                           key={r.id}
-                          className="flex flex-col overflow-hidden rounded-2xl border border-zinc-200/90 bg-white transition-[border-color,box-shadow] duration-200 hover:border-zinc-300 hover:shadow-sm"
+                          className="flex w-full flex-col overflow-visible rounded-2xl border border-zinc-200/90 bg-white transition-[border-color,box-shadow] duration-200 hover:border-zinc-300 hover:shadow-sm sm:w-[240px]"
                         >
                           <div className="aspect-4/3 bg-zinc-100 p-5">
                             <div
@@ -221,49 +245,67 @@ export function ReportGalleryHome({
                               <p className="truncate text-[15px] font-medium text-zinc-900">{r.title}</p>
                               <p className="mt-0.5 text-xs text-zinc-400">{formatCreated(r.createdAt)}</p>
                             </div>
-                            <div className="mt-auto flex flex-wrap gap-2">
-                              <button type="button" className={`${BTN_PRIMARY} flex-1 rounded-lg`} onClick={() => onOpenStudioEdit(r)}>
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className={`${BTN_GHOST} rounded-lg`}
-                                onClick={() => onPreviewIdChange(open ? null : r.id)}
-                              >
-                                {open ? 'Hide' : 'Preview'}
-                              </button>
-                              <button
-                                type="button"
-                                className={`${BTN_GHOST} rounded-lg`}
-                                onClick={() => void handleExport(r.id, r.title, 'docx')}
-                                disabled={exportingId !== null}
-                                title="Export DOCX"
-                              >
-                                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                              </button>
-                              <button
-                                type="button"
-                                className={`${BTN_GHOST} rounded-lg`}
-                                onClick={() => void handleExport(r.id, r.title, 'pdf')}
-                                disabled={exportingId !== null}
-                                title="Export PDF"
-                              >
-                                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                              </button>
-                              <button
-                                type="button"
-                                className={`${BTN_GHOST} rounded-lg text-red-600 hover:border-red-200 hover:bg-red-50`}
-                                onClick={() => onDeleteReport(r.id)}
-                                title="Delete"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                            {open && (
-                              <div className="max-h-48 overflow-auto rounded-xl border border-zinc-100 bg-zinc-50/80 p-3 text-xs leading-relaxed text-zinc-700">
-                                <pre className="whitespace-pre-wrap wrap-break-word font-sans">{blocksToPlainText(r.blocks)}</pre>
+                            <div className="mt-auto space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <button type="button" className={`${BTN_PRIMARY} rounded-lg`} onClick={() => onOpenStudioEdit(r)}>
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`${BTN_GHOST} rounded-lg`}
+                                  onClick={() => onOpenStudioPreview(r)}
+                                >
+                                  Preview
+                                </button>
                               </div>
-                            )}
+                              <div className="flex items-center justify-end gap-2">
+                                <div className="relative" data-download-menu-root>
+                                  <button
+                                    type="button"
+                                    className={`${BTN_GHOST} rounded-lg`}
+                                    onClick={() => setDownloadMenuId((cur) => (cur === r.id ? null : r.id))}
+                                    disabled={exportingId !== null}
+                                    title="Download"
+                                  >
+                                    {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                  </button>
+                                  {downloadMenuId === r.id && (
+                                    <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50"
+                                        onClick={() => {
+                                          setDownloadMenuId(null)
+                                          void handleExport(r.id, r.title, 'docx')
+                                        }}
+                                      >
+                                        <FileText className="h-3.5 w-3.5" />
+                                        Word (.docx)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50"
+                                        onClick={() => {
+                                          setDownloadMenuId(null)
+                                          void handleExport(r.id, r.title, 'pdf')
+                                        }}
+                                      >
+                                        <Download className="h-3.5 w-3.5" />
+                                        PDF (.pdf)
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  className={`${BTN_GHOST} rounded-lg text-red-600 hover:border-red-200 hover:bg-red-50`}
+                                  onClick={() => onDeleteReport(r.id)}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </li>
                       )

@@ -2,19 +2,15 @@
 Report export engine.
 
 - blocks -> DOCX  (docxtpl template + python-docx fine edits)
-- DOCX   -> PDF   (LibreOffice headless CLI)
+- blocks -> PDF   (reportlab)
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
-import platform
-import shutil
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -22,6 +18,23 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from docxtpl import DocxTemplate
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    HRFlowable,
+    Image as RLImage,
+    ListFlowable,
+    ListItem,
+    Paragraph,
+    Preformatted,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 _DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = _DIR / "templates" / "report_template.docx"
@@ -242,26 +255,154 @@ def generate_docx(
     return out_path
 
 
-def _find_libreoffice() -> str | None:
-    """Return the soffice binary path, or None."""
-    if shutil.which("soffice"):
-        return "soffice"
+def _pdf_alignment(block: dict[str, Any]) -> int:
+    align = str(block.get("align", "left")).lower()
+    if align == "center":
+        return TA_CENTER
+    if align == "right":
+        return TA_RIGHT
+    return TA_LEFT
 
-    candidates: list[str] = []
-    if platform.system() == "Windows":
-        for base in [
-            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
-        ]:
-            if base:
-                candidates.append(os.path.join(base, "LibreOffice", "program", "soffice.exe"))
-    elif platform.system() == "Darwin":
-        candidates.append("/Applications/LibreOffice.app/Contents/MacOS/soffice")
 
-    for c in candidates:
-        if os.path.isfile(c):
-            return c
-    return None
+def _pdf_para_style(base: ParagraphStyle, name: str, align: int) -> ParagraphStyle:
+    return ParagraphStyle(name=name, parent=base, alignment=align)
+
+
+def _pdf_text(value: Any) -> str:
+    # Escape HTML because reportlab Paragraph supports a subset of markup.
+    text = "" if value is None else str(value)
+    return escape(text).replace("\n", "<br/>")
+
+
+def _add_pdf_block(
+    story: list[Any],
+    block: dict[str, Any],
+    styles: dict[str, ParagraphStyle],
+) -> None:
+    btype = str(block.get("type", "paragraph"))
+    align = _pdf_alignment(block)
+
+    if btype == "title":
+        story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["title"], "title_align", align)))
+        story.append(Spacer(1, 0.16 * inch))
+        return
+
+    if btype == "heading":
+        story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["h1"], "h1_align", align)))
+        story.append(Spacer(1, 0.10 * inch))
+        return
+
+    if btype == "subheading":
+        story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["h2"], "h2_align", align)))
+        story.append(Spacer(1, 0.08 * inch))
+        return
+
+    if btype == "paragraph":
+        story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["body"], "body_align", align)))
+        story.append(Spacer(1, 0.08 * inch))
+        return
+
+    if btype in {"bullets", "numbered"}:
+        items = [str(i) for i in block.get("items", []) if str(i).strip()]
+        if items:
+            bullet_type = "bullet" if btype == "bullets" else "1"
+            list_items = [
+                ListItem(Paragraph(_pdf_text(item), _pdf_para_style(styles["body"], "list_item", align)), leftIndent=8)
+                for item in items
+            ]
+            story.append(ListFlowable(list_items, bulletType=bullet_type, start="1"))
+            story.append(Spacer(1, 0.08 * inch))
+        return
+
+    if btype == "divider":
+        story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#D4D4D8")))
+        story.append(Spacer(1, 0.10 * inch))
+        return
+
+    if btype == "callout":
+        tone = str(block.get("tone", "amber"))
+        fg = _CALLOUT_COLORS.get(tone, _CALLOUT_COLORS["amber"])
+        bg_hex = _CALLOUT_BG.get(tone, "FFF7ED")
+        color_hex = f"#{fg[0]:02X}{fg[1]:02X}{fg[2]:02X}"
+        text = _pdf_text(block.get("text", ""))
+        para = Paragraph(
+            f"<para backColor='#{bg_hex}' textColor='{color_hex}'>{text}</para>",
+            _pdf_para_style(styles["body"], "callout_align", align),
+        )
+        story.append(para)
+        story.append(Spacer(1, 0.10 * inch))
+        return
+
+    if btype == "quote":
+        story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["quote"], "quote_align", align)))
+        story.append(Spacer(1, 0.10 * inch))
+        return
+
+    if btype == "spacer":
+        story.append(Spacer(1, 0.18 * inch))
+        return
+
+    if btype == "image":
+        src = str(block.get("src", "")).strip()
+        caption = str(block.get("caption", "") or block.get("alt", "")).strip()
+        if src:
+            src_path = Path(src)
+            if src_path.exists():
+                try:
+                    image = RLImage(str(src_path))
+                    image._restrictSize(6.0 * inch, 4.5 * inch)
+                    story.append(image)
+                    story.append(Spacer(1, 0.06 * inch))
+                except Exception:
+                    # Ignore broken image files and continue export.
+                    pass
+        if caption:
+            story.append(Paragraph(_pdf_text(caption), _pdf_para_style(styles["caption"], "caption_align", TA_CENTER)))
+            story.append(Spacer(1, 0.08 * inch))
+        return
+
+    if btype == "metric":
+        label = _pdf_text(block.get("label", "Metric"))
+        value = _pdf_text(block.get("value", "—"))
+        story.append(Paragraph(f"<b>{label}:</b> <font color='#6D28D9'><b>{value}</b></font>", _pdf_para_style(styles["body"], "metric_align", align)))
+        story.append(Spacer(1, 0.08 * inch))
+        return
+
+    if btype == "code":
+        story.append(Preformatted(str(block.get("text", "")), styles["code"]))
+        story.append(Spacer(1, 0.10 * inch))
+        return
+
+    if btype == "table":
+        rows_data: list[list[str]] = block.get("rows", [])
+        if rows_data:
+            n_cols = max((len(r) for r in rows_data), default=1)
+            normalized = []
+            for row in rows_data:
+                next_row = [str(cell) for cell in row[:n_cols]]
+                if len(next_row) < n_cols:
+                    next_row.extend([""] * (n_cols - len(next_row)))
+                normalized.append(next_row)
+            tbl = Table(normalized, hAlign="CENTER")
+            style = TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D4D4D8")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ])
+            if block.get("showHeader", True) and normalized:
+                style.add("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F4F4F5"))
+                style.add("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold")
+            tbl.setStyle(style)
+            story.append(tbl)
+            story.append(Spacer(1, 0.12 * inch))
+        return
+
+    # Fallback to plain paragraph for unknown block types.
+    story.append(Paragraph(_pdf_text(block.get("text", "")), _pdf_para_style(styles["body"], "fallback_align", align)))
+    story.append(Spacer(1, 0.08 * inch))
 
 
 async def generate_pdf(
@@ -270,45 +411,104 @@ async def generate_pdf(
     report_id: int,
 ) -> Path:
     """
-    Generate PDF by first creating DOCX then converting via LibreOffice.
+    Generate PDF directly from blocks using reportlab.
     """
-    soffice = _find_libreoffice()
-    if not soffice:
-        raise RuntimeError(
-            "LibreOffice not found. Install LibreOffice and ensure 'soffice' is on PATH. "
-            "Windows: https://www.libreoffice.org/download/ | "
-            "Linux: sudo apt install libreoffice-core libreoffice-writer | "
-            "macOS: brew install --cask libreoffice"
-        )
+    final_path = GENERATED_DIR / f"report_{report_id}.pdf"
+    doc = SimpleDocTemplate(
+        str(final_path),
+        pagesize=A4,
+        leftMargin=0.75 * inch,
+        rightMargin=0.75 * inch,
+        topMargin=0.75 * inch,
+        bottomMargin=0.75 * inch,
+        title=title or "Report",
+    )
 
-    docx_path = generate_docx(title, blocks, report_id)
+    sample = getSampleStyleSheet()
+    styles: dict[str, ParagraphStyle] = {
+        "title": ParagraphStyle(
+            name="Title",
+            parent=sample["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=22,
+            leading=26,
+            textColor=colors.HexColor("#1A1A2E"),
+            spaceAfter=8,
+        ),
+        "h1": ParagraphStyle(
+            name="Heading1",
+            parent=sample["Heading1"],
+            fontName="Helvetica-Bold",
+            fontSize=16,
+            leading=20,
+            textColor=colors.HexColor("#111827"),
+            spaceBefore=6,
+            spaceAfter=4,
+        ),
+        "h2": ParagraphStyle(
+            name="Heading2",
+            parent=sample["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=13,
+            leading=16,
+            textColor=colors.HexColor("#1F2937"),
+            spaceBefore=4,
+            spaceAfter=3,
+        ),
+        "body": ParagraphStyle(
+            name="Body",
+            parent=sample["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=14,
+            textColor=colors.HexColor("#374151"),
+        ),
+        "caption": ParagraphStyle(
+            name="Caption",
+            parent=sample["BodyText"],
+            fontName="Helvetica-Oblique",
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor("#6B7280"),
+            alignment=TA_CENTER,
+        ),
+        "quote": ParagraphStyle(
+            name="Quote",
+            parent=sample["BodyText"],
+            fontName="Helvetica-Oblique",
+            fontSize=10.5,
+            leading=14,
+            leftIndent=14,
+            textColor=colors.HexColor("#52525B"),
+        ),
+        "code": ParagraphStyle(
+            name="Code",
+            parent=sample["Code"],
+            fontName="Courier",
+            fontSize=9,
+            leading=11,
+            backColor=colors.HexColor("#F4F4F5"),
+            borderPadding=6,
+            borderWidth=0.5,
+            borderColor=colors.HexColor("#E5E7EB"),
+            borderRadius=2,
+        ),
+    }
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        proc = await asyncio.create_subprocess_exec(
-            soffice,
-            "--headless",
-            "--convert-to", "pdf",
-            "--outdir", tmp_dir,
-            str(docx_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
+    story: list[Any] = []
+    # If blocks already include a title block, this will still render consistently.
+    now = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    story.append(Paragraph(_pdf_text(title or "Untitled report"), styles["title"]))
+    story.append(Paragraph(_pdf_text(f"Generated on {now}"), ParagraphStyle(
+        name="GeneratedDate",
+        parent=styles["body"],
+        fontSize=9,
+        textColor=colors.HexColor("#6B7280"),
+    )))
+    story.append(Spacer(1, 0.18 * inch))
 
-        if proc.returncode != 0:
-            raise RuntimeError(f"LibreOffice conversion failed: {stderr.decode(errors='replace')}")
+    for block in blocks:
+        _add_pdf_block(story, block, styles)
 
-        pdf_name = docx_path.stem + ".pdf"
-        tmp_pdf = Path(tmp_dir) / pdf_name
-
-        if not tmp_pdf.exists():
-            pdfs = list(Path(tmp_dir).glob("*.pdf"))
-            if pdfs:
-                tmp_pdf = pdfs[0]
-            else:
-                raise RuntimeError("LibreOffice produced no PDF output")
-
-        final_path = GENERATED_DIR / f"report_{report_id}.pdf"
-        shutil.move(str(tmp_pdf), str(final_path))
-
+    doc.build(story)
     return final_path
