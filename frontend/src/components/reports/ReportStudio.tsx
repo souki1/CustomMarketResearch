@@ -1,16 +1,31 @@
-import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowLeft, ChevronDown, ChevronUp, Download, FileText, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { ReportBlockEditor } from '@/components/reports/ReportBlockEditor'
 import { ReportBlockFormatBar } from '@/components/reports/ReportBlockFormatBar'
 import { ELEMENT_TOOLS } from '@/components/reports/reportElementTools'
 import { BTN_GHOST, BTN_ICON, BTN_PRIMARY, PAGE_SHADOW } from '@/components/reports/reportStudioStyles'
+import { exportReportDocx, exportReportPdf } from '@/lib/api'
+import { getToken } from '@/lib/auth'
 import type { ReportBlock, ReportBlockType } from '@/lib/savedReports'
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 export type ReportStudioProps = {
   docTitle: string
   onDocTitleChange: (title: string) => void
   onClose: () => void
   onSave: () => void
+  saving?: boolean
+  editingId?: number | null
   blocks: ReportBlock[]
   selectedId: string | null
   onSelectId: (id: string | null) => void
@@ -33,6 +48,8 @@ export function ReportStudio({
   onDocTitleChange,
   onClose,
   onSave,
+  saving = false,
+  editingId,
   blocks,
   selectedId,
   onSelectId,
@@ -49,11 +66,31 @@ export function ReportStudio({
   onAiPromptChange,
   onGenerateWithAi,
 }: ReportStudioProps) {
+  const token = useMemo(() => getToken(), [])
   const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null
+  const canExport = editingId != null
 
   const draggableEnabled = typeof onMoveBlockToIndex === 'function'
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null)
+
+  const handleExport = async (format: 'docx' | 'pdf') => {
+    if (!token || !editingId) return
+    setExporting(format)
+    try {
+      const blob = format === 'docx'
+        ? await exportReportDocx(token, editingId)
+        : await exportReportPdf(token, editingId)
+      const ext = format === 'docx' ? '.docx' : '.pdf'
+      const filename = `${(docTitle.trim() || 'report').slice(0, 80)}${ext}`
+      triggerBlobDownload(blob, filename)
+    } catch {
+      // export failed silently
+    } finally {
+      setExporting(null)
+    }
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-[#e8eaed]">
@@ -65,15 +102,42 @@ export function ReportStudio({
         <div className="h-6 w-px bg-slate-200" aria-hidden />
         <input
           type="text"
-          className="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+          className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-gray-900 placeholder:text-gray-400 transition-colors hover:border-slate-200 hover:bg-slate-50 focus:border-violet-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/30"
           value={docTitle}
           onChange={(e) => onDocTitleChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           placeholder="Untitled report"
           maxLength={200}
-          aria-label="Report name"
+          aria-label="Report name (also used as export filename)"
+          title="Click to rename — this is also the export filename"
         />
-        <button type="button" className={BTN_PRIMARY} onClick={onSave}>
-          Save
+        {canExport && (
+          <>
+            <button
+              type="button"
+              className={`${BTN_GHOST} gap-1.5 px-2.5`}
+              onClick={() => void handleExport('docx')}
+              disabled={exporting !== null}
+              title="Export as DOCX"
+            >
+              {exporting === 'docx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              <span className="hidden sm:inline text-xs">DOCX</span>
+            </button>
+            <button
+              type="button"
+              className={`${BTN_GHOST} gap-1.5 px-2.5`}
+              onClick={() => void handleExport('pdf')}
+              disabled={exporting !== null}
+              title="Export as PDF"
+            >
+              {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline text-xs">PDF</span>
+            </button>
+          </>
+        )}
+        <button type="button" className={BTN_PRIMARY} onClick={onSave} disabled={saving}>
+          {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+          {saving ? 'Saving...' : 'Save'}
         </button>
       </header>
 

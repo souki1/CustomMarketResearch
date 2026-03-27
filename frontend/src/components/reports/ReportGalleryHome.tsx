@@ -1,8 +1,21 @@
-import { useEffect, useState } from 'react'
-import { FileText, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Download, FileText, LayoutTemplate, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { formatCreated } from '@/components/reports/reportBlockUtils'
 import { BTN_GHOST, BTN_PRIMARY, PAGE_SHADOW } from '@/components/reports/reportStudioStyles'
+import { exportReportDocx, exportReportPdf } from '@/lib/api'
+import { getToken } from '@/lib/auth'
 import { blocksToPlainText, type SavedReport } from '@/lib/savedReports'
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 const REPORTS_NAV_OPEN_KEY = 'ir-reports-nav-open'
 const PAGE_MIN_H = 'min-h-[calc(100vh-3.5rem)]'
@@ -18,18 +31,20 @@ export type ReportGalleryHomeProps = {
   tab: 'list' | 'create'
   onTabChange: (tab: 'list' | 'create') => void
   sorted: SavedReport[]
-  previewId: string | null
-  onPreviewIdChange: (id: string | null) => void
+  loading?: boolean
+  previewId: number | null
+  onPreviewIdChange: (id: number | null) => void
   onOpenStudioNew: () => void
   onOpenStudioAi: () => void
   onOpenStudioEdit: (r: SavedReport) => void
-  onDeleteReport: (id: string) => void
+  onDeleteReport: (id: number) => void
 }
 
 export function ReportGalleryHome({
   tab,
   onTabChange,
   sorted,
+  loading = false,
   previewId,
   onPreviewIdChange,
   onOpenStudioNew,
@@ -37,6 +52,25 @@ export function ReportGalleryHome({
   onOpenStudioEdit,
   onDeleteReport,
 }: ReportGalleryHomeProps) {
+  const token = useMemo(() => getToken(), [])
+  const [exportingId, setExportingId] = useState<number | null>(null)
+
+  const handleExport = async (id: number, title: string, format: 'docx' | 'pdf') => {
+    if (!token) return
+    setExportingId(id)
+    try {
+      const blob = format === 'docx'
+        ? await exportReportDocx(token, id)
+        : await exportReportPdf(token, id)
+      const ext = format === 'docx' ? '.docx' : '.pdf'
+      const filename = `${(title.trim() || 'report').slice(0, 80)}${ext}`
+      triggerBlobDownload(blob, filename)
+    } catch {
+      // export failed
+    } finally {
+      setExportingId(null)
+    }
+  }
   const [navOpen, setNavOpen] = useState(() => {
     try {
       return localStorage.getItem(REPORTS_NAV_OPEN_KEY) !== 'false'
@@ -130,14 +164,18 @@ export function ReportGalleryHome({
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-zinc-500">
                 {tab === 'list'
-                  ? 'Reports stay in this browser. Build pages with text, metrics, images, and structured blocks.'
+                  ? 'Build pages with text, metrics, images, and structured blocks. Export as DOCX or PDF.'
                   : 'Start from a blank canvas. Edit blocks, layout, and styling in the studio.'}
               </p>
             </header>
 
             {tab === 'list' && (
               <section className="mt-10 sm:mt-12" aria-label="Saved reports">
-                {sorted.length === 0 ? (
+                {loading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+                  </div>
+                ) : sorted.length === 0 ? (
                   <div className="rounded-2xl border border-zinc-200/80 bg-white px-8 py-16 text-center sm:px-12 sm:py-20">
                     <div
                       className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-400"
@@ -193,6 +231,24 @@ export function ReportGalleryHome({
                                 onClick={() => onPreviewIdChange(open ? null : r.id)}
                               >
                                 {open ? 'Hide' : 'Preview'}
+                              </button>
+                              <button
+                                type="button"
+                                className={`${BTN_GHOST} rounded-lg`}
+                                onClick={() => void handleExport(r.id, r.title, 'docx')}
+                                disabled={exportingId !== null}
+                                title="Export DOCX"
+                              >
+                                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                className={`${BTN_GHOST} rounded-lg`}
+                                onClick={() => void handleExport(r.id, r.title, 'pdf')}
+                                disabled={exportingId !== null}
+                                title="Export PDF"
+                              >
+                                {exportingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                               </button>
                               <button
                                 type="button"

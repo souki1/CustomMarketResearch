@@ -199,3 +199,26 @@ class CompareStateResponse(CompareStateUpsert):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+
+class ReportCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500)
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ReportUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=500)
+    blocks: list[dict[str, Any]] | None = None
+
+
+class ReportResponse(BaseModel):
+    id: int
+    owner_id: int
+    title: str
+    blocks: list[dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
