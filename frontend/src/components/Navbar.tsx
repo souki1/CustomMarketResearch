@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
@@ -200,7 +201,8 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const [notifications, setNotifications] = useState(SAMPLE_NOTIFICATIONS)
   const [notificationsAnimated, setNotificationsAnimated] = useState(false)
   const [menuAnimated, setMenuAnimated] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const dropdownBtnRef = useRef<HTMLButtonElement>(null)
+  const dropdownMenuRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
   const helpRef = useRef<HTMLDivElement>(null)
   const searchBarRef = useRef<HTMLDivElement>(null)
@@ -229,7 +231,11 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node
-      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
+      if (
+        dropdownOpen &&
+        !dropdownBtnRef.current?.contains(target) &&
+        !dropdownMenuRef.current?.contains(target)
+      ) {
         setDropdownOpen(false)
       }
       if (notificationsRef.current && !notificationsRef.current.contains(target)) {
@@ -543,8 +549,9 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
 
             <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
 
-            <div className="relative pl-1 ml-3" ref={dropdownRef}>
+            <div className="relative pl-1 ml-3">
               <button
+                ref={dropdownBtnRef}
                 type="button"
                 onClick={() => setDropdownOpen((o) => !o)}
                 className="flex items-center gap-2 p-1 pr-2 text-gray-700 hover:bg-gray-100 focus:outline-none cursor-pointer"
@@ -571,9 +578,22 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                 </div>
               </button>
 
-              {dropdownOpen && (
+              {dropdownOpen && createPortal(
                 <div
-                  className={`absolute right-0 top-full mt-1 w-[260px] rounded-xl border border-gray-200 bg-white py-1.5 shadow-sm z-50 origin-top-right transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                  ref={dropdownMenuRef}
+                  style={{
+                    position: 'fixed',
+                    zIndex: 9999,
+                    top: (dropdownBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                    left: Math.max(
+                      8,
+                      Math.min(
+                        (dropdownBtnRef.current?.getBoundingClientRect().right ?? 260) - 260,
+                        window.innerWidth - 268
+                      )
+                    ),
+                  }}
+                  className={`w-[260px] rounded-xl border border-gray-200 bg-white py-1.5 shadow-sm origin-top-right transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
                   role="menu"
                 >
                   <Link
@@ -622,7 +642,8 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                     <SignOutIcon className="w-4 h-4 text-gray-500 shrink-0" />
                     Logout
                   </button>
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           </div>

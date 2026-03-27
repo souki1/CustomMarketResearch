@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReportGalleryHome, ReportStudio } from '@/components/reports'
 import {
   aiGroqChat,
+  createReport,
+  deleteReport,
   listDataSheetSelections,
   listPortfolioItems,
+  listReports,
   listResearchUrls,
+  updateReport,
   type PortfolioItem,
   type ScrapedDataItem,
 } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import {
+  apiResponseToSavedReport,
   createEmptyBlock,
-  createNewReport,
-  loadSavedReports,
-  persistSavedReports,
   normalizeBlock,
   type ReportBlock,
   type ReportBlockType,
@@ -296,28 +298,39 @@ export function GenerateReportPage() {
   const [studioMode, setStudioMode] = useState<StudioMode>('home')
   const [tab, setTab] = useState<'list' | 'create'>('list')
   const [reports, setReports] = useState<SavedReport[]>([])
+  const [loading, setLoading] = useState(false)
 
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [readOnlyPreview, setReadOnlyPreview] = useState(false)
   const [docTitle, setDocTitle] = useState('Untitled report')
   const [blocks, setBlocks] = useState<ReportBlock[]>(() => [
     createEmptyBlock('title'),
     createEmptyBlock('paragraph'),
   ])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [previewId, setPreviewId] = useState<string | null>(null)
   const [showAiComposer, setShowAiComposer] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiGenerating, setAiGenerating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [portfolioCtx, setPortfolioCtx] = useState<PortfolioReportContext | null>(null)
 
-  useEffect(() => {
-    setReports(loadSavedReports())
-  }, [])
+  const fetchReports = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const data = await listReports(token)
+      setReports(data.map(apiResponseToSavedReport))
+    } catch {
+      // silently fail — user sees empty list
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
 
   useEffect(() => {
-    persistSavedReports(reports)
-  }, [reports])
+    void fetchReports()
+  }, [fetchReports])
 
   useEffect(() => {
     try {
@@ -341,6 +354,7 @@ export function GenerateReportPage() {
 
   const openStudioNew = useCallback(() => {
     setEditingId(null)
+    setReadOnlyPreview(false)
     setDocTitle('Untitled report')
     setBlocks([createEmptyBlock('title'), createEmptyBlock('paragraph')])
     setSelectedId(null)
@@ -352,6 +366,7 @@ export function GenerateReportPage() {
 
   const openStudioAi = useCallback(() => {
     setEditingId(null)
+    setReadOnlyPreview(false)
     setDocTitle('Untitled report')
     setBlocks([createEmptyBlock('title'), createEmptyBlock('paragraph')])
     setSelectedId(null)
@@ -363,6 +378,7 @@ export function GenerateReportPage() {
 
   const openStudioEdit = useCallback((r: SavedReport) => {
     setEditingId(r.id)
+    setReadOnlyPreview(false)
     setDocTitle(r.title)
     setBlocks(r.blocks.map((b) => normalizeBlock(structuredClone(b))))
     setSelectedId(r.blocks[0]?.id ?? null)
@@ -371,12 +387,25 @@ export function GenerateReportPage() {
     setStudioMode('studio')
   }, [])
 
+  const openStudioPreview = useCallback((r: SavedReport) => {
+    setEditingId(r.id)
+    setReadOnlyPreview(true)
+    setDocTitle(r.title)
+    setBlocks(r.blocks.map((b) => normalizeBlock(structuredClone(b))))
+    setSelectedId(null)
+    setShowAiComposer(false)
+    setAiError(null)
+    setStudioMode('studio')
+  }, [])
+
   const closeStudio = useCallback(() => {
     setStudioMode('home')
+    setReadOnlyPreview(false)
     setSelectedId(null)
     setAiGenerating(false)
     setAiError(null)
-  }, [])
+    void fetchReports()
+  }, [fetchReports])
 
   const generateWithAi = useCallback(async () => {
     let prompt = aiPrompt.trim()
@@ -488,23 +517,41 @@ export function GenerateReportPage() {
     })
   }, [])
 
-  const saveDocument = useCallback(() => {
+  const saveDocument = useCallback(async () => {
+    if (!token) return
     const title = docTitle.trim() || 'Untitled report'
     const normalized = blocks.map((b) => normalizeBlock(structuredClone(b)))
-    if (editingId) {
-      setReports((prev) => prev.map((r) => (r.id === editingId ? { ...r, title, blocks: normalized } : r)))
-    } else {
-      const next = createNewReport(title, normalized)
-      setReports((prev) => [next, ...prev])
-      setEditingId(next.id)
-    }
-  }, [docTitle, editingId, blocks])
+    const blocksPayload = normalized as unknown as Array<Record<string, unknown>>
 
-  const handleDelete = useCallback((id: string) => {
+    setSaving(true)
+    try {
+      if (editingId) {
+        const updated = await updateReport(token, editingId, { title, blocks: blocksPayload })
+        const saved = apiResponseToSavedReport(updated)
+        setReports((prev) => prev.map((r) => (r.id === editingId ? saved : r)))
+      } else {
+        const created = await createReport(token, { title, blocks: blocksPayload })
+        const saved = apiResponseToSavedReport(created)
+        setReports((prev) => [saved, ...prev])
+        setEditingId(saved.id)
+      }
+    } catch {
+      // save failed silently — could add toast
+    } finally {
+      setSaving(false)
+    }
+  }, [docTitle, editingId, blocks, token])
+
+  const handleDelete = useCallback(async (id: number) => {
     if (!window.confirm('Delete this report?')) return
-    setReports((prev) => prev.filter((r) => r.id !== id))
-    setPreviewId((cur) => (cur === id ? null : cur))
-  }, [])
+    if (!token) return
+    try {
+      await deleteReport(token, id)
+      setReports((prev) => prev.filter((r) => r.id !== id))
+    } catch {
+      // delete failed silently
+    }
+  }, [token])
 
   if (studioMode === 'studio') {
     const portfolioHint = portfolioCtx
@@ -515,7 +562,10 @@ export function GenerateReportPage() {
         docTitle={docTitle}
         onDocTitleChange={setDocTitle}
         onClose={closeStudio}
-        onSave={saveDocument}
+        onSave={() => void saveDocument()}
+        saving={saving}
+        editingId={editingId}
+        readOnly={readOnlyPreview}
         blocks={blocks}
         selectedId={selectedId}
         onSelectId={setSelectedId}
@@ -540,12 +590,12 @@ export function GenerateReportPage() {
       tab={tab}
       onTabChange={setTab}
       sorted={sorted}
-      previewId={previewId}
-      onPreviewIdChange={setPreviewId}
+      loading={loading}
       onOpenStudioNew={openStudioNew}
       onOpenStudioAi={openStudioAi}
       onOpenStudioEdit={openStudioEdit}
-      onDeleteReport={handleDelete}
+      onOpenStudioPreview={openStudioPreview}
+      onDeleteReport={(id) => void handleDelete(id)}
     />
   )
 }

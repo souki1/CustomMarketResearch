@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -303,6 +304,11 @@ export function ResearchPage() {
   // Removed "Other options" menu
   // const [otherMenuOpen, setOtherMenuOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map())
+  const [filterDropdownCol, setFilterDropdownCol] = useState<number | null>(null)
+  const [filterSearchText, setFilterSearchText] = useState('')
+  const filterBtnRef = useRef<HTMLButtonElement>(null)
+  const filterDropRef = useRef<HTMLDivElement>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
@@ -433,6 +439,7 @@ export function ResearchPage() {
       if (!raw) return
       const data = JSON.parse(raw) as Partial<PersistedResearchState>
       if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
+        skipSelectionResetRef.current = true
         setActiveTabId(data.activeTabId)
       }
       if (Array.isArray(data.selectedRows)) setSelectedRows(new Set(data.selectedRows))
@@ -503,6 +510,31 @@ export function ResearchPage() {
       setActiveTabId(tabs[0].id)
     }
   }, [tabs, activeTabId])
+
+  const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
+  const skipSelectionResetRef = useRef(false)
+  useEffect(() => {
+    if (prevEffectiveTabIdRef.current === effectiveTabId) return
+    prevEffectiveTabIdRef.current = effectiveTabId
+    if (skipSelectionResetRef.current) {
+      skipSelectionResetRef.current = false
+      return
+    }
+    setSelectedRows(new Set())
+    setSelectedColumns(new Set())
+    setSelectedRowIndex(null)
+    setPage(1)
+    setColumnFilters(new Map())
+    setFilterOpen(false)
+    setFilterDropdownCol(null)
+    setFilterSearchText('')
+    setIsInspectorOpen(false)
+    setInspectorMaximized(false)
+    setInspectorMode('single')
+    setInspectorMultiRowIndices([])
+    setInspectorCompareSelection(new Set())
+    setCollapseSidebarForInspector(false)
+  }, [effectiveTabId, setCollapseSidebarForInspector])
 
   // Fetch all workspace files when file picker opens
   useEffect(() => {
@@ -847,21 +879,55 @@ export function ResearchPage() {
     [setCollapseSidebarForInspector]
   )
 
-  const toggleSelectAll = () => {
-    if (!content || content.length <= 1) return
-    if (selectedRows.size >= content.length - 1) setSelectedRows(new Set())
-    else setSelectedRows(new Set(Array.from({ length: content.length - 1 }, (_, i) => i)))
-  }
+  const numCols = content?.[0]?.length ?? 0
+  const headers = content?.[0] ?? []
+  const activeFilterCount = useMemo(
+    () => Array.from(columnFilters.values()).filter((s) => s.size > 0).length,
+    [columnFilters]
+  )
+  const hasActiveFilters = activeFilterCount > 0
+  const unfilteredRowCount = content ? content.length - 1 : 0
 
-  const totalDataRows = content ? content.length - 1 : 0
+  const filteredDataIndices = useMemo(() => {
+    if (!content || content.length <= 1) return []
+    const allIndices = Array.from({ length: content.length - 1 }, (_, i) => i)
+    if (!hasActiveFilters) return allIndices
+    return allIndices.filter((dataIdx) => {
+      const row = content[dataIdx + 1]
+      for (const [colIdx, allowedValues] of columnFilters) {
+        if (allowedValues.size === 0) continue
+        const cellValue = (row[colIdx] ?? '').trim()
+        if (!allowedValues.has(cellValue)) return false
+      }
+      return true
+    })
+  }, [content, columnFilters, hasActiveFilters])
+
+  const totalDataRows = filteredDataIndices.length
   const totalPages = Math.max(1, Math.ceil(totalDataRows / rowsPerPage))
   const currentPage = Math.min(page, totalPages)
   const startRow = (currentPage - 1) * rowsPerPage
   const endRow = Math.min(startRow + rowsPerPage, totalDataRows)
-  const pageRows = content ? content.slice(1 + startRow, 1 + endRow) : []
-  const rowIndices = pageRows.map((_, i) => startRow + i)
-  const numCols = content?.[0]?.length ?? 0
-  const headers = content?.[0] ?? []
+  const rowIndices = filteredDataIndices.slice(startRow, endRow)
+  const pageRows = content ? rowIndices.map((i) => content[i + 1]) : []
+
+  const toggleSelectAll = () => {
+    if (!content || content.length <= 1) return
+    const allFilteredSelected = filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))
+    if (allFilteredSelected) {
+      setSelectedRows((prev) => {
+        const next = new Set(prev)
+        for (const i of filteredDataIndices) next.delete(i)
+        return next
+      })
+    } else {
+      setSelectedRows((prev) => {
+        const next = new Set(prev)
+        for (const i of filteredDataIndices) next.add(i)
+        return next
+      })
+    }
+  }
 
   const closeInspector = useCallback(
     (e?: React.MouseEvent) => {
@@ -884,6 +950,31 @@ export function ResearchPage() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, closeInspector])
+
+  useEffect(() => {
+    if (!filterOpen) return
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node
+      if (filterDropRef.current?.contains(target)) return
+      if (filterBtnRef.current?.contains(target)) return
+      setFilterOpen(false)
+      setFilterDropdownCol(null)
+      setFilterSearchText('')
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setFilterOpen(false)
+        setFilterDropdownCol(null)
+        setFilterSearchText('')
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [filterOpen])
 
   // Capture element details for selected row (for Add details)
   useEffect(() => {
@@ -975,7 +1066,10 @@ export function ResearchPage() {
       const r = st.restoreResearchSelection
       if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
       if (r.page) setPage(r.page)
-      if (r.activeTabId) setActiveTabId(r.activeTabId)
+      if (r.activeTabId) {
+        skipSelectionResetRef.current = true
+        setActiveTabId(r.activeTabId)
+      }
       setSelectedRows(new Set(r.selectedRows ?? []))
     }
     if (st?.restoreInspector) {
@@ -1388,15 +1482,189 @@ export function ResearchPage() {
         {/* Other options removed */}
         <div className="ml-auto flex items-center gap-2">
           <button
+            ref={filterBtnRef}
             type="button"
-            onClick={() => setFilterOpen((f) => !f)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => {
+              setFilterOpen((f) => {
+                if (f) { setFilterDropdownCol(null); setFilterSearchText('') }
+                return !f
+              })
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium shadow-sm ${
+              hasActiveFilters
+                ? 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17m0 0h2m-2 0h-5m-9 0H3" />
             </svg>
-            Filter
+            Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </button>
+          {filterOpen && createPortal(
+            <div
+              ref={filterDropRef}
+              style={{
+                position: 'fixed',
+                zIndex: 9999,
+                top: (filterBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                left: Math.min(
+                  filterBtnRef.current?.getBoundingClientRect().left ?? 0,
+                  window.innerWidth - 272
+                ),
+              }}
+              className="w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+            >
+              {filterDropdownCol === null ? (
+                <>
+                  <input
+                    type="search"
+                    value={filterSearchText}
+                    onChange={(e) => setFilterSearchText(e.target.value)}
+                    placeholder="Search columns…"
+                    autoFocus
+                    className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                  />
+                  {hasActiveFilters && (
+                    <div className="mb-2 flex items-center justify-end px-1">
+                      <button
+                        type="button"
+                        onClick={() => { setColumnFilters(new Map()); setPage(1) }}
+                        className="text-[11px] text-red-600 hover:text-red-700"
+                      >
+                        Clear all filters
+                      </button>
+                    </div>
+                  )}
+                  <div className="max-h-56 space-y-0.5 overflow-y-auto pr-1">
+                    {headers.map((header, colIdx) => {
+                      const name = header || `Column ${colIdx + 1}`
+                      if (filterSearchText.trim() && !name.toLowerCase().includes(filterSearchText.trim().toLowerCase())) return null
+                      const colFilter = columnFilters.get(colIdx)
+                      const isActive = colFilter != null && colFilter.size > 0
+                      return (
+                        <button
+                          key={colIdx}
+                          type="button"
+                          onClick={() => { setFilterDropdownCol(colIdx); setFilterSearchText('') }}
+                          className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50"
+                        >
+                          <span className="truncate text-slate-700">{name}</span>
+                          {isActive && (
+                            <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                              {colFilter.size}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              ) : (() => {
+                const colIdx = filterDropdownCol
+                const colName = headers[colIdx] || `Column ${colIdx + 1}`
+                const uniqueValues = Array.from(
+                  new Set(
+                    (content ?? []).slice(1).map((row) => (row[colIdx] ?? '').trim()).filter(Boolean)
+                  )
+                ).sort((a, b) => a.localeCompare(b))
+                const currentFilter = columnFilters.get(colIdx)
+                const visibleValues = filterSearchText.trim()
+                  ? uniqueValues.filter((v) => v.toLowerCase().includes(filterSearchText.trim().toLowerCase()))
+                  : uniqueValues
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setFilterDropdownCol(null); setFilterSearchText('') }}
+                      className="mb-1.5 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                      {colName}
+                    </button>
+                    <input
+                      type="search"
+                      value={filterSearchText}
+                      onChange={(e) => setFilterSearchText(e.target.value)}
+                      placeholder="Search values…"
+                      autoFocus
+                      className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                    />
+                    <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setColumnFilters((prev) => {
+                            const next = new Map(prev)
+                            next.set(colIdx, new Set(visibleValues))
+                            return next
+                          })
+                          setPage(1)
+                        }}
+                        className="hover:text-slate-700"
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setColumnFilters((prev) => {
+                            const next = new Map(prev)
+                            if (filterSearchText.trim()) {
+                              const existing = new Set(prev.get(colIdx) ?? [])
+                              for (const v of visibleValues) existing.delete(v)
+                              if (existing.size > 0) next.set(colIdx, existing)
+                              else next.delete(colIdx)
+                            } else {
+                              next.delete(colIdx)
+                            }
+                            return next
+                          })
+                          setPage(1)
+                        }}
+                        className="hover:text-slate-700"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                      {visibleValues.map((val) => {
+                        const checked = currentFilter?.has(val) ?? false
+                        return (
+                          <label key={val} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setColumnFilters((prev) => {
+                                  const next = new Map(prev)
+                                  const s = new Set(prev.get(colIdx) ?? [])
+                                  if (e.target.checked) s.add(val)
+                                  else s.delete(val)
+                                  if (s.size > 0) next.set(colIdx, s)
+                                  else next.delete(colIdx)
+                                  return next
+                                })
+                                setPage(1)
+                              }}
+                              className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                            />
+                            <span className="truncate text-slate-700" title={val}>{val}</span>
+                          </label>
+                        )
+                      })}
+                      {visibleValues.length === 0 && (
+                        <p className="px-1.5 py-2 text-[11px] text-slate-400">No values found</p>
+                      )}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>,
+            document.body
+          )}
           <button
             type="button"
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -1409,11 +1677,6 @@ export function ResearchPage() {
         </div>
       </div>
 
-      {filterOpen && (
-        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-          Filter options (placeholder). Configure filters per column.
-        </div>
-      )}
       </div>
 
       {content && content.length > 0 && (
@@ -1426,7 +1689,7 @@ export function ResearchPage() {
                   <th className="w-10 px-2 py-3 border-r border-gray-200">
                     <input
                       type="checkbox"
-                      checked={totalDataRows > 0 && selectedRows.size >= totalDataRows}
+                      checked={filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))}
                       onChange={toggleSelectAll}
                       className="rounded border-gray-300"
                     />
@@ -1530,7 +1793,7 @@ export function ResearchPage() {
                 Delete row
               </button>
               <span className="text-sm text-gray-600">
-                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows} entries
+                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}{hasActiveFilters ? ` (filtered from ${unfilteredRowCount})` : ''} entries
               </span>
               <label className="flex items-center gap-2 text-sm text-gray-600">
                 Rows per page

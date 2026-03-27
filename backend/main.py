@@ -7,7 +7,7 @@ from config import get_settings
 from database import init_db
 from mongo import get_mongo_db
 from models import User  # noqa: F401 - register model for create_all
-from routers import ai, auth, compare, datasheet, workspace
+from routers import ai, auth, compare, datasheet, reports, workspace
 from portfolio.PortfolioApi import router as portfolio_router
 
 settings = get_settings()
@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
         await db["ai_interactions"].create_index([("owner_id", 1), ("created_at", -1)])
         await db["compare_states"].create_index([("owner_id", 1)], unique=True)
         await db["compare_states"].create_index([("updated_at", -1)])
+        await db["reports"].create_index([("owner_id", 1), ("updated_at", -1)])
     yield
 
 
@@ -46,6 +47,7 @@ app.include_router(ai.router)
 app.include_router(workspace.router)
 app.include_router(datasheet.router)
 app.include_router(compare.router)
+app.include_router(reports.router)
 app.include_router(portfolio_router)
 
 

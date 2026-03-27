@@ -1,5 +1,6 @@
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getToken } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
@@ -235,6 +236,9 @@ export function ComparePage() {
   const [scrapedViewMode, setScrapedViewMode] = useState<'row' | 'column'>('row')
   const [scrapedSelectedFields, setScrapedSelectedFields] = useState<string[]>([])
   const [scrapedFieldPickerSearch, setScrapedFieldPickerSearch] = useState('')
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false)
+  const fieldPickerBtnRef = useRef<HTMLButtonElement>(null)
+  const fieldPickerDropRef = useRef<HTMLDivElement>(null)
   const [scrapedValueSearch, setScrapedValueSearch] = useState('')
   const [scrapedNonEmptyOnly, setScrapedNonEmptyOnly] = useState(false)
   const [scrapedDataByPart, setScrapedDataByPart] = useState<Record<string, ScrapedDataItem[]>>({})
@@ -259,6 +263,18 @@ export function ComparePage() {
   const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
   const activeFileId = activeTab?.data.activeFileId ?? null
   const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
+
+  useEffect(() => {
+    if (!fieldPickerOpen) return
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node
+      if (fieldPickerDropRef.current?.contains(target)) return
+      if (fieldPickerBtnRef.current?.contains(target)) return
+      setFieldPickerOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [fieldPickerOpen])
 
   useEffect(() => {
     const token = getToken()
@@ -1202,16 +1218,31 @@ export function ComparePage() {
                 )}
                 {scrapedData && scrapedData.length > 0 && (
                   <>
-                    <details className="group relative">
-                      <summary className="list-none cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
-                        Fields {scrapedSelectedFields.length > 0 ? `(${scrapedSelectedFields.length})` : '(All)'}
-                      </summary>
-                      <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5">
+                    <button
+                      ref={fieldPickerBtnRef}
+                      type="button"
+                      onClick={() => setFieldPickerOpen((v) => !v)}
+                      className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                    >
+                      Fields {scrapedSelectedFields.length > 0 ? `(${scrapedSelectedFields.length})` : '(All)'}
+                    </button>
+                    {fieldPickerOpen && createPortal(
+                      <div
+                        ref={fieldPickerDropRef}
+                        style={{
+                          position: 'fixed',
+                          zIndex: 9999,
+                          top: (fieldPickerBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                          left: fieldPickerBtnRef.current?.getBoundingClientRect().left ?? 0,
+                        }}
+                        className="w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+                      >
                         <input
                           type="search"
                           value={scrapedFieldPickerSearch}
                           onChange={(e) => setScrapedFieldPickerSearch(e.target.value)}
                           placeholder="Search fields…"
+                          autoFocus
                           className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                         />
                         <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
@@ -1258,8 +1289,9 @@ export function ComparePage() {
                               )
                             })}
                         </div>
-                      </div>
-                    </details>
+                      </div>,
+                      document.body,
+                    )}
                     <input
                       type="search"
                       value={scrapedValueSearch}
@@ -1328,6 +1360,28 @@ export function ComparePage() {
                 })
                 const sourceWidth = (url: string) => scrapedSourceColWidths[url] ?? 188
                 const fieldWidth = (key: string) => scrapedFieldColWidths[key] ?? 160
+                const highlightNeedle = (text: string): React.ReactNode => {
+                  if (!valueNeedle || !text) return text
+                  const lower = text.toLowerCase()
+                  const idx = lower.indexOf(valueNeedle)
+                  if (idx === -1) return text
+                  const parts: React.ReactNode[] = []
+                  let cursor = 0
+                  let pos = idx
+                  let keyIdx = 0
+                  while (pos !== -1) {
+                    if (pos > cursor) parts.push(text.slice(cursor, pos))
+                    parts.push(
+                      <mark key={keyIdx++} className="rounded-sm bg-yellow-200 px-0.5 text-inherit">
+                        {text.slice(pos, pos + valueNeedle.length)}
+                      </mark>
+                    )
+                    cursor = pos + valueNeedle.length
+                    pos = lower.indexOf(valueNeedle, cursor)
+                  }
+                  if (cursor < text.length) parts.push(text.slice(cursor))
+                  return <>{parts}</>
+                }
                 const renderScrapedCell = (item: ScrapedDataItem, key: string) => {
                   const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
                   const imageUrls = Array.isArray(val)
@@ -1375,7 +1429,8 @@ export function ComparePage() {
                       </span>
                     )
                   }
-                  return typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
+                  const display = typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
+                  return highlightNeedle(display)
                 }
                 return (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">

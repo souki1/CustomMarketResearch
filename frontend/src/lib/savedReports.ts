@@ -1,5 +1,3 @@
-const STORAGE_KEY = 'ir-saved-reports-v1'
-
 export type BlockAlign = 'left' | 'center' | 'right'
 
 export type CalloutTone = 'amber' | 'blue' | 'emerald' | 'slate'
@@ -41,9 +39,10 @@ export type ReportBlock =
   | { id: string; type: 'table'; showHeader: boolean; rows: string[][]; align?: BlockAlign }
 
 export type SavedReport = {
-  id: string
+  id: number
   title: string
   createdAt: string
+  updatedAt: string
   blocks: ReportBlock[]
 }
 
@@ -209,25 +208,13 @@ function parseOneBlock(raw: unknown): ReportBlock | null {
   }
 }
 
-function parseBlocksArray(arr: unknown[]): ReportBlock[] {
+export function parseBlocksArray(arr: unknown[]): ReportBlock[] {
   const out: ReportBlock[] = []
   for (const row of arr) {
     const b = parseOneBlock(row)
     if (b) out.push(b)
   }
   return out
-}
-
-function legacyBodyToBlocks(body: string, title: string): ReportBlock[] {
-  const blocks: ReportBlock[] = [{ id: newId(), type: 'title', text: title, align: 'left' }]
-  const chunks = body.split(/\n\n+/).map((s) => s.trim()).filter(Boolean)
-  for (const c of chunks) {
-    blocks.push({ id: newId(), type: 'paragraph', text: c, align: 'left' })
-  }
-  if (blocks.length === 1 && !body.trim()) {
-    blocks.push({ id: newId(), type: 'paragraph', text: '', align: 'left' })
-  }
-  return blocks
 }
 
 /** Migrate blocks saved before align/tone fields existed */
@@ -312,52 +299,24 @@ export function blocksToPlainText(blocks: ReportBlock[]): string {
   return lines.join('\n').trim()
 }
 
-function normalizeReport(row: Record<string, unknown>): SavedReport | null {
-  const id = typeof row.id === 'string' ? row.id : null
-  const title = typeof row.title === 'string' ? row.title : null
-  const createdAt = typeof row.createdAt === 'string' ? row.createdAt : null
-  if (!id || !title || !createdAt) return null
-
-  if (Array.isArray(row.blocks)) {
-    const blocks = parseBlocksArray(row.blocks)
-    if (blocks.length > 0) return { id, title, createdAt, blocks: blocks.map(normalizeBlock) }
-  }
-
-  const body = typeof row.body === 'string' ? row.body : ''
-  return { id, title, createdAt, blocks: legacyBodyToBlocks(body, title) }
-}
-
-export function createNewReport(title: string, blocks: ReportBlock[]): SavedReport {
+/**
+ * Convert a backend ReportResponse (raw blocks as Record[]) into a typed SavedReport.
+ */
+export function apiResponseToSavedReport(resp: {
+  id: number
+  title: string
+  blocks: Array<Record<string, unknown>>
+  created_at: string
+  updated_at: string
+}): SavedReport {
+  const blocks = parseBlocksArray(resp.blocks)
   return {
-    id: newId(),
-    title: title.trim() || 'Untitled report',
-    createdAt: new Date().toISOString(),
-    blocks: blocks.length ? blocks.map(normalizeBlock) : [createEmptyBlock('title'), createEmptyBlock('paragraph')],
-  }
-}
-
-export function loadSavedReports(): SavedReport[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    const out: SavedReport[] = []
-    for (const row of parsed) {
-      if (!row || typeof row !== 'object') continue
-      const r = normalizeReport(row as Record<string, unknown>)
-      if (r) out.push(r)
-    }
-    return out
-  } catch {
-    return []
-  }
-}
-
-export function persistSavedReports(reports: SavedReport[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports))
-  } catch {
-    // ignore quota / private mode
+    id: resp.id,
+    title: resp.title,
+    createdAt: resp.created_at,
+    updatedAt: resp.updated_at,
+    blocks: blocks.length
+      ? blocks.map(normalizeBlock)
+      : [createEmptyBlock('title'), createEmptyBlock('paragraph')],
   }
 }

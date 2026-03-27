@@ -462,3 +462,84 @@ export async function getAiSessionMessages(
   const enc = encodeURIComponent(sessionId)
   return request<AiSessionMessagesResponse>(`/ai/sessions/${enc}/messages`, { token })
 }
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+export type ReportPayload = {
+  title: string
+  blocks: Array<Record<string, unknown>>
+}
+
+export type ReportUpdatePayload = {
+  title?: string
+  blocks?: Array<Record<string, unknown>>
+}
+
+export type ReportResponse = {
+  id: number
+  owner_id: number
+  title: string
+  blocks: Array<Record<string, unknown>>
+  created_at: string
+  updated_at: string
+}
+
+export async function createReport(token: string, payload: ReportPayload): Promise<ReportResponse> {
+  return request<ReportResponse>('/reports', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function listReports(token: string): Promise<ReportResponse[]> {
+  return request<ReportResponse[]>('/reports', { token })
+}
+
+export async function getReport(token: string, id: number): Promise<ReportResponse> {
+  return request<ReportResponse>(`/reports/${id}`, { token })
+}
+
+export async function updateReport(
+  token: string,
+  id: number,
+  payload: ReportUpdatePayload,
+): Promise<ReportResponse> {
+  return request<ReportResponse>(`/reports/${id}`, {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteReport(token: string, id: number): Promise<void> {
+  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const res = await fetch(`${API_BASE}/reports/${id}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+}
+
+async function fetchBlob(path: string, token: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = typeof err.detail === 'string' ? err.detail : 'Export failed'
+    throw new Error(msg)
+  }
+  return res.blob()
+}
+
+export async function exportReportDocx(token: string, id: number): Promise<Blob> {
+  return fetchBlob(`/reports/${id}/export/docx`, token)
+}
+
+export async function exportReportPdf(token: string, id: number): Promise<Blob> {
+  return fetchBlob(`/reports/${id}/export/pdf`, token)
+}
