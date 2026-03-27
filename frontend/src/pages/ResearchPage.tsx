@@ -433,6 +433,7 @@ export function ResearchPage() {
       if (!raw) return
       const data = JSON.parse(raw) as Partial<PersistedResearchState>
       if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
+        skipSelectionResetRef.current = true
         setActiveTabId(data.activeTabId)
       }
       if (Array.isArray(data.selectedRows)) setSelectedRows(new Set(data.selectedRows))
@@ -503,6 +504,27 @@ export function ResearchPage() {
       setActiveTabId(tabs[0].id)
     }
   }, [tabs, activeTabId])
+
+  const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
+  const skipSelectionResetRef = useRef(false)
+  useEffect(() => {
+    if (prevEffectiveTabIdRef.current === effectiveTabId) return
+    prevEffectiveTabIdRef.current = effectiveTabId
+    if (skipSelectionResetRef.current) {
+      skipSelectionResetRef.current = false
+      return
+    }
+    setSelectedRows(new Set())
+    setSelectedColumns(new Set())
+    setSelectedRowIndex(null)
+    setPage(1)
+    setIsInspectorOpen(false)
+    setInspectorMaximized(false)
+    setInspectorMode('single')
+    setInspectorMultiRowIndices([])
+    setInspectorCompareSelection(new Set())
+    setCollapseSidebarForInspector(false)
+  }, [effectiveTabId, setCollapseSidebarForInspector])
 
   // Fetch all workspace files when file picker opens
   useEffect(() => {
@@ -975,7 +997,10 @@ export function ResearchPage() {
       const r = st.restoreResearchSelection
       if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
       if (r.page) setPage(r.page)
-      if (r.activeTabId) setActiveTabId(r.activeTabId)
+      if (r.activeTabId) {
+        skipSelectionResetRef.current = true
+        setActiveTabId(r.activeTabId)
+      }
       setSelectedRows(new Set(r.selectedRows ?? []))
     }
     if (st?.restoreInspector) {
