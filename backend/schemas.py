@@ -139,6 +139,16 @@ class PortfolioItemResponse(BaseModel):
     url: str | None = None
 
 
+class PortfolioSummaryResponse(BaseModel):
+    """Aggregates for the merged portfolio (all selections), computed server-side."""
+
+    unique_parts: int = 0
+    offer_count: int = 0
+    best_price: float | None = None
+    average_price: float | None = None
+    prices_included: int = 0
+
+
 class AiChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
@@ -154,6 +164,21 @@ class AiChatRequest(BaseModel):
         default=None,
         max_length=64,
         description="Continue a chat thread; omit to start a new conversation (server assigns session_id).",
+    )
+    context: str | None = Field(
+        default=None,
+        max_length=50_000,
+        description="Optional grounding text (e.g. JSON of sheet row + scraped structured data). Chat mode only.",
+    )
+    session_label: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Short label for chat history (e.g. Research · part number). Stored on each MongoDB turn.",
+    )
+    source: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Origin tag for analytics / UI (e.g. research_inspector).",
     )
 
 
@@ -174,6 +199,8 @@ class AiSessionSummary(BaseModel):
     preview: str
     last_at: datetime
     turn_count: int
+    session_label: str | None = None
+    source: str | None = None
 
 
 class AiSessionMessagesResponse(BaseModel):

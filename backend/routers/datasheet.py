@@ -322,6 +322,101 @@ async def _get_or_create_cleaned_data(
     return await asyncio.gather(*[process_one(s) for s in scraped_docs])
 
 
+def _doc_recency_key(doc: dict) -> tuple[float, int]:
+    """Sort key: newer created_at wins; tie-break on id."""
+    ts = doc.get("created_at")
+    if hasattr(ts, "timestamp"):
+        try:
+            t = float(ts.timestamp())
+        except (OSError, TypeError, ValueError):
+            t = 0.0
+    else:
+        t = 0.0
+    return (t, int(doc.get("id") or 0))
+
+
+def _table_row_index_as_int(value) -> int | None:
+    """Normalize Mongo/BSON row index for dict keys (matches frontend data row indices)."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/research-urls/grid-summary")
+async def research_urls_grid_summary(
+    tab_id: str | None = None,
+    file_id: int | None = None,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    """
+    Per-table-row counts for this sheet (file or tab).
+    Uses the most recent research_urls document per table_row_index across all runs,
+    matching list_research_urls(file_id/tab_id + table_row_index).
+    """
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    if file_id is None and not tab_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide file_id or tab_id",
+        )
+
+    if file_id is not None:
+        docs = await mongo_db["research_urls"].find(
+            {"owner_id": user.id, "file_id": file_id}
+        ).to_list(length=5000)
+    else:
+        docs = await mongo_db["research_urls"].find(
+            {"owner_id": user.id, "tab_id": tab_id}
+        ).to_list(length=5000)
+    if not docs:
+        return []
+
+    by_table_row: dict[int, dict] = {}
+    for d in docs:
+        tri = _table_row_index_as_int(d.get("table_row_index"))
+        if tri is None:
+            continue
+        prev = by_table_row.get(tri)
+        if prev is None or _doc_recency_key(d) > _doc_recency_key(prev):
+            by_table_row[tri] = d
+
+    url_ids = [d["id"] for d in by_table_row.values()]
+    scraped_counts: dict[int, int] = {}
+    if url_ids:
+        pipeline = [
+            {"$match": {"research_url_id": {"$in": url_ids}, "owner_id": user.id}},
+            {"$group": {"_id": "$research_url_id", "n": {"$sum": 1}}},
+        ]
+        agg = await mongo_db["research_scraped_data"].aggregate(pipeline).to_list(
+            length=len(url_ids) + 1
+        )
+        scraped_counts = {int(row["_id"]): int(row["n"]) for row in agg}
+
+    out: list[dict] = []
+    for tri in sorted(by_table_row.keys()):
+        d = by_table_row[tri]
+        rid = int(d["id"])
+        n_scraped = scraped_counts.get(rid, 0)
+        if n_scraped == 0 and d.get("scraped_data"):
+            n_scraped = 1
+        results = d.get("results") or []
+        n_results = len(results)
+        out.append(
+            {
+                "table_row_index": tri,
+                "results_count": n_results,
+                "structured_sources_count": n_scraped,
+                "has_structured_data": n_scraped > 0,
+            }
+        )
+    return out
+
+
 @router.get("/research-urls")
 async def list_research_urls(
     selection_id: int | None = None,

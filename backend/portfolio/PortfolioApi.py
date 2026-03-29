@@ -12,7 +12,7 @@ from auth_utils import decode_access_token
 from database import get_db
 from models import User
 from mongo import get_mongo_db
-from schemas import PortfolioItemResponse
+from schemas import PortfolioItemResponse, PortfolioSummaryResponse
 
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -196,6 +196,61 @@ def _extract_price(extracted: dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _parse_price_numeric(price: Optional[str]) -> Optional[float]:
+    """
+    Best-effort parse of a price string to a float (digits, optional minus, one dot).
+    Returns None if nothing numeric can be interpreted.
+    """
+    if price is None:
+        return None
+    s = str(price).strip()
+    if not s:
+        return None
+    cleaned = re.sub(r"[^0-9.\-]", "", s)
+    if not cleaned or cleaned in ("-", ".", "-.", ".."):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _sanitize_portfolio_price(price: Optional[str]) -> Optional[str]:
+    """
+    Scraping often yields $0 or negative values by mistake. Those are not valid
+    offer prices — clear them so clients pick the next best positive price.
+    Non-numeric strings (e.g. 'Contact') are kept as-is.
+    """
+    if price is None:
+        return None
+    n = _parse_price_numeric(price)
+    if n is None:
+        return price
+    if n <= 0:
+        return None
+    return price
+
+
+def _sanitize_item_price(price: Any) -> Optional[str]:
+    """API response uses optional string price; drop invalid numeric scrape values."""
+    if price is None:
+        return None
+    if isinstance(price, bool):
+        return None
+    if isinstance(price, (int, float)):
+        if isinstance(price, float) and (price != price or price in (float("inf"), float("-inf"))):
+            return None
+        n = float(price)
+        if n <= 0:
+            return None
+        if n == int(n):
+            return str(int(n))
+        return str(n)
+    if isinstance(price, str):
+        return _sanitize_portfolio_price(price.strip() or None)
+    return _sanitize_portfolio_price(str(price).strip() or None)
+
+
 def _extract_portfolio_items_from_extracted(extracted: Any) -> list[dict[str, Any]]:
     """
     Firecrawl/Groq extracted data can be shaped differently (single dict vs list of dicts).
@@ -264,20 +319,48 @@ async def get_current_user(
     return user
 
 
-@router.get("/items", response_model=list[PortfolioItemResponse])
-async def list_portfolio_items(
-    selection_id: int,
-    user: User = Depends(get_current_user),
-    mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
-):
-    if mongo_db is None:
-        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+def _aggregate_summary_from_items(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    unique_parts: distinct non-empty part_number (case-insensitive).
+    offer_count: number of portfolio rows after merge.
+    best_price / average_price: over positive numeric prices only (sanitized upstream).
+    """
+    parts: set[str] = set()
+    nums: list[float] = []
+    for it in items:
+        pn = it.get("part_number")
+        if pn is not None and str(pn).strip():
+            parts.add(str(pn).strip().upper())
+        raw = it.get("price")
+        if raw is None:
+            continue
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, (int, float)):
+            n = float(raw)
+        else:
+            n = _parse_price_numeric(str(raw))
+        if n is not None and n > 0:
+            nums.append(n)
+    return {
+        "unique_parts": len(parts),
+        "offer_count": len(items),
+        "best_price": min(nums) if nums else None,
+        "average_price": (sum(nums) / len(nums)) if nums else None,
+        "prices_included": len(nums),
+    }
 
+
+async def _load_deduped_portfolio_items_for_selection(
+    mongo_db: AsyncIOMotorDatabase,
+    owner_id: int,
+    selection_id: int,
+) -> list[dict[str, Any]]:
     # 1) Find research URLs for this selection.
     #    We also load `row_data` so we can extract `part_number` values from
     #    the entire row (some sheets may place part numbers in different columns).
     research_urls_cursor = mongo_db["research_urls"].find(
-        {"owner_id": user.id, "selection_id": selection_id},
+        {"owner_id": owner_id, "selection_id": selection_id},
         {"id": 1, "row_data": 1},
     )
     research_url_ids: list[int] = []
@@ -295,7 +378,7 @@ async def list_portfolio_items(
     # 2) Fetch scraped structured data for those URLs.
     scraped_by_rid: dict[int, list[dict[str, Any]]] = {}
     scraped_cursor = mongo_db["research_scraped_data"].find(
-        {"owner_id": user.id, "research_url_id": {"$in": research_url_ids}},
+        {"owner_id": owner_id, "research_url_id": {"$in": research_url_ids}},
         {"data": 1, "research_url_id": 1, "url": 1},
     )
 
@@ -453,6 +536,9 @@ async def list_portfolio_items(
 
             items.extend(url_items)
 
+    # 2b) Drop bogus scraped prices (0 or negative); keep row but clear price so UI skips them for "best".
+    items = [{**it, "price": _sanitize_item_price(it.get("price"))} for it in items]
+
     # 3) De-dupe. Include url in the key so same part from different sources both appear.
     deduped: list[dict[str, Any]] = []
     seen: set[tuple[Optional[str], Optional[str], Optional[str], Optional[int], Optional[str]]] = set()
@@ -463,5 +549,56 @@ async def list_portfolio_items(
         seen.add(key)
         deduped.append(it)
 
-    # Ensure response matches schema fields (Pydantic will handle casting).
-    return [PortfolioItemResponse(**it) for it in deduped[:500]]
+    return deduped[:500]
+
+
+@router.get("/items", response_model=list[PortfolioItemResponse])
+async def list_portfolio_items(
+    selection_id: int,
+    user: User = Depends(get_current_user),
+    mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    deduped = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, selection_id)
+    return [PortfolioItemResponse(**it) for it in deduped]
+
+
+@router.get("/summary", response_model=PortfolioSummaryResponse)
+async def get_portfolio_summary(
+    user: User = Depends(get_current_user),
+    mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    """
+    Merged portfolio across all of the user's datasheet selections (same merge as the frontend).
+    Price stats use only positive numeric prices (invalid scrape values cleared earlier).
+    """
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    sel_cursor = mongo_db["data_sheet_selections"].find({"owner_id": user.id}, {"id": 1})
+    selection_ids: list[int] = []
+    async for doc in sel_cursor:
+        if "id" in doc:
+            selection_ids.append(int(doc["id"]))
+
+    if not selection_ids:
+        return PortfolioSummaryResponse()
+
+    merged: list[dict[str, Any]] = []
+    seen_merge: set[tuple[Any, ...]] = set()
+    for sid in selection_ids:
+        batch = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, sid)
+        for it in batch:
+            key = (
+                it.get("part_number"),
+                it.get("vendor_name"),
+                it.get("price"),
+                it.get("quantity"),
+            )
+            if key in seen_merge:
+                continue
+            seen_merge.add(key)
+            merged.append(it)
+
+    return PortfolioSummaryResponse(**_aggregate_summary_from_items(merged))

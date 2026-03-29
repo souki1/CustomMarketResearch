@@ -133,6 +133,9 @@ async def clean_structured_data(
         return None
 
 
+_MAX_CONTEXT_CHARS = 14_000
+
+
 async def groq_assistant_chat(
     api_key: str,
     *,
@@ -141,10 +144,12 @@ async def groq_assistant_chat(
     history: list[tuple[str, str]],
     model: str = DEFAULT_MODEL,
     max_completion_tokens: int = 2048,
+    context: str | None = None,
 ) -> str | None:
     """
     General-purpose chat / tools via Groq (streaming aggregated to a single string).
     `history` is (role, content) pairs with role in user|assistant.
+    Optional `context` is appended to the system prompt (truncated) for grounded replies.
     """
     if not api_key or not user_message.strip():
         return None
@@ -152,6 +157,15 @@ async def groq_assistant_chat(
     if not spec:
         return None
     system_prompt, temperature = spec
+    ctx = (context or "").strip()
+    if ctx:
+        if len(ctx) > _MAX_CONTEXT_CHARS:
+            ctx = ctx[: _MAX_CONTEXT_CHARS - 1] + "…"
+        system_prompt = (
+            f"{system_prompt}\n\n--- Structured research data (JSON; use when relevant; "
+            "do not invent fields not present) ---\n"
+            f"{ctx}"
+        )
     try:
         client = AsyncGroq(api_key=api_key)
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]

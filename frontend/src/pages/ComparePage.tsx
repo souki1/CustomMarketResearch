@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom'
 import { getToken } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
+import { CompareVendorMindMap } from '@/components/compare/CompareVendorMindMap'
+import { CompareVendorOverview, collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
 import { CompareWorkspaceSection } from '@/components/compare/CompareWorkspaceSection'
 import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
 import {
@@ -247,6 +249,14 @@ export function ComparePage() {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
+  const [vendorCoverageView, setVendorCoverageView] = useState<'map' | 'overview'>(() => {
+    try {
+      const v = localStorage.getItem('ir-compare-vendor-coverage-view')
+      return v === 'overview' ? 'overview' : 'map'
+    } catch {
+      return 'map'
+    }
+  })
   const [compareMode, setCompareMode] = useState<CompareMode>(() => {
     const persisted = readPersistedCompareState()
     const mode = persisted?.compareMode
@@ -507,6 +517,14 @@ export function ComparePage() {
     scrapedData,
   ])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('ir-compare-vendor-coverage-view', vendorCoverageView)
+    } catch {
+      // ignore
+    }
+  }, [vendorCoverageView])
+
   // When navigating from Research with items, scroll to comparison section
   useEffect(() => {
     if (items.length > 0 && !hasScrolledToComparisonRef.current) {
@@ -716,6 +734,7 @@ export function ComparePage() {
     }
   }, [compareMode, items, selectedFilesData.length])
 
+  /** Domains that count as "common": on ≥2 parts when comparing multiple parts; all domains when only one part. */
   const commonVendorDomains = useMemo(() => {
     if (compareMode !== 'different-same-vendor') return []
     const partIds = items
@@ -726,15 +745,21 @@ export function ComparePage() {
     const domainSets = partIds.map((id) =>
       new Set((scrapedDataByPart[id] ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
     )
-    if (domainSets.some((s) => s.size === 0)) return []
 
-    const intersection = new Set(domainSets[0]!)
-    for (const s of domainSets.slice(1)) {
-      for (const v of [...intersection]) {
-        if (!s.has(v)) intersection.delete(v)
+    if (partIds.length === 1) {
+      return Array.from(domainSets[0] ?? []).sort()
+    }
+
+    const domainPartCount = new Map<string, number>()
+    for (const s of domainSets) {
+      for (const d of s) {
+        domainPartCount.set(d, (domainPartCount.get(d) ?? 0) + 1)
       }
     }
-    return Array.from(intersection).sort()
+    return [...domainPartCount.entries()]
+      .filter(([, count]) => count >= 2)
+      .map(([d]) => d)
+      .sort()
   }, [compareMode, items, scrapedDataByPart])
   const comparedPartLabels = useMemo(() => {
     if (compareMode !== 'different-same-vendor') return []
@@ -747,6 +772,162 @@ export function ComparePage() {
       )
     )
   }, [compareMode, items])
+
+  /** Bar + table summary + mind map: vendors per part, overlap, prices from scraped numeric/price fields */
+  const vendorOverviewPayload = useMemo(() => {
+    if (!selectedRowForScraped) return null
+    const MAX_MAP_VENDORS = 32
+    const fmtUsd = (n: number) =>
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+
+    function vendorsForMindMap(
+      partKey: string,
+      list: ScrapedDataItem[],
+      commonDomainSet: Set<string> | null
+    ) {
+      const byDomain = new Map<string, number | null>()
+      for (const d of list) {
+        const dom = extractDomain(d.url)
+        if (!dom) continue
+        const nums = collectPricesFromScrapedData(d.data as Record<string, unknown>)
+        const p = nums.length ? Math.min(...nums) : null
+        const prev = byDomain.get(dom)
+        if (prev === undefined) byDomain.set(dom, p)
+        else {
+          const next = p != null && (prev == null || p < prev) ? p : prev
+          byDomain.set(dom, next)
+        }
+      }
+      const sorted = Array.from(byDomain.entries()).sort(([a], [b]) => a.localeCompare(b))
+      const slice = sorted.slice(0, MAX_MAP_VENDORS)
+      const vendors = slice.map(([domain, price]) => ({
+        key: `${partKey}:${domain}`,
+        domain,
+        priceLabel: price != null ? fmtUsd(price) : null,
+        isCommon: commonDomainSet ? commonDomainSet.has(domain) : false,
+      }))
+      if (sorted.length > MAX_MAP_VENDORS) {
+        vendors.push({
+          key: `${partKey}:+more`,
+          domain: `+${sorted.length - MAX_MAP_VENDORS} more vendors`,
+          priceLabel: null,
+          isCommon: false,
+        })
+      }
+      return vendors
+    }
+
+    if (compareMode === 'different-same-vendor') {
+      if (items.length === 0 || commonVendorsLoading) return null
+      const partRows = items.map((item) => {
+        const list = scrapedDataByPart[item.id] ?? []
+        const domains = new Set(list.map((d) => extractDomain(d.url)).filter(Boolean))
+        const prices: number[] = []
+        for (const d of list) {
+          prices.push(...collectPricesFromScrapedData(d.data as Record<string, unknown>))
+        }
+        const minP = prices.length ? Math.min(...prices) : null
+        const maxP = prices.length ? Math.max(...prices) : null
+        const avgP = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null
+        return {
+          id: item.id,
+          label: (item.title || '—').trim() || '—',
+          vendorCount: domains.size,
+          minPrice: minP,
+          maxPrice: maxP,
+          avgPrice: avgP,
+        }
+      })
+      const maxVendorCount = Math.max(1, ...partRows.map((r) => r.vendorCount))
+      const commonVendorRows =
+        items.length > 1 && commonVendorDomains.length > 0
+          ? commonVendorDomains.map((domain) => {
+              const priceByPartId: Record<string, string> = {}
+              for (const item of items) {
+                const list = scrapedDataByPart[item.id] ?? []
+                const match = list.find((d) => extractDomain(d.url) === domain)
+                const nums = match ? collectPricesFromScrapedData(match.data as Record<string, unknown>) : []
+                const p = nums.length ? Math.min(...nums) : null
+                priceByPartId[item.id] =
+                  p != null
+                    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(p)
+                    : '—'
+              }
+              return { domain, priceByPartId }
+            })
+          : null
+      const commonDomainSetForMap = items.length > 1 ? new Set(commonVendorDomains) : null
+      const mindMap = {
+        rootLabel:
+          items.length > 1
+            ? 'Compare parts'
+            : ((items[0]?.title || '—').trim() || 'Compare'),
+        parts: items.map((item, idx) => ({
+          id: item.id,
+          label: (item.title || '—').trim() || '—',
+          colorIndex: idx,
+          vendors: vendorsForMindMap(item.id, scrapedDataByPart[item.id] ?? [], commonDomainSetForMap),
+        })),
+      }
+      return {
+        partRows,
+        maxVendorCount,
+        commonVendorCount: items.length > 1 ? commonVendorDomains.length : null,
+        commonVendorRows,
+        mindMap,
+      }
+    }
+    if (compareMode === 'same-part') {
+      if (scrapedDataLoading || !scrapedData?.length) return null
+      const list = scrapedData
+      const domains = new Set(list.map((d) => extractDomain(d.url)).filter(Boolean))
+      const prices: number[] = []
+      for (const d of list) {
+        prices.push(...collectPricesFromScrapedData(d.data as Record<string, unknown>))
+      }
+      const minP = prices.length ? Math.min(...prices) : null
+      const maxP = prices.length ? Math.max(...prices) : null
+      const avgP = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null
+      const partLabel = (selectedRowForScraped.partLabel || 'Selected part').trim() || 'Selected part'
+      const mindMap = {
+        rootLabel: partLabel,
+        parts: [
+          {
+            id: 'vendor-offers',
+            label: 'Vendor offers',
+            colorIndex: 0,
+            vendors: vendorsForMindMap('vendor-offers', list, null),
+          },
+        ],
+      }
+      return {
+        partRows: [
+          {
+            id: 'same-part',
+            label: partLabel,
+            vendorCount: domains.size,
+            minPrice: minP,
+            maxPrice: maxP,
+            avgPrice: avgP,
+          },
+        ],
+        maxVendorCount: Math.max(1, domains.size),
+        commonVendorCount: null,
+        commonVendorRows: null,
+        mindMap,
+      }
+    }
+    return null
+  }, [
+    selectedRowForScraped,
+    compareMode,
+    items,
+    scrapedDataByPart,
+    commonVendorDomains,
+    commonVendorsLoading,
+    scrapedData,
+    scrapedDataLoading,
+  ])
 
   // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
   useEffect(() => {
@@ -1116,15 +1297,17 @@ export function ComparePage() {
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Vendor scrape</h3>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
-                  {compareMode === 'different-same-vendor' ? 'Common vendor fields' : 'Structured fields'}
+                  {compareMode === 'different-same-vendor' ? 'Shared vendor fields' : 'Structured fields'}
                   {compareMode !== 'different-same-vendor' && selectedRowForScraped ? (
                     <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
                   ) : null}
                 </p>
                 {compareMode === 'different-same-vendor' && (
                   <p className="mt-1 text-xs text-slate-500">
-                    Parts: {comparedPartLabels.join(', ')} · {commonVendorDomains.length} common vendor
-                    {commonVendorDomains.length === 1 ? '' : 's'}
+                    Parts: {comparedPartLabels.join(', ')}
+                    {items.length > 1
+                      ? ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} appear on ≥2 parts (shared)`
+                      : ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} scraped`}
                   </p>
                 )}
               </div>
@@ -1312,6 +1495,50 @@ export function ComparePage() {
                 )}
               </div>
             </div>
+            {vendorOverviewPayload &&
+              selectedRowForScraped &&
+              !scrapedDataLoading &&
+              !(compareMode === 'different-same-vendor' && commonVendorsLoading) && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-slate-500">Coverage view</span>
+                    <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setVendorCoverageView('map')}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                          vendorCoverageView === 'map'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        Mind map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVendorCoverageView('overview')}
+                        className={`border-l border-slate-300 px-3 py-1.5 text-xs font-medium transition-colors ${
+                          vendorCoverageView === 'overview'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        Table & bars
+                      </button>
+                    </div>
+                  </div>
+                  {vendorCoverageView === 'map' ? (
+                    <CompareVendorMindMap model={vendorOverviewPayload.mindMap} />
+                  ) : (
+                    <CompareVendorOverview
+                      partRows={vendorOverviewPayload.partRows}
+                      maxVendorCount={vendorOverviewPayload.maxVendorCount}
+                      commonVendorCount={vendorOverviewPayload.commonVendorCount}
+                      commonVendorRows={vendorOverviewPayload.commonVendorRows}
+                    />
+                  )}
+                </div>
+              )}
             {!selectedRowForScraped ? (
               <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
                 Select a part row in the workspace list to load scraped vendor fields.
@@ -1325,7 +1552,9 @@ export function ComparePage() {
               </div>
             ) : compareMode === 'different-same-vendor' && commonVendorDomains.length === 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-8 text-center text-sm text-amber-900 ring-1 ring-amber-100">
-                No common vendors found across selected parts. Select different parts or run more Research to collect overlapping vendors.
+                {items.length > 1
+                  ? 'No vendor domain appears on more than one selected part yet. Add overlapping research sources or pick parts that share suppliers.'
+                  : 'No scraped vendors for this part yet. Run Research to collect sources.'}
               </p>
             ) : scrapedData && scrapedData.length > 0 ? (
               (() => {

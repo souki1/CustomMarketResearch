@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Bot } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
   getWorkspaceFileContent,
+  listResearchGridSummary,
   listResearchUrls,
   listWorkspaceItems,
   saveDataSheetSelection,
   searchSelectionAndStoreUrls,
   updateWorkspaceFileContent,
+  type ResearchGridSummaryRow,
 } from '@/lib/api'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
+import { ResearchRowAiChat } from '@/components/research/ResearchRowAiChat'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
@@ -108,6 +112,31 @@ function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label:
     }
   }
   return out
+}
+
+/** JSON context for in-panel AI (sheet row + scraped structured data). */
+function buildResearchInspectorContext(
+  headerRow: string[],
+  row: string[] | null,
+  scraped: Array<{ url: string; data: Record<string, unknown> }> | null
+): string {
+  const sheetRow: Record<string, string> = {}
+  if (row) {
+    headerRow.forEach((h, i) => {
+      const key = (h || `Column ${i + 1}`).trim()
+      sheetRow[key] = String(row[i] ?? '')
+    })
+  }
+  const sources = (scraped ?? []).map((s, i) => ({
+    source_index: i + 1,
+    url: s.url,
+    data: s.data,
+  }))
+  try {
+    return JSON.stringify({ sheet_row: sheetRow, scraped_sources: sources })
+  } catch {
+    return JSON.stringify({ sheet_row: sheetRow, scraped_sources: [] })
+  }
 }
 
 function comparisonItemsFromScrapedSources(
@@ -276,6 +305,7 @@ type PersistedResearchState = {
   inspectorMode: 'single' | 'multi'
   inspectorMultiRowIndices: number[]
   inspectorCompareSelection: number[]
+  inspectorDetailTab: 'details' | 'ai'
 }
 
 export function ResearchPage() {
@@ -348,6 +378,10 @@ export function ResearchPage() {
   const [inspectorScrapedSourceSelection, setInspectorScrapedSourceSelection] = useState<Set<number>>(new Set())
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
+  const [inspectorDetailTab, setInspectorDetailTab] = useState<'details' | 'ai'>('details')
+  const [researchRowSummaryByIndex, setResearchRowSummaryByIndex] = useState<
+    Map<number, ResearchGridSummaryRow>
+  >(() => new Map())
   const navigate = useNavigate()
   const location = useLocation()
   const flushSaveRef = useRef<(() => void) | null>(null)
@@ -427,8 +461,10 @@ export function ResearchPage() {
     }
   }, [])
 
-  // Restore Research page state when returning from another page (skip if returning from Compare with restore state)
-  useEffect(() => {
+  // Restore Research page state when returning from another page (skip if returning from Compare with restore state).
+  // useLayoutEffect so activeTabId / row / inspector match persisted values before persist effect runs (avoids clobbering
+  // localStorage with first-paint nulls and breaking AI chat keys like tabId:rowIndex).
+  useLayoutEffect(() => {
     if (hasRestoredPageStateRef.current) return
     const st = location.state as { restoreResearchSelection?: unknown; restoreInspector?: unknown } | undefined
     if (st?.restoreResearchSelection || st?.restoreInspector) return
@@ -464,6 +500,9 @@ export function ResearchPage() {
       if (Array.isArray(data.inspectorCompareSelection)) {
         setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
       }
+      if (data.inspectorDetailTab === 'details' || data.inspectorDetailTab === 'ai') {
+        setInspectorDetailTab(data.inspectorDetailTab)
+      }
     } catch {
       // ignore parse errors
     }
@@ -485,6 +524,7 @@ export function ResearchPage() {
         inspectorMode,
         inspectorMultiRowIndices,
         inspectorCompareSelection: Array.from(inspectorCompareSelection),
+        inspectorDetailTab,
       }
       localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
     } catch {
@@ -503,6 +543,7 @@ export function ResearchPage() {
     inspectorMode,
     inspectorMultiRowIndices,
     inspectorCompareSelection,
+    inspectorDetailTab,
   ])
 
   useEffect(() => {
@@ -533,6 +574,7 @@ export function ResearchPage() {
     setInspectorMode('single')
     setInspectorMultiRowIndices([])
     setInspectorCompareSelection(new Set())
+    setInspectorDetailTab('details')
     setCollapseSidebarForInspector(false)
   }, [effectiveTabId, setCollapseSidebarForInspector])
 
@@ -604,6 +646,35 @@ export function ResearchPage() {
   useEffect(() => {
     setInspectorScrapedSourceSelection(new Set())
   }, [previewScrapedData])
+
+  // Grid row highlights + counts from latest selection (no full scrape payload)
+  useEffect(() => {
+    const token = getToken()
+    const fileId = activeTab?.fileId ?? null
+    const tabId = fileId ? null : effectiveTabId
+    if (!token || (!fileId && !tabId)) {
+      setResearchRowSummaryByIndex(new Map())
+      return
+    }
+    let cancelled = false
+    listResearchGridSummary(token, { fileId: fileId ?? undefined, tabId: tabId ?? undefined })
+      .then((rows) => {
+        if (cancelled) return
+        const next = new Map<number, ResearchGridSummaryRow>()
+        for (const r of rows) {
+          const idx = Number(r.table_row_index)
+          if (!Number.isFinite(idx)) continue
+          next.set(idx, { ...r, table_row_index: idx })
+        }
+        setResearchRowSummaryByIndex(next)
+      })
+      .catch(() => {
+        if (!cancelled) setResearchRowSummaryByIndex(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab?.fileId, effectiveTabId, researchVersion])
 
   // Show loading in preview while research is running (until all rows scraped)
   useEffect(() => {
@@ -938,6 +1009,7 @@ export function ResearchPage() {
       setInspectorMode('single')
       setInspectorMultiRowIndices([])
       setInspectorCompareSelection(new Set())
+      setInspectorDetailTab('details')
       setCollapseSidebarForInspector(false)
     },
     [setCollapseSidebarForInspector]
@@ -1124,6 +1196,22 @@ export function ResearchPage() {
     selectedRowIndex != null && content
       ? content[1 + selectedRowIndex] ?? null
       : null
+
+  const researchAiContext = useMemo(
+    () => buildResearchInspectorContext(headers, selectedRowData, previewScrapedData),
+    [headers, selectedRowData, previewScrapedData]
+  )
+  const researchAiSessionLabel = useMemo(() => {
+    const primary = selectedRowData?.[0]
+    const label =
+      primary != null && String(primary).trim()
+        ? String(primary).trim()
+        : `Row ${(selectedRowIndex ?? 0) + 1}`
+    return `Research · ${label.slice(0, 100)}`
+  }, [selectedRowData, selectedRowIndex])
+  const researchAiTabRowKey = activeTab?.fileId
+    ? `file:${activeTab.fileId}:row:${selectedRowIndex ?? 0}`
+    : `tab:${effectiveTabId ?? 'sheet'}:row:${selectedRowIndex ?? 0}`
 
   return (
     <div
@@ -1694,6 +1782,12 @@ export function ResearchPage() {
                       className="rounded border-gray-300"
                     />
                   </th>
+                  <th
+                    scope="col"
+                    className="w-[92px] shrink-0 px-2 py-2 border-r border-gray-200 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+                  >
+                    Research
+                  </th>
                   {content[0].map((cell, i) => {
                     const columnHasData = content.some(
                       (row) => (row[i] ?? '').trim().length > 0
@@ -1732,11 +1826,19 @@ export function ResearchPage() {
                   const dataRowIndex = rowIndices[idx]
                   const isSelectedRow = selectedRowIndex === dataRowIndex
                   const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
+                  const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
+                  const hasStructuredData = rowResearchSummary?.has_structured_data === true
                   return (
                     <tr
                       key={dataRowIndex}
                       data-row-index={dataRowIndex}
-                      className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
+                      className={`transition-colors ${
+                        isSelectedRow
+                          ? 'bg-sky-50'
+                          : hasStructuredData
+                            ? 'bg-emerald-50 hover:bg-emerald-100/80'
+                            : 'hover:bg-gray-50'
+                      }`}
                     >
                       <td className="w-10 px-2 py-2 border-r border-gray-200">
                         {isRowBeingResearched ? (
@@ -1748,6 +1850,16 @@ export function ResearchPage() {
                             onChange={() => toggleRowSelection(dataRowIndex)}
                             className="rounded border-gray-300"
                           />
+                        )}
+                      </td>
+                      <td className="w-[92px] shrink-0 px-2 py-2 align-top border-r border-gray-200">
+                        {hasStructuredData && rowResearchSummary ? (
+                          <span className="text-[11px] font-medium leading-tight text-emerald-800 tabular-nums">
+                            {rowResearchSummary.structured_sources_count} result
+                            {rowResearchSummary.structured_sources_count !== 1 ? 's' : ''} found
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-gray-300">—</span>
                         )}
                       </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
@@ -1903,41 +2015,195 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 items-center justify-end gap-1 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setInspectorMaximized((m) => !m)
-              }}
-              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-              title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
-              aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
-            >
-              {inspectorMaximized ? (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
-                </svg>
+          <header className="flex shrink-0 flex-col gap-3 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              {inspectorMode === 'single' && selectedRowData ? (
+                <div className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                  <h3 className="mb-0.5 text-xs font-medium uppercase tracking-wide text-gray-500">Item</h3>
+                  <p className="truncate text-base font-semibold text-gray-900">
+                    {headers[0]
+                      ? `${headers[0]}: ${selectedRowData[0] ?? '—'}`
+                      : selectedRowData[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
+                  </p>
+                </div>
               ) : (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
+                <div className="min-w-0 flex-1" aria-hidden />
               )}
-            </button>
-            <button
-              type="button"
-              onClick={closeInspector}
-              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-              title="Close panel"
-              aria-label="Close panel"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              <div className="flex shrink-0 items-center justify-end gap-1 self-start">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setInspectorMaximized((m) => !m)
+                  }}
+                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                  title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+                  aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+                >
+                  {inspectorMaximized ? (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeInspector}
+                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                  title="Close panel"
+                  aria-label="Close panel"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {inspectorMode === 'single' && selectedRowData && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
+                    if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
+                      showToast('Select at least one scraped source')
+                      return
+                    }
+                    clearComparison()
+                    if (hasScraped) {
+                      const scrapedItems = comparisonItemsFromScrapedSources(
+                        previewScrapedData,
+                        inspectorScrapedSourceSelection,
+                        effectiveTabId,
+                        selectedRowIndex
+                      )
+                      if (scrapedItems.length === 0) {
+                        showToast('Select at least one scraped source')
+                        return
+                      }
+                      openComparison(scrapedItems)
+                    } else {
+                      const title = String(selectedRowData[0] ?? '')
+                      const specs = headers.map((label, i) => ({
+                        label: (label || `Column ${i + 1}`).trim(),
+                        value: String(selectedRowData[i] ?? '—'),
+                      }))
+                      openComparison([
+                        {
+                          id: `${effectiveTabId}-${selectedRowIndex}`,
+                          title,
+                          imageUrl: null,
+                          specs,
+                        },
+                      ])
+                    }
+                    showToast('Opened comparison')
+                    navigate(RESEARCH_COMPARE_PATH, {
+                      state: {
+                        returnTo: '/research',
+                        restoreInspector: {
+                          mode: 'single',
+                          selectedRowIndex,
+                          multiRowIndices: [],
+                          compareSelection: [],
+                        },
+                      },
+                    })
+                  }}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  Compare
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    const id = `${effectiveTabId}-${selectedRowIndex}`
+                    const title = selectedRowData[0] ?? ''
+                    const manufacturer = selectedRowData[1] ?? ''
+                    const price = selectedRowData[2] ?? ''
+                    const result = addItem({
+                      id,
+                      title: String(title),
+                      manufacturer: String(manufacturer),
+                      price: String(price),
+                      rowIndex: selectedRowIndex,
+                      tabId: effectiveTabId,
+                    })
+                    if (result.added) showToast('Item added to Bucket')
+                    else showToast('Item already in Bucket')
+                  }}
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Add to Bucket
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Copy row
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorDetailTab('ai')}
+                  className={`inline-flex items-center justify-center rounded-lg border border-sky-300/80 bg-sky-50 p-2 text-sky-700 shadow-sm hover:border-sky-400 hover:bg-sky-100 hover:text-sky-900 ${
+                    inspectorDetailTab === 'ai' ? 'ring-2 ring-sky-400 ring-offset-1' : ''
+                  }`}
+                  title="AI"
+                  aria-label="AI — chat with row context"
+                >
+                  <Bot className="h-5 w-5 shrink-0" strokeWidth={2} />
+                </button>
+              </div>
+            )}
           </header>
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain p-4">
+          <div className="flex flex-1 min-h-0 flex-col p-4">
+            {inspectorMode === 'single' && selectedRowData && (
+              <div className="mb-3 flex shrink-0 gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setInspectorDetailTab('details')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    inspectorDetailTab === 'details'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:bg-white/70'
+                  }`}
+                >
+                  Details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorDetailTab('ai')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    inspectorDetailTab === 'ai'
+                      ? 'bg-sky-100 text-sky-900 shadow-sm'
+                      : 'text-gray-600 hover:bg-white/70'
+                  }`}
+                >
+                  AI
+                </button>
+              </div>
+            )}
+            <div
+              className={
+                inspectorMode === 'single' && selectedRowData && inspectorDetailTab === 'ai'
+                  ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
+                  : 'min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain'
+              }
+            >
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
+              inspectorMode === 'single' && selectedRowData && inspectorDetailTab === 'ai' ? (
+                <ResearchRowAiChat
+                  tabRowKey={researchAiTabRowKey}
+                  researchContext={researchAiContext}
+                  sessionLabel={researchAiSessionLabel}
+                />
+              ) : (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
                   <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -2047,17 +2313,6 @@ export function ResearchPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                        Item
-                      </h3>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {headers[0] ? `${headers[0]}: ${selectedRowData?.[0] ?? '—'}` : selectedRowData?.[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
-                      </p>
-                    </div>
-
-
-
                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -2257,99 +2512,14 @@ export function ResearchPage() {
                     </div>
                   </>
                 )}
-                {inspectorMode !== 'multi' && (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                        const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
-                        if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
-                          showToast('Select at least one scraped source')
-                          return
-                        }
-                        clearComparison()
-                        if (hasScraped) {
-                          const scrapedItems = comparisonItemsFromScrapedSources(
-                            previewScrapedData,
-                            inspectorScrapedSourceSelection,
-                            effectiveTabId,
-                            selectedRowIndex
-                          )
-                          if (scrapedItems.length === 0) {
-                            showToast('Select at least one scraped source')
-                            return
-                          }
-                          openComparison(scrapedItems)
-                        } else {
-                          const title = String(selectedRowData[0] ?? '')
-                          const specs = headers.map((label, i) => ({
-                            label: (label || `Column ${i + 1}`).trim(),
-                            value: String(selectedRowData[i] ?? '—'),
-                          }))
-                          openComparison([
-                            {
-                              id: `${effectiveTabId}-${selectedRowIndex}`,
-                              title,
-                              imageUrl: null,
-                              specs,
-                            },
-                          ])
-                        }
-                        showToast('Opened comparison')
-                        navigate(RESEARCH_COMPARE_PATH, {
-                          state: {
-                            returnTo: '/research',
-                            restoreInspector: {
-                              mode: 'single',
-                              selectedRowIndex,
-                              multiRowIndices: [],
-                              compareSelection: [],
-                            },
-                          },
-                        })
-                      }}
-                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                    >
-                      Compare
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                        const id = `${effectiveTabId}-${selectedRowIndex}`
-                        const title = selectedRowData[0] ?? ''
-                        const manufacturer = selectedRowData[1] ?? ''
-                        const price = selectedRowData[2] ?? ''
-                        const result = addItem({
-                          id,
-                          title: String(title),
-                          manufacturer: String(manufacturer),
-                          price: String(price),
-                          rowIndex: selectedRowIndex,
-                          tabId: effectiveTabId,
-                        })
-                        if (result.added) showToast('Item added to Bucket')
-                        else showToast('Item already in Bucket')
-                      }}
-                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                    >
-                      Add to Bucket
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                    >
-                      Copy row
-                    </button>
-                  </div>
-                )}
               </div>
+              )
             ) : (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                 Select a row in the table to preview its details here.
               </div>
             )}
+            </div>
           </div>
         </aside>
         </>
