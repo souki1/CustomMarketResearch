@@ -7,6 +7,7 @@ import {
   ChevronDown,
   DollarSign,
   Download,
+  ExternalLink,
   Loader2,
   Monitor,
   MoreHorizontal,
@@ -36,6 +37,77 @@ const ROW_MAIN =
 const ROW_NESTED = "border-b border-slate-100/80 bg-slate-50/[0.85]"
 const CHECK =
   "h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+
+function portfolioOfferImageSrc(url: string | null | undefined): string | null {
+  if (url == null || typeof url !== "string") return null
+  const t = url.trim()
+  if (t.length > 2048) return null
+  if (!/^https?:\/\//i.test(t)) return null
+  return t
+}
+
+function PortfolioOfferThumb({ imageUrl }: { imageUrl: string | null | undefined }) {
+  const src = portfolioOfferImageSrc(imageUrl)
+  const [broken, setBroken] = useState(false)
+  if (!src || broken) {
+    return (
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-100/90 text-slate-400"
+        aria-hidden
+      >
+        <Package className="h-5 w-5" strokeWidth={1.5} />
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setBroken(true)}
+      className="h-10 w-10 shrink-0 rounded-lg border border-slate-200/90 bg-white object-cover"
+    />
+  )
+}
+
+function vendorUrlLinkLabel(href: string): string {
+  try {
+    const u = new URL(href)
+    return u.hostname.replace(/^www\./i, "") || href
+  } catch {
+    return href.length > 36 ? `${href.slice(0, 33)}…` : href
+  }
+}
+
+function PortfolioThumbWithVendorLink({
+  imageUrl,
+  vendorUrl,
+}: {
+  imageUrl: string | null | undefined
+  vendorUrl: string | null | undefined
+}) {
+  const href = portfolioOfferImageSrc(vendorUrl)
+  return (
+    <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-2.5 sm:max-w-sm">
+      <PortfolioOfferThumb imageUrl={imageUrl} />
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={href}
+          className="flex min-w-0 items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5 shrink-0 text-teal-600/90" aria-hidden />
+          <span className="min-w-0 truncate">{vendorUrlLinkLabel(href)}</span>
+        </a>
+      ) : (
+        <span className="text-xs text-slate-400">—</span>
+      )}
+    </div>
+  )
+}
 
 function parsePrice(s: string | null): number | null {
   if (s == null || !String(s).trim()) return null
@@ -461,7 +533,7 @@ export function PortfolioPage() {
       const items = g.entries.map((e, idx) => ({
         id: `portfolio-${g.rowId}-v${idx}`,
         title: e.vendor_name ?? "Vendor",
-        imageUrl: null,
+        imageUrl: portfolioOfferImageSrc(e.image_url),
         specs: [
           { label: "Part", value: g.part_number ?? "—" },
           { label: "Price", value: e.price ?? "—" },
@@ -484,7 +556,7 @@ export function PortfolioPage() {
       const items = vg.entries.map((e, idx) => ({
         id: `portfolio-${vg.rowId}-p${idx}`,
         title: e.part_number ?? "Part",
-        imageUrl: null,
+        imageUrl: portfolioOfferImageSrc(e.image_url),
         specs: [
           { label: "Vendor", value: e.vendor_name ?? "—" },
           { label: "Price", value: e.price ?? "—" },
@@ -530,7 +602,7 @@ export function PortfolioPage() {
       return {
         id: `portfolio-compare-${g.rowId}`,
         title: g.part_number ?? "—",
-        imageUrl: null,
+        imageUrl: portfolioOfferImageSrc(best.image_url),
         specs: [
           { label: "Vendor", value: best.vendor_name ?? "—" },
           { label: "Price", value: displayPrice(best.price, n) },
@@ -586,7 +658,7 @@ export function PortfolioPage() {
             </p>
           </div>
           {token && !loading && portfolioItems.length > 0 && (
-            <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-sm shadow-sm ring-1 ring-slate-900/[0.04] backdrop-blur-sm sm:self-auto">
+            <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-sm shadow-sm ring-1  backdrop-blur-sm sm:self-auto">
               <span className="font-semibold tabular-nums text-slate-900">
                 {viewMode === "part"
                   ? filteredSortedGroups.length
@@ -621,7 +693,7 @@ export function PortfolioPage() {
             </div>
           </article>
           <article className="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-slate-600 to-slate-400" />
+            <div className="absolute inset-x-0 top-0 h-1  from-slate-600 to-slate-400" />
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -642,7 +714,7 @@ export function PortfolioPage() {
             </div>
           </article>
           <article className="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+            <div className="absolute inset-x-0 top-0 h-1  from-emerald-500 to-teal-500" />
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -677,7 +749,7 @@ export function PortfolioPage() {
             </div>
           </article>
           <article className="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 to-slate-500" />
+            <div className="absolute inset-x-0 top-0 h-1  from-indigo-500 to-slate-500" />
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -714,7 +786,7 @@ export function PortfolioPage() {
         </div>
 
         {token && selectedPartIds.size > 0 && (
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/95 to-orange-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm ring-1 ring-amber-900/[0.06]">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200/90  from-amber-50/95 to-orange-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm ring-1 ring-amber-900/[0.06]">
             <span>
               <span className="font-semibold tabular-nums">{selectedPartIds.size}</span> part
               {selectedPartIds.size === 1 ? "" : "s"} selected for comparison and reports
@@ -729,7 +801,7 @@ export function PortfolioPage() {
           </div>
         )}
 
-        <div className="mb-5 rounded-2xl border border-slate-200/90 bg-white/90 p-4 shadow-sm ring-1 ring-slate-900/[0.04] backdrop-blur-sm sm:p-5">
+        <div className="mb-5 rounded-2xl border border-slate-200/90 bg-white/90 p-4 shadow-sm ring-1  backdrop-blur-sm sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
             <div className="relative min-w-0 flex-1 lg:max-w-md">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -770,7 +842,7 @@ export function PortfolioPage() {
                   By vendor
                 </button>
               </div>
-              <div className="relative min-w-[11rem]">
+              <div className="relative ">
                 {viewMode === "part" ? (
                   <select
                     value={sortMode}
@@ -826,7 +898,7 @@ export function PortfolioPage() {
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/[0.04]">
+        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_-12px_rgba(15,23,42,0.12)] ring-1 ">
           <div className="flex flex-wrap items-end justify-between gap-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">Offer matrix</h2>
@@ -1055,20 +1127,26 @@ export function PortfolioPage() {
                           g.entries.map((e, vi) => {
                             const n = parsePrice(e.price)
                             const isBest = n != null && minForGroup != null && n === minForGroup
+                            const safeOfferUrl = portfolioOfferImageSrc(e.url)
                             return (
                               <tr
                                 key={`${g.rowId}-v-${vi}`}
                                 className={ROW_NESTED}
                               >
                                 <td className="px-3 py-2" />
-                                <td className="px-3 py-2" />
+                                <td className="px-3 py-2 align-middle">
+                                  <PortfolioThumbWithVendorLink
+                                    imageUrl={e.image_url}
+                                    vendorUrl={e.url}
+                                  />
+                                </td>
                                 <td className="px-3 py-2 pl-12">
                                   <div className="flex flex-col gap-1">
                                     <span className="font-medium text-slate-800">
                                       {e.vendor_name ? (
-                                        e.url ? (
+                                        safeOfferUrl ? (
                                           <a
-                                            href={e.url}
+                                            href={safeOfferUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-slate-800 hover:text-teal-700 hover:underline"
@@ -1120,7 +1198,7 @@ export function PortfolioPage() {
                                             {
                                               id: `portfolio-one-${g.rowId}-${vi}`,
                                               title: e.vendor_name ?? "Vendor",
-                                              imageUrl: null,
+                                              imageUrl: portfolioOfferImageSrc(e.image_url),
                                               specs: [
                                                 { label: "Part", value: g.part_number ?? "—" },
                                                 { label: "Price", value: e.price ?? "—" },
@@ -1345,7 +1423,12 @@ export function PortfolioPage() {
                                     />
                                   ) : null}
                                 </td>
-                                <td className="px-3 py-2" />
+                                <td className="px-3 py-2 align-middle">
+                                  <PortfolioThumbWithVendorLink
+                                    imageUrl={e.image_url}
+                                    vendorUrl={e.url}
+                                  />
+                                </td>
                                 <td className="px-3 py-2 pl-12">
                                   <div className="flex flex-col gap-1">
                                     <span className="font-medium text-slate-800">
@@ -1392,7 +1475,7 @@ export function PortfolioPage() {
                                             {
                                               id: `portfolio-vendor-one-${vg.rowId}-${vi}`,
                                               title: e.part_number ?? "Part",
-                                              imageUrl: null,
+                                              imageUrl: portfolioOfferImageSrc(e.image_url),
                                               specs: [
                                                 {
                                                   label: "Vendor",

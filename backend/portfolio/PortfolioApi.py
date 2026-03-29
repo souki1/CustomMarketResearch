@@ -251,6 +251,61 @@ def _sanitize_item_price(price: Any) -> Optional[str]:
     return _sanitize_portfolio_price(str(price).strip() or None)
 
 
+def _is_safe_http_url(s: str) -> bool:
+    t = s.strip()
+    if len(t) > 2048:
+        return False
+    low = t.lower()
+    return low.startswith("http://") or low.startswith("https://")
+
+
+def _coerce_image_url_value(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    if isinstance(v, str):
+        st = v.strip()
+        return st if st and _is_safe_http_url(st) else None
+    if isinstance(v, list):
+        for el in v:
+            u = _coerce_image_url_value(el)
+            if u:
+                return u
+    return None
+
+
+def _extract_product_image_url(extracted: dict[str, Any]) -> Optional[str]:
+    """Best-effort image URL from scraped/cleaned JSON (e.g. product_image from Groq)."""
+
+    def is_image_key(norm: str) -> bool:
+        if norm in {
+            "product_image",
+            "image_url",
+            "thumbnail_url",
+            "photo_url",
+            "main_image",
+            "product_photo",
+        }:
+            return True
+        if norm == "image" or norm.endswith("_image"):
+            return True
+        return ("thumbnail" in norm or "photo" in norm) and "url" in norm
+
+    for k, v in extracted.items():
+        norm = _normalize_key(str(k))
+        if not is_image_key(norm):
+            continue
+        u = _coerce_image_url_value(v)
+        if u:
+            return u
+
+    for v in extracted.values():
+        if isinstance(v, dict):
+            u = _extract_product_image_url(v)
+            if u:
+                return u
+    return None
+
+
 def _extract_portfolio_items_from_extracted(extracted: Any) -> list[dict[str, Any]]:
     """
     Firecrawl/Groq extracted data can be shaped differently (single dict vs list of dicts).
@@ -263,11 +318,13 @@ def _extract_portfolio_items_from_extracted(extracted: Any) -> list[dict[str, An
         vendor_name = _extract_vendor_name(d)
         price = _extract_price(d)
         quantity = _extract_quantity(d)
+        image_url = _extract_product_image_url(d)
         return {
             "part_number": part_number,
             "vendor_name": vendor_name,
             "price": price,
             "quantity": quantity,
+            "image_url": image_url,
         }
 
     if isinstance(extracted, list):
@@ -408,6 +465,7 @@ async def _load_deduped_portfolio_items_for_selection(
                         "price": None,
                         "quantity": None,
                         "url": None,
+                        "image_url": None,
                     },
                 )
             continue
@@ -433,6 +491,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                 "price": None,
                                 "quantity": None,
                                 "url": source_url,
+                                "image_url": None,
                             },
                         )
                 items.extend(url_items)
@@ -477,6 +536,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                         "price": base.get("price"),
                                         "quantity": base.get("quantity"),
                                         "url": source_url,
+                                        "image_url": base.get("image_url"),
                                     }
                                 )
                     else:
@@ -493,6 +553,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                             "price": base.get("price"),
                                             "quantity": base.get("quantity"),
                                             "url": source_url,
+                                            "image_url": base.get("image_url"),
                                         }
                                     )
                 else:
@@ -506,6 +567,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                     "price": base.get("price"),
                                     "quantity": base.get("quantity"),
                                     "url": source_url,
+                                    "image_url": base.get("image_url"),
                                 }
                             )
             else:
@@ -531,6 +593,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                 "price": None,
                                 "quantity": None,
                                 "url": source_url,
+                                "image_url": None,
                             }
                         )
 
@@ -541,9 +604,25 @@ async def _load_deduped_portfolio_items_for_selection(
 
     # 3) De-dupe. Include url in the key so same part from different sources both appear.
     deduped: list[dict[str, Any]] = []
-    seen: set[tuple[Optional[str], Optional[str], Optional[str], Optional[int], Optional[str]]] = set()
+    seen: set[
+        tuple[
+            Optional[str],
+            Optional[str],
+            Optional[str],
+            Optional[int],
+            Optional[str],
+            Optional[str],
+        ]
+    ] = set()
     for it in items:
-        key = (it.get("part_number"), it.get("vendor_name"), it.get("price"), it.get("quantity"), it.get("url"))
+        key = (
+            it.get("part_number"),
+            it.get("vendor_name"),
+            it.get("price"),
+            it.get("quantity"),
+            it.get("url"),
+            it.get("image_url"),
+        )
         if key in seen:
             continue
         seen.add(key)
