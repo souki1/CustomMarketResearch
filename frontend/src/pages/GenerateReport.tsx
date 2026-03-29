@@ -553,50 +553,58 @@ export function GenerateReportPage() {
     }
   }, [token])
 
+  /** Same height as app sidebar so reports split (nav | content) stays aligned on large screens */
+  const reportsRouteShell =
+    'box-border flex h-[calc(100vh-3.5rem)] w-full max-w-full flex-col overflow-hidden'
+
   if (studioMode === 'studio') {
     const portfolioHint = portfolioCtx
       ? `Using ${portfolioCtx.parts.length} selected part${portfolioCtx.parts.length === 1 ? '' : 's'} from Portfolio`
       : null
     return (
-      <ReportStudio
-        docTitle={docTitle}
-        onDocTitleChange={setDocTitle}
-        onClose={closeStudio}
-        onSave={() => void saveDocument()}
-        saving={saving}
-        editingId={editingId}
-        readOnly={readOnlyPreview}
-        blocks={blocks}
-        selectedId={selectedId}
-        onSelectId={setSelectedId}
-        onAddBlock={addBlock}
-        onUpdateBlock={updateBlock}
-        onRemoveBlock={removeBlock}
-        onMoveBlock={moveBlock}
-        onMoveBlockToIndex={moveBlockToIndex}
-        showAiComposer={showAiComposer}
-        aiPrompt={aiPrompt}
-        aiGenerating={aiGenerating}
-        aiError={aiError}
-        aiContextHint={portfolioHint}
-        onAiPromptChange={setAiPrompt}
-        onGenerateWithAi={() => void generateWithAi()}
-      />
+      <div className={reportsRouteShell}>
+        <ReportStudio
+          docTitle={docTitle}
+          onDocTitleChange={setDocTitle}
+          onClose={closeStudio}
+          onSave={() => void saveDocument()}
+          saving={saving}
+          editingId={editingId}
+          readOnly={readOnlyPreview}
+          blocks={blocks}
+          selectedId={selectedId}
+          onSelectId={setSelectedId}
+          onAddBlock={addBlock}
+          onUpdateBlock={updateBlock}
+          onRemoveBlock={removeBlock}
+          onMoveBlock={moveBlock}
+          onMoveBlockToIndex={moveBlockToIndex}
+          showAiComposer={showAiComposer}
+          aiPrompt={aiPrompt}
+          aiGenerating={aiGenerating}
+          aiError={aiError}
+          aiContextHint={portfolioHint}
+          onAiPromptChange={setAiPrompt}
+          onGenerateWithAi={() => void generateWithAi()}
+        />
+      </div>
     )
   }
 
   return (
-    <ReportGalleryHome
-      tab={tab}
-      onTabChange={setTab}
-      sorted={sorted}
-      loading={loading}
-      onOpenStudioNew={openStudioNew}
-      onOpenStudioAi={openStudioAi}
-      onOpenStudioEdit={openStudioEdit}
-      onOpenStudioPreview={openStudioPreview}
-      onDeleteReport={(id) => void handleDelete(id)}
-    />
+    <div className={reportsRouteShell}>
+      <ReportGalleryHome
+        tab={tab}
+        onTabChange={setTab}
+        sorted={sorted}
+        loading={loading}
+        onOpenStudioNew={openStudioNew}
+        onOpenStudioAi={openStudioAi}
+        onOpenStudioEdit={openStudioEdit}
+        onOpenStudioPreview={openStudioPreview}
+        onDeleteReport={(id) => void handleDelete(id)}
+      />
+    </div>
   )
 }
 

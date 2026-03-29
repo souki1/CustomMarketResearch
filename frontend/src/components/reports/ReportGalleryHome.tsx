@@ -18,13 +18,19 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 }
 
 const REPORTS_NAV_OPEN_KEY = 'ir-reports-nav-open'
-const PAGE_MIN_H = 'min-h-[calc(100vh-3.5rem)]'
 
 const sidebarNavBtn = (active: boolean) =>
   `flex w-full items-center gap-1.5 rounded-xl px-2 py-2 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 sm:gap-2 sm:px-3 sm:py-2.5 sm:text-sm ${
     active
       ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-200'
-      : 'text-gray-700 hover:bg-white hover:shadow-sm'
+      : 'text-slate-700 hover:bg-white hover:shadow-sm'
+  }`
+
+const collapsedTabBtn = (active: boolean) =>
+  `flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all sm:h-9 sm:w-9 ${
+    active
+      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+      : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
   }`
 
 export type ReportGalleryHomeProps = {
@@ -108,47 +114,69 @@ export function ReportGalleryHome({
   }, [downloadMenuId])
 
   return (
-    <div className={`${PAGE_MIN_H} bg-white text-gray-900`}>
-      <div className={`mx-auto flex ${PAGE_MIN_H} w-full min-w-0 max-w-7xl items-stretch`}>
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-white text-slate-900">
+      {/* Same shell as Compare: full-width row, secondary sidebar, then flex-1 scroll (no max-w wrapper) */}
+      <div className="flex h-full min-h-0 w-full min-w-0">
         {!navOpen && (
           <div
-            className={`flex ${PAGE_MIN_H} w-10 shrink-0 flex-col border-r border-gray-200 bg-gray-50/90 sm:w-11`}
+            className="flex h-full w-10 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 sm:w-11"
+            aria-label="Report navigation (collapsed)"
           >
             <button
               type="button"
               onClick={() => setNavOpen(true)}
-              className="flex h-11 w-full shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
-              title="Show report navigation"
+              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-slate-200/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
+              title="Expand report navigation"
               aria-label="Show report navigation"
               aria-expanded={false}
             >
-              <PanelLeftOpen className="h-5 w-5" aria-hidden />
+              <PanelLeftOpen className="h-4 w-4" aria-hidden />
             </button>
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-2">
+              <button
+                type="button"
+                onClick={() => onTabChange('list')}
+                title="My designs"
+                aria-label="My designs"
+                className={collapsedTabBtn(tab === 'list')}
+              >
+                <FileText className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => onTabChange('create')}
+                title="New design"
+                aria-label="New design"
+                className={collapsedTabBtn(tab === 'create')}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
           </div>
         )}
 
         {navOpen && (
           <aside
-            className={`flex ${PAGE_MIN_H} shrink-0 flex-col border-r border-gray-200 bg-gray-50/90 sm:w-52 md:w-64 lg:w-72`}
+            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 md:w-56 lg:w-60"
             aria-label="Report navigation"
           >
-            <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-2 sm:px-3 sm:py-2.5">
+            <div className="flex items-center gap-1 border-b border-slate-200 px-2 py-2 sm:px-3 sm:py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <LayoutTemplate className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
-                <h2 className="truncate text-sm font-semibold text-gray-900">Reports</h2>
+                <LayoutTemplate className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                <h2 className="truncate text-sm font-semibold text-slate-900">Reports</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setNavOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-white hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                title="Hide navigation"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                title="Collapse navigation"
                 aria-label="Hide report navigation"
                 aria-expanded={true}
               >
                 <PanelLeftClose className="h-4 w-4" aria-hidden />
               </button>
             </div>
-            <nav className="flex flex-col gap-1 p-1.5 sm:p-2" aria-label="Report views">
+            <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-1.5 sm:p-2" aria-label="Report views">
               <button
                 type="button"
                 role="tab"
@@ -173,8 +201,8 @@ export function ReportGalleryHome({
           </aside>
         )}
 
-        <div className={`flex ${PAGE_MIN_H} min-w-0 flex-1 flex-col bg-zinc-50`}>
-          <div className="mx-auto flex w-full max-w-none flex-1 flex-col overflow-y-auto px-5 py-10 sm:px-8 sm:py-14">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-zinc-50">
+          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
             <header className="max-w-xl">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400">
                 {tab === 'list' ? 'Library' : 'Studio'}

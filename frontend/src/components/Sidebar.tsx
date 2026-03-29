@@ -96,10 +96,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   if (collapsed) {
     return (
       <aside
-        className="w-14 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)]"
+        className="h-full min-h-0 w-14 shrink-0 border-r border-gray-200 bg-white"
         aria-label="Collapsed sidebar"
       >
-        <div className="flex h-full flex-col py-4">
+        <div className="flex h-full min-h-0 flex-col py-4">
           <nav className="flex flex-col items-center gap-1 px-2">
             <Link to="/" className={collapsedLinkClass(isHome)} title="Home">
               <HomeIcon className={iconClass} />
@@ -136,11 +136,11 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
 
   return (
     <aside
-      className={`w-56 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`h-full min-h-0 w-56 shrink-0 border-r border-gray-200 bg-white transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
       aria-label="Sidebar"
       aria-hidden={!open}
     >
-      <div className="flex h-full flex-col py-4">
+      <div className="flex h-full min-h-0 flex-col py-4">
         <nav className="flex flex-col gap-1 px-2">
           <Link to="/" className={linkClass(isHome)} title="Home">
             <HomeIcon className={iconClass} />

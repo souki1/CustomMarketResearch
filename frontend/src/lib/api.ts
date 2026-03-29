@@ -341,6 +341,26 @@ export async function listResearchUrls(
   return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
 }
 
+export type ResearchGridSummaryRow = {
+  table_row_index: number
+  results_count: number
+  structured_sources_count: number
+  has_structured_data: boolean
+}
+
+export async function listResearchGridSummary(
+  token: string,
+  options: { fileId?: number | null; tabId?: string | null }
+): Promise<ResearchGridSummaryRow[]> {
+  const params = new URLSearchParams()
+  if (options.tabId != null) params.set('tab_id', options.tabId)
+  if (options.fileId != null) params.set('file_id', String(options.fileId))
+  const search = params.toString() ? `?${params}` : ''
+  return request<ResearchGridSummaryRow[]>(`/datasheet/research-urls/grid-summary${search}`, {
+    token,
+  })
+}
+
 export type PortfolioItem = {
   part_number: string | null
   vendor_name: string | null
@@ -351,6 +371,18 @@ export type PortfolioItem = {
 
 export async function listPortfolioItems(token: string, selectionId: number): Promise<PortfolioItem[]> {
   return request<PortfolioItem[]>(`/portfolio/items?selection_id=${selectionId}`, { token })
+}
+
+export type PortfolioSummary = {
+  unique_parts: number
+  offer_count: number
+  best_price: number | null
+  average_price: number | null
+  prices_included: number
+}
+
+export async function getPortfolioSummary(token: string): Promise<PortfolioSummary> {
+  return request<PortfolioSummary>('/portfolio/summary', { token })
 }
 
 export type CompareStatePayload = {
@@ -407,6 +439,12 @@ export type AiChatRequestBody = {
   history?: AiChatHistoryMessage[]
   /** Chat mode only — continue a thread stored in MongoDB */
   session_id?: string | null
+  /** Chat mode — JSON or text grounding (sheet row + scraped structured data) */
+  context?: string | null
+  /** Stored on each turn; shown in /ai history */
+  session_label?: string | null
+  /** e.g. research_inspector */
+  source?: string | null
 }
 
 export type AiChatResponseBody = {
@@ -416,17 +454,19 @@ export type AiChatResponseBody = {
 }
 
 export async function aiGroqChat(token: string, body: AiChatRequestBody): Promise<AiChatResponseBody> {
+  const payload: Record<string, unknown> = {
+    mode: body.mode,
+    message: body.message,
+    history: body.history ?? [],
+  }
+  if (body.session_id != null && body.session_id !== '') payload.session_id = body.session_id
+  if (body.context != null && body.context !== '') payload.context = body.context
+  if (body.session_label != null && body.session_label !== '') payload.session_label = body.session_label
+  if (body.source != null && body.source !== '') payload.source = body.source
   return request<AiChatResponseBody>('/ai/chat', {
     method: 'POST',
     token,
-    body: JSON.stringify({
-      mode: body.mode,
-      message: body.message,
-      history: body.history ?? [],
-      ...(body.session_id != null && body.session_id !== ''
-        ? { session_id: body.session_id }
-        : {}),
-    }),
+    body: JSON.stringify(payload),
   })
 }
 
@@ -436,6 +476,8 @@ export type AiSessionSummary = {
   preview: string
   last_at: string
   turn_count: number
+  session_label?: string | null
+  source?: string | null
 }
 
 export async function listAiSessions(
@@ -462,6 +504,7 @@ export async function getAiSessionMessages(
   const enc = encodeURIComponent(sessionId)
   return request<AiSessionMessagesResponse>(`/ai/sessions/${enc}/messages`, { token })
 }
+
 
 // ---------------------------------------------------------------------------
 // Reports

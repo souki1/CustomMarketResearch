@@ -117,7 +117,7 @@ export function ReportStudio({
   }, [downloadMenuOpen])
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-[#e8eaed]">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#e8eaed]">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-3 sm:px-4">
         <button type="button" className={`${BTN_GHOST} gap-2 px-3`} onClick={onClose}>
           <ArrowLeft className="h-4 w-4" />
@@ -200,15 +200,15 @@ export function ReportStudio({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
         {!readOnly && (
           <aside
-            className="hidden w-52 shrink-0 flex-col border-r border-slate-200/80 bg-white py-4 pl-3 pr-2 sm:flex"
+            className="hidden min-h-0 w-52 shrink-0 flex-col self-stretch border-r border-slate-200/80 bg-white py-4 pl-3 pr-2 sm:flex"
             aria-label="Elements"
           >
-            <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Elements</p>
-            <p className="mt-1 px-2 text-[11px] leading-snug text-slate-400">Click to add to your page</p>
-            <ul className="mt-4 max-h-[calc(100vh-12rem)] space-y-1 overflow-y-auto pr-1">
+            <p className="shrink-0 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Elements</p>
+            <p className="mt-1 shrink-0 px-2 text-[11px] leading-snug text-slate-400">Click to add to your page</p>
+            <ul className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
                 <li key={type}>
                   <button
@@ -227,8 +227,8 @@ export function ReportStudio({
           </aside>
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
-          <div className="flex-1 overflow-auto px-4 py-8 sm:px-8">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch lg:flex-row">
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-8 sm:px-8">
             {showAiComposer && (
               <div className="mx-auto mb-4 w-full max-w-[560px] rounded-xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Make report with AI</p>
@@ -394,7 +394,7 @@ export function ReportStudio({
           </div>
 
           {!readOnly && (
-            <aside className="max-h-64 overflow-y-auto border-t border-slate-200/80 bg-white p-3 sm:max-h-none sm:border-l lg:w-52 lg:border-t-0">
+            <aside className="max-h-64 shrink-0 overflow-y-auto border-t border-slate-200/80 bg-white p-3 sm:max-h-none sm:self-stretch sm:border-l lg:w-52 lg:border-t-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</p>
               <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-3 lg:grid-cols-2">
                 {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (

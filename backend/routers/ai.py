@@ -80,12 +80,16 @@ async def ai_chat(
 
     history = [(m.role, m.content) for m in body.history]
     model_to_use = REPORT_GENERATION_MODEL if body.mode == "report" else settings.groq_model
+    ctx = (body.context or "").strip() or None
+    if ctx and body.mode != "chat":
+        ctx = None
     text = await groq_assistant_chat(
         settings.groq_api_key,
         mode=body.mode,
         user_message=body.message,
         history=history,
         model=model_to_use,
+        context=ctx,
     )
     if text is None:
         raise HTTPException(
@@ -95,7 +99,7 @@ async def ai_chat(
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, AI_COLLECTION)
-    doc = {
+    doc: dict = {
         "id": new_id,
         "owner_id": user.id,
         "session_id": session_id,
@@ -105,6 +109,12 @@ async def ai_chat(
         "model": model_to_use,
         "created_at": now,
     }
+    sl = (body.session_label or "").strip()
+    if sl:
+        doc["session_label"] = sl[:200]
+    src = (body.source or "").strip()
+    if src:
+        doc["source"] = src[:32]
     await mongo_db[AI_COLLECTION].insert_one(doc)
 
     return AiChatResponse(content=text, model=model_to_use, session_id=session_id)
@@ -132,6 +142,8 @@ async def list_ai_sessions(
                 "preview": {"$first": "$user_message"},
                 "mode": {"$first": "$mode"},
                 "turn_count": {"$sum": 1},
+                "session_label": {"$first": "$session_label"},
+                "source": {"$first": "$source"},
             }
         },
         {"$sort": {"last_at": -1}},
@@ -139,17 +151,28 @@ async def list_ai_sessions(
     ]
     cursor = mongo_db[AI_COLLECTION].aggregate(pipeline)
     rows = await cursor.to_list(length=limit)
-    return [
-        AiSessionSummary(
-            session_id=str(r["_id"]),
-            mode=str(r["mode"]),
-            preview=_preview(str(r.get("preview") or "")),
-            last_at=r["last_at"],
-            turn_count=int(r["turn_count"]),
+    out: list[AiSessionSummary] = []
+    for r in rows:
+        if not r.get("_id"):
+            continue
+        label = r.get("session_label")
+        label_s = str(label).strip() if label is not None else ""
+        preview_msg = str(r.get("preview") or "")
+        preview_out = label_s or preview_msg
+        src = r.get("source")
+        src_s = str(src).strip() if src is not None else None
+        out.append(
+            AiSessionSummary(
+                session_id=str(r["_id"]),
+                mode=str(r["mode"]),
+                preview=_preview(preview_out),
+                last_at=r["last_at"],
+                turn_count=int(r["turn_count"]),
+                session_label=label_s or None,
+                source=src_s or None,
+            )
         )
-        for r in rows
-        if r.get("_id")
-    ]
+    return out
 
 
 @router.get("/sessions/{session_id}/messages", response_model=AiSessionMessagesResponse)
@@ -170,7 +193,7 @@ async def get_session_messages(
     )
     docs = await cursor.to_list(length=500)
     if not docs:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return AiSessionMessagesResponse(session_id=sid, mode="chat", messages=[])
 
     messages: list[AiChatHistoryMessage] = []
     for d in docs:
