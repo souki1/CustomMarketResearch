@@ -1,4 +1,4 @@
-import { LayoutGrid } from 'lucide-react'
+import { ExternalLink, LayoutGrid } from 'lucide-react'
 
 export type VendorOverviewPartRow = {
   id: string
@@ -13,10 +13,22 @@ export type CommonVendorPriceRow = {
   domain: string
   /** part id -> formatted price cell */
   priceByPartId: Record<string, string>
+  /** part id -> exact scraped URL (when available) */
+  urlByPartId: Record<string, string | null>
 }
 
 function formatUsd(n: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+}
+
+function toSafeHttpUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null
+  } catch {
+    return null
+  }
 }
 
 type CompareVendorOverviewProps = {
@@ -114,18 +126,38 @@ export function CompareVendorOverview({
                 </tr>
               </thead>
               <tbody>
-                {commonVendorRows.map((r) => (
-                  <tr key={r.domain} className="border-b border-slate-100 last:border-0">
-                    <td className="max-w-[14rem] truncate px-3 py-2 font-medium text-slate-800" title={r.domain}>
-                      {r.domain}
-                    </td>
-                    {partRows.map((p) => (
-                      <td key={p.id} className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">
-                        {r.priceByPartId[p.id] ?? '—'}
+                {commonVendorRows.map((r) => {
+                  return (
+                    <tr key={r.domain} className="border-b border-slate-100 last:border-0">
+                      <td className="max-w-[14rem] truncate px-3 py-2 font-medium text-slate-800" title={r.domain}>
+                        {r.domain}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {partRows.map((p) => {
+                        const priceText = r.priceByPartId[p.id] ?? '—'
+                        const cellUrl = toSafeHttpUrl(r.urlByPartId[p.id] ?? null)
+                        return (
+                          <td key={p.id} className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">
+                            {cellUrl ? (
+                              <a
+                                href={cellUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 hover:underline"
+                                aria-label={`Open vendor website for ${r.domain}`}
+                                title={`Open ${r.domain}`}
+                              >
+                                <span>{priceText}</span>
+                                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                              </a>
+                            ) : (
+                              <span>{priceText}</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

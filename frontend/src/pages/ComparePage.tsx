@@ -843,6 +843,7 @@ export function ComparePage() {
         items.length > 1 && commonVendorDomains.length > 0
           ? commonVendorDomains.map((domain) => {
               const priceByPartId: Record<string, string> = {}
+              const urlByPartId: Record<string, string | null> = {}
               for (const item of items) {
                 const list = scrapedDataByPart[item.id] ?? []
                 const match = list.find((d) => extractDomain(d.url) === domain)
@@ -852,8 +853,9 @@ export function ComparePage() {
                   p != null
                     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(p)
                     : '—'
+                urlByPartId[item.id] = match?.url ? String(match.url) : null
               }
-              return { domain, priceByPartId }
+              return { domain, priceByPartId, urlByPartId }
             })
           : null
       const commonDomainSetForMap = items.length > 1 ? new Set(commonVendorDomains) : null
