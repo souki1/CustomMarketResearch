@@ -318,7 +318,8 @@ export function ResearchPage() {
       const raw = localStorage.getItem('research-tabs')
       if (!raw) return [newBlankSheet()]
       const parsed = JSON.parse(raw) as TabState[]
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [newBlankSheet()]
+      // Preserve an intentionally empty tab set after user closes all tabs.
+      return Array.isArray(parsed) ? parsed : [newBlankSheet()]
     } catch {
       return [newBlankSheet()]
     }
