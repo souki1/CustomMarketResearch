@@ -68,9 +68,14 @@ type DetailState =
 
 type CompareVendorMindMapProps = {
   model: CompareVendorMindMapModel
+  /**
+   * Called when user selects a (shared) vendor node.
+   * Useful for vendor-driven selection in ComparePage.
+   */
+  onSelectVendor?: (domain: string) => void
 }
 
-export function CompareVendorMindMap({ model }: CompareVendorMindMapProps) {
+export function CompareVendorMindMap({ model, onSelectVendor }: CompareVendorMindMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const partRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -247,7 +252,10 @@ export function CompareVendorMindMap({ model }: CompareVendorMindMapProps) {
                                 <td className="max-w-[10rem] align-top px-3 py-2.5">
                                   <button
                                     type="button"
-                                    onClick={() => setDetail({ mode: 'one', domain })}
+                                    onClick={() => {
+                                      onSelectVendor?.(domain)
+                                      setDetail({ mode: 'one', domain })
+                                    }}
                                     className="text-left text-xs font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
                                   >
                                     {domain}
@@ -355,6 +363,7 @@ export function CompareVendorMindMap({ model }: CompareVendorMindMapProps) {
                       tabIndex={v.isCommon && !isSyntheticVendorDomain(v.domain) ? 0 : undefined}
                       onClick={() => {
                         if (v.isCommon && !isSyntheticVendorDomain(v.domain)) {
+                          onSelectVendor?.(v.domain)
                           setDetail({ mode: 'one', domain: v.domain })
                         }
                       }}
@@ -365,6 +374,7 @@ export function CompareVendorMindMap({ model }: CompareVendorMindMapProps) {
                           (e.key === 'Enter' || e.key === ' ')
                         ) {
                           e.preventDefault()
+                          onSelectVendor?.(v.domain)
                           setDetail({ mode: 'one', domain: v.domain })
                         }
                       }}

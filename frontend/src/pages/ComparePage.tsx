@@ -390,14 +390,13 @@ export function ComparePage() {
     const idx = compareTabs.findIndex((t) => t.id === id)
     if (idx < 0) return
     const next = compareTabs.filter((t) => t.id !== id)
-    const finalTabs = next.length === 0 ? [newBlankCompareTab()] : next
-    setCompareTabs(finalTabs)
+    setCompareTabs(next)
     const closedWasActive = activeCompareTabId === id
     if (closedWasActive) {
-      const newIdx = Math.min(idx, finalTabs.length - 1)
-      setActiveCompareTabId(finalTabs[newIdx].id)
+      const newIdx = Math.min(idx, next.length - 1)
+      setActiveCompareTabId(next[newIdx]?.id ?? null)
     } else if (next.length > 0 && compareTabs.findIndex((t) => t.id === activeCompareTabId) >= next.length) {
-      setActiveCompareTabId(finalTabs[finalTabs.length - 1].id)
+      setActiveCompareTabId(next[next.length - 1].id)
     }
   }, [compareTabs, activeCompareTabId])
 
@@ -734,10 +733,30 @@ export function ComparePage() {
     }
   }, [compareMode, items, selectedFilesData.length])
 
+  /**
+   * Vendor-driven part filtering for "different-same-vendor".
+   * When a specific vendor is selected, only parts that contain that vendor stay in the Part dropdown and
+   * downstream shared-vendor computations.
+   */
+  const effectiveVendorFilteredParts = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return items
+    if (scrapedVendorFilter === 'all') return items
+
+    // Avoid aggressive filtering while scraped-by-part data is still loading.
+    const hasScrapedByPart = Object.keys(scrapedDataByPart).length > 0
+    if (!hasScrapedByPart) return items
+
+    const wantedDomain = scrapedVendorFilter
+    const filtered = items.filter((part) =>
+      (scrapedDataByPart[part.id] ?? []).some((d) => extractDomain(d.url) === wantedDomain),
+    )
+    return filtered.length > 0 ? filtered : items
+  }, [compareMode, scrapedVendorFilter, items, scrapedDataByPart])
+
   /** Domains that count as "common": on ≥2 parts when comparing multiple parts; all domains when only one part. */
   const commonVendorDomains = useMemo(() => {
     if (compareMode !== 'different-same-vendor') return []
-    const partIds = items
+    const partIds = effectiveVendorFilteredParts
       .map((item) => (parseFileItemId(item.id) ? item.id : null))
       .filter((id): id is string => id != null)
     if (partIds.length === 0) return []
@@ -760,18 +779,18 @@ export function ComparePage() {
       .filter(([, count]) => count >= 2)
       .map(([d]) => d)
       .sort()
-  }, [compareMode, items, scrapedDataByPart])
+  }, [compareMode, effectiveVendorFilteredParts, scrapedDataByPart])
   const comparedPartLabels = useMemo(() => {
     if (compareMode !== 'different-same-vendor') return []
     return Array.from(
       new Set(
-        items.map((i) => {
+        effectiveVendorFilteredParts.map((i) => {
           const label = (i.title ?? '').trim()
           return label || '—'
         })
       )
     )
-  }, [compareMode, items])
+  }, [compareMode, effectiveVendorFilteredParts])
 
   /** Bar + table summary + mind map: vendors per part, overlap, prices from scraped numeric/price fields */
   const vendorOverviewPayload = useMemo(() => {
@@ -818,8 +837,8 @@ export function ComparePage() {
     }
 
     if (compareMode === 'different-same-vendor') {
-      if (items.length === 0 || commonVendorsLoading) return null
-      const partRows = items.map((item) => {
+      if (effectiveVendorFilteredParts.length === 0 || commonVendorsLoading) return null
+      const partRows = effectiveVendorFilteredParts.map((item) => {
         const list = scrapedDataByPart[item.id] ?? []
         const domains = new Set(list.map((d) => extractDomain(d.url)).filter(Boolean))
         const prices: number[] = []
@@ -840,11 +859,11 @@ export function ComparePage() {
       })
       const maxVendorCount = Math.max(1, ...partRows.map((r) => r.vendorCount))
       const commonVendorRows =
-        items.length > 1 && commonVendorDomains.length > 0
+        effectiveVendorFilteredParts.length > 1 && commonVendorDomains.length > 0
           ? commonVendorDomains.map((domain) => {
               const priceByPartId: Record<string, string> = {}
               const urlByPartId: Record<string, string | null> = {}
-              for (const item of items) {
+              for (const item of effectiveVendorFilteredParts) {
                 const list = scrapedDataByPart[item.id] ?? []
                 const match = list.find((d) => extractDomain(d.url) === domain)
                 const nums = match ? collectPricesFromScrapedData(match.data as Record<string, unknown>) : []
@@ -858,13 +877,13 @@ export function ComparePage() {
               return { domain, priceByPartId, urlByPartId }
             })
           : null
-      const commonDomainSetForMap = items.length > 1 ? new Set(commonVendorDomains) : null
+      const commonDomainSetForMap = effectiveVendorFilteredParts.length > 1 ? new Set(commonVendorDomains) : null
       const mindMap = {
         rootLabel:
-          items.length > 1
+          effectiveVendorFilteredParts.length > 1
             ? 'Compare parts'
-            : ((items[0]?.title || '—').trim() || 'Compare'),
-        parts: items.map((item, idx) => ({
+            : ((effectiveVendorFilteredParts[0]?.title || '—').trim() || 'Compare'),
+        parts: effectiveVendorFilteredParts.map((item, idx) => ({
           id: item.id,
           label: (item.title || '—').trim() || '—',
           colorIndex: idx,
@@ -874,7 +893,8 @@ export function ComparePage() {
       return {
         partRows,
         maxVendorCount,
-        commonVendorCount: items.length > 1 ? commonVendorDomains.length : null,
+        commonVendorCount:
+          effectiveVendorFilteredParts.length > 1 ? commonVendorDomains.length : null,
         commonVendorRows,
         mindMap,
       }
@@ -923,7 +943,7 @@ export function ComparePage() {
   }, [
     selectedRowForScraped,
     compareMode,
-    items,
+    effectiveVendorFilteredParts,
     scrapedDataByPart,
     commonVendorDomains,
     commonVendorsLoading,
@@ -934,12 +954,44 @@ export function ComparePage() {
   // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
   useEffect(() => {
     if (scrapedVendorFilter === 'all') return
+    if (compareMode === 'different-same-vendor' && commonVendorsLoading) return
     const domains =
       compareMode === 'different-same-vendor'
         ? new Set(commonVendorDomains)
         : new Set((scrapedData ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
     if (!domains.has(scrapedVendorFilter)) setScrapedVendorFilter('all')
   }, [compareMode, scrapedData, commonVendorDomains, scrapedVendorFilter])
+
+  // In "different-same-vendor", keep the selected part aligned with the currently selected vendor.
+  useEffect(() => {
+    if (compareMode !== 'different-same-vendor') return
+    if (scrapedVendorFilter === 'all') return
+    if (!selectedRowForScraped) return
+    if (effectiveVendorFilteredParts.length === 0) return
+
+    const currentId = `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
+    const currentInEffective = effectiveVendorFilteredParts.some((p) => p.id === currentId)
+    if (currentInEffective) return
+
+    const nextPart = effectiveVendorFilteredParts[0]
+    const parsed = nextPart ? parseFileItemId(nextPart.id) : null
+    if (!parsed) return
+
+    updateActiveTabData((d) => ({
+      ...d,
+      selectedRowForScraped: {
+        fileId: parsed.fileId,
+        rowIdx: parsed.rowIdx,
+        partLabel: nextPart.title || '—',
+      },
+    }))
+  }, [
+    compareMode,
+    scrapedVendorFilter,
+    selectedRowForScraped,
+    effectiveVendorFilteredParts,
+    updateActiveTabData,
+  ])
 
   /** Rows shown in the scraped comparison table (same filter as before, lifted for column reorder state). */
   const scrapedTableRows = useMemo(() => {
@@ -1074,10 +1126,10 @@ export function ComparePage() {
     if (
       (compareMode === 'same-part' || compareMode === 'different-same-vendor') &&
       selectedFilesData.length > 0 &&
-      items.length > 0 &&
+      effectiveVendorFilteredParts.length > 0 &&
       !selectedRowForScraped
     ) {
-      const first = items[0]
+      const first = effectiveVendorFilteredParts[0]
       const parsed = first ? parseFileItemId(first.id) : null
       if (parsed && first) {
         updateActiveTabData((d) => ({
@@ -1090,7 +1142,7 @@ export function ComparePage() {
         }))
       }
     }
-  }, [compareMode, selectedFilesData.length, items, selectedRowForScraped, updateActiveTabData])
+  }, [compareMode, selectedFilesData.length, effectiveVendorFilteredParts, selectedRowForScraped, updateActiveTabData])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -1307,7 +1359,7 @@ export function ComparePage() {
                 {compareMode === 'different-same-vendor' && (
                   <p className="mt-1 text-xs text-slate-500">
                     Parts: {comparedPartLabels.join(', ')}
-                    {items.length > 1
+                    {effectiveVendorFilteredParts.length > 1
                       ? ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} appear on ≥2 parts (shared)`
                       : ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} scraped`}
                   </p>
@@ -1322,13 +1374,13 @@ export function ComparePage() {
                         const currentId = selectedRowForScraped
                           ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
                           : null
-                        const inItems = currentId && items.some((i) => i.id === currentId)
-                        return inItems ? currentId : (items[0]?.id ?? '')
+                        const inItems = currentId && effectiveVendorFilteredParts.some((i) => i.id === currentId)
+                        return inItems ? currentId : (effectiveVendorFilteredParts[0]?.id ?? '')
                       })()}
                       onChange={(e) => {
                         const id = e.target.value
                         const parsed = parseFileItemId(id)
-                        const item = items.find((i) => i.id === id)
+                        const item = effectiveVendorFilteredParts.find((i) => i.id === id)
                         if (parsed && item) {
                           updateActiveTabData((d) => ({
                             ...d,
@@ -1342,7 +1394,7 @@ export function ComparePage() {
                       }}
                       className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     >
-                      {items.map((item) => (
+                      {effectiveVendorFilteredParts.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.title || '—'}
                           {item.sourceName ? ` (${item.sourceName})` : ''}
@@ -1530,7 +1582,10 @@ export function ComparePage() {
                     </div>
                   </div>
                   {vendorCoverageView === 'map' ? (
-                    <CompareVendorMindMap model={vendorOverviewPayload.mindMap} />
+                    <CompareVendorMindMap
+                      model={vendorOverviewPayload.mindMap}
+                      onSelectVendor={(domain) => setScrapedVendorFilter(domain)}
+                    />
                   ) : (
                     <CompareVendorOverview
                       partRows={vendorOverviewPayload.partRows}
@@ -1554,7 +1609,7 @@ export function ComparePage() {
               </div>
             ) : compareMode === 'different-same-vendor' && commonVendorDomains.length === 0 ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-8 text-center text-sm text-amber-900 ring-1 ring-amber-100">
-                {items.length > 1
+                {effectiveVendorFilteredParts.length > 1
                   ? 'No vendor domain appears on more than one selected part yet. Add overlapping research sources or pick parts that share suppliers.'
                   : 'No scraped vendors for this part yet. Run Research to collect sources.'}
               </p>

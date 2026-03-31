@@ -746,25 +746,29 @@ export function ResearchPage() {
   const closeTab = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation()
-      const idx = tabs.findIndex((t) => t.id === id)
-      if (idx < 0) return
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.id === id)
+        if (idx < 0) return prev
 
-      const tab = tabs[idx]
-      const next = tabs.filter((t) => t.id !== id)
-      setTabs(next)
+        const tab = prev[idx]
+        const next = prev.filter((t) => t.id !== id)
 
-      // If this tab was backed by a workspace file, clear any file-related URL params
-      if (tab.fileId != null) {
-        lastClosedFileIdRef.current = tab.fileId
-        setSearchParams({}, { replace: true })
-      }
+        // If this tab was backed by a workspace file, clear any file-related URL params.
+        if (tab?.fileId != null) {
+          lastClosedFileIdRef.current = tab.fileId
+          setSearchParams({}, { replace: true })
+        }
 
-      if (activeTabId === id) {
-        const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
-        setActiveTabId(nextActive?.id ?? null)
-      }
+        setActiveTabId((currentActiveId) => {
+          if (currentActiveId !== id) return currentActiveId
+          const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
+          return nextActive?.id ?? null
+        })
+
+        return next
+      })
     },
-    [tabs, activeTabId, setSearchParams]
+    [setSearchParams]
   )
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
@@ -1197,18 +1201,15 @@ export function ResearchPage() {
       ? content[1 + selectedRowIndex] ?? null
       : null
 
-  const researchAiContext = useMemo(
-    () => buildResearchInspectorContext(headers, selectedRowData, previewScrapedData),
-    [headers, selectedRowData, previewScrapedData]
-  )
-  const researchAiSessionLabel = useMemo(() => {
+  const researchAiContext = buildResearchInspectorContext(headers, selectedRowData, previewScrapedData)
+  const researchAiSessionLabel = (() => {
     const primary = selectedRowData?.[0]
     const label =
       primary != null && String(primary).trim()
         ? String(primary).trim()
         : `Row ${(selectedRowIndex ?? 0) + 1}`
     return `Research · ${label.slice(0, 100)}`
-  }, [selectedRowData, selectedRowIndex])
+  })()
   const researchAiTabRowKey = activeTab?.fileId
     ? `file:${activeTab.fileId}:row:${selectedRowIndex ?? 0}`
     : `tab:${effectiveTabId ?? 'sheet'}:row:${selectedRowIndex ?? 0}`
