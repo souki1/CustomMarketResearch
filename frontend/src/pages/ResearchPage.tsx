@@ -2069,6 +2069,7 @@ export function ResearchPage() {
                   type="button"
                   onClick={() => {
                     if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    let comparisonItemsToOpen: ComparisonItem[] = []
                     const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
                     if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
                       showToast('Select at least one scraped source')
@@ -2086,25 +2087,36 @@ export function ResearchPage() {
                         showToast('Select at least one scraped source')
                         return
                       }
-                      openComparison(scrapedItems)
+                      comparisonItemsToOpen = scrapedItems
                     } else {
                       const title = String(selectedRowData[0] ?? '')
                       const specs = headers.map((label, i) => ({
                         label: (label || `Column ${i + 1}`).trim(),
                         value: String(selectedRowData[i] ?? '—'),
                       }))
-                      openComparison([
+                      comparisonItemsToOpen = [
                         {
                           id: `${effectiveTabId}-${selectedRowIndex}`,
                           title,
                           imageUrl: null,
                           specs,
                         },
-                      ])
+                      ]
                     }
+                    openComparison(comparisonItemsToOpen)
                     showToast('Opened comparison')
                     navigate(RESEARCH_COMPARE_PATH, {
                       state: {
+                        initialComparisonItems: comparisonItemsToOpen,
+                        researchCompareRequest:
+                          hasScraped && activeTab
+                            ? {
+                                fileId: activeTab.fileId ?? null,
+                                tabId: activeTab.fileId ? null : effectiveTabId,
+                                rowIndex: selectedRowIndex,
+                                sourceIndices: [...inspectorScrapedSourceSelection].sort((a, b) => a - b),
+                              }
+                            : null,
                         returnTo: '/research',
                         restoreInspector: {
                           mode: 'single',
