@@ -21,7 +21,15 @@ import { getPortfolioSummary, listDataSheetSelections, listPortfolioItems } from
 import type { PortfolioItem, PortfolioSummary } from "@/lib/api"
 import { useBucket } from "@/contexts/BucketContext"
 import { useComparison } from "@/contexts/ComparisonContext"
-import { RESEARCH_COMPARE_PATH } from "@/lib/paths"
+import { COMPARE_NAV_SESSION_KEY, RESEARCH_COMPARE_PATH } from "@/lib/paths"
+
+function markCompareNavFromPortfolio(): void {
+  try {
+    sessionStorage.setItem(COMPARE_NAV_SESSION_KEY, "portfolio")
+  } catch {
+    // ignore
+  }
+}
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -543,6 +551,7 @@ export function PortfolioPage() {
         sourceName: e.vendor_name,
       }))
       openComparison(items)
+      markCompareNavFromPortfolio()
       showToast("Opened comparison")
       navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
     },
@@ -566,6 +575,7 @@ export function PortfolioPage() {
         sourceName: e.vendor_name,
       }))
       openComparison(items)
+      markCompareNavFromPortfolio()
       showToast("Opened comparison")
       navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
     },
@@ -613,6 +623,7 @@ export function PortfolioPage() {
       }
     })
     openComparison(items)
+    markCompareNavFromPortfolio()
     showToast("Opened comparison")
     navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
   }, [
@@ -1211,6 +1222,7 @@ export function PortfolioPage() {
                                               sourceName: e.vendor_name,
                                             },
                                           ])
+                                          markCompareNavFromPortfolio()
                                           showToast("Opened comparison")
                                           navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
                                         }}
@@ -1496,6 +1508,7 @@ export function PortfolioPage() {
                                               sourceName: e.vendor_name,
                                             },
                                           ])
+                                          markCompareNavFromPortfolio()
                                           showToast("Opened comparison")
                                           navigate(RESEARCH_COMPARE_PATH, {
                                             state: { returnTo: "/portfolio" },
