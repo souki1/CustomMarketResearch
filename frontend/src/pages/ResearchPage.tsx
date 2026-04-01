@@ -2477,6 +2477,7 @@ export function ResearchPage() {
                   type="button"
                   onClick={() => {
                     if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    let comparisonItemsToOpen: ComparisonItem[] = []
                     const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
                     if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
                       showToast('Select at least one scraped source')

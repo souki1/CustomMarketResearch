@@ -1,6 +1,7 @@
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
@@ -83,6 +84,44 @@ function shortenUrl(url: string, maxLen = 48): string {
   if (!s) return '—'
   if (s.length <= maxLen) return s
   return `${s.slice(0, Math.max(1, maxLen - 3))}...`
+}
+
+function formatValue(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (val == null) return '—'
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
+}
+
+function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = []
+  for (const [k, v] of Object.entries(obj)) {
+    const label = prefix ? `${prefix}.${k}` : k
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      out.push(...collectScalarSpecs(v as Record<string, unknown>, label))
+    } else {
+      out.push({ label, value: formatValue(v) })
+    }
+  }
+  return out
+}
+
+function isPartNumberKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/\s+/g, '').replace(/-/g, '_')
+  return (k.includes('part') && (k.includes('number') || k.endsWith('part_no') || k.includes('part_no'))) || k === 'partno'
+}
+
+function getFirstPartNumber(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (!isPartNumberKey(k)) continue
+    if (v == null) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v)
+    if (Array.isArray(v)) {
+      const first = v.find((x) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean')
+      if (first != null) return String(first)
+    }
+  }
+  return null
 }
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
@@ -203,7 +242,48 @@ function coercePersistedTabs(raw: unknown): CompareTab[] {
     .filter((x): x is CompareTab => x != null)
 }
 
+function coerceRouteComparisonItems(raw: unknown): ComparisonItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item): ComparisonItem | null => {
+      if (!item || typeof item !== 'object') return null
+      const obj = item as Record<string, unknown>
+      const id = typeof obj.id === 'string' ? obj.id : ''
+      const title = typeof obj.title === 'string' ? obj.title : ''
+      const sourceName = typeof obj.sourceName === 'string' ? obj.sourceName : null
+      const imageUrl = typeof obj.imageUrl === 'string' ? obj.imageUrl : null
+      const specsRaw = Array.isArray(obj.specs) ? obj.specs : []
+      const specs = specsRaw
+        .map((spec) => {
+          if (!spec || typeof spec !== 'object') return null
+          const s = spec as Record<string, unknown>
+          return {
+            label: String(s.label ?? ''),
+            value: String(s.value ?? '—'),
+          }
+        })
+        .filter((x): x is { label: string; value: string } => x != null)
+      if (!id || !title || specs.length === 0) return null
+      return {
+        id,
+        title,
+        specs,
+        sourceName,
+        imageUrl,
+      }
+    })
+    .filter((x): x is ComparisonItem => x != null)
+}
+
+type ResearchCompareRequestState = {
+  fileId: number | null
+  tabId: string | null
+  rowIndex: number
+  sourceIndices: number[]
+}
+
 export function ComparePage() {
+  const location = useLocation()
   const { items, addItems, closeAndClear, openWithItems } = useComparison()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
@@ -266,6 +346,30 @@ export function ComparePage() {
   })
   const hasHydratedCompareStateRef = useRef(false)
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [externalItemsByTab, setExternalItemsByTab] = useState<Record<string, ComparisonItem[]>>({})
+  const consumedRouteItemsRef = useRef(false)
+  const consumedResearchRequestRef = useRef(false)
+  const routeComparisonItems = useMemo(() => {
+    const st = location.state as { initialComparisonItems?: unknown } | null
+    return coerceRouteComparisonItems(st?.initialComparisonItems)
+  }, [location.state])
+  const routeResearchRequest = useMemo(() => {
+    const st = location.state as { researchCompareRequest?: unknown } | null
+    const raw = st?.researchCompareRequest as Partial<ResearchCompareRequestState> | undefined
+    if (!raw || typeof raw !== 'object') return null
+    const rowIndex = Number(raw.rowIndex)
+    if (!Number.isFinite(rowIndex) || rowIndex < 0) return null
+    const sourceIndices = Array.isArray(raw.sourceIndices)
+      ? raw.sourceIndices.filter((v): v is number => Number.isInteger(v) && v >= 0)
+      : []
+    if (sourceIndices.length === 0) return null
+    return {
+      fileId: raw.fileId == null ? null : Number(raw.fileId),
+      tabId: typeof raw.tabId === 'string' ? raw.tabId : null,
+      rowIndex,
+      sourceIndices,
+    } satisfies ResearchCompareRequestState
+  }, [location.state])
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -273,6 +377,56 @@ export function ComparePage() {
   const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
   const activeFileId = activeTab?.data.activeFileId ?? null
   const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
+
+  useEffect(() => {
+    if (consumedRouteItemsRef.current) return
+    if (!activeTab?.id) return
+    if (routeComparisonItems.length === 0) return
+    setExternalItemsByTab((prev) => ({ ...prev, [activeTab.id]: routeComparisonItems }))
+    openWithItems(routeComparisonItems)
+    consumedRouteItemsRef.current = true
+  }, [routeComparisonItems, activeTab?.id, openWithItems])
+
+  useEffect(() => {
+    if (consumedResearchRequestRef.current) return
+    if (!activeTab?.id) return
+    if (!routeResearchRequest) return
+    const token = getToken()
+    if (!token) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listResearchUrls(token, {
+          fileId: routeResearchRequest.fileId ?? undefined,
+          tabId: routeResearchRequest.tabId ?? undefined,
+          tableRowIndex: routeResearchRequest.rowIndex,
+        })
+        if (cancelled) return
+        const scraped = rows[0]?.scraped_data ?? []
+        const mapped = routeResearchRequest.sourceIndices
+          .filter((idx) => idx >= 0 && idx < scraped.length)
+          .map((idx) => {
+            const source = scraped[idx]!
+            return {
+              id: `research-api-${routeResearchRequest.tabId ?? routeResearchRequest.fileId ?? 'row'}-${routeResearchRequest.rowIndex}-${idx}`,
+              title: getFirstPartNumber(source.data) ?? `Source ${idx + 1}`,
+              imageUrl: null,
+              specs: collectScalarSpecs(source.data),
+              sourceName: source.url ? extractDomain(source.url) : '—',
+            } satisfies ComparisonItem
+          })
+        if (mapped.length === 0) return
+        setExternalItemsByTab((prev) => ({ ...prev, [activeTab.id]: mapped }))
+        openWithItems(mapped)
+        consumedResearchRequestRef.current = true
+      } catch {
+        // no-op: keep existing compare state if API fails
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [routeResearchRequest, activeTab?.id, openWithItems])
 
   useEffect(() => {
     if (!fieldPickerOpen) return
@@ -1172,8 +1326,9 @@ export function ComparePage() {
 
   useEffect(() => {
     if (!activeTab) return
+    const external = externalItemsByTab[activeTab.id] ?? []
     if (activeTab.data.selectedFilesData.length === 0) {
-      openWithItems([])
+      openWithItems(external)
       return
     }
     const restored: ComparisonItem[] = []
@@ -1183,8 +1338,14 @@ export function ComparePage() {
       if (rows.length === 0) continue
       restored.push(...buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b)))
     }
-    openWithItems(restored)
-  }, [activeTab, buildItemsFromFileRows, openWithItems])
+    if (restored.length === 0) {
+      openWithItems(external)
+      return
+    }
+    const merged = [...external, ...restored]
+    const deduped = merged.filter((item, idx) => merged.findIndex((x) => x.id === item.id) === idx)
+    openWithItems(deduped)
+  }, [activeTab, buildItemsFromFileRows, openWithItems, externalItemsByTab])
 
   const handleAddSelectedFileRows = useCallback(
     (fileId: number) => {
