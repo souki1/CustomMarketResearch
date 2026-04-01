@@ -137,6 +137,7 @@ class PortfolioItemResponse(BaseModel):
     price: str | None = None
     quantity: int | None = None
     url: str | None = None
+    image_url: str | None = None
 
 
 class PortfolioSummaryResponse(BaseModel):

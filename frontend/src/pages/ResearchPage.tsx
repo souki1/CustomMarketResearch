@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Table2, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -150,14 +150,63 @@ function comparisonItemsFromScrapedSources(
     const row = previewScrapedData[idx]!
     const domain = row.url ? extractDomain(row.url) : '—'
     const title = getFirstPartNumber(row.data) ?? `Source ${idx + 1}`
+    const img = extractImageFromRecord(row.data)
     return {
       id: `research-${effectiveTabId}-r${selectedRowIndex}-s${idx}`,
       title,
-      imageUrl: null,
+      imageUrl: img,
       specs: collectScalarSpecs(row.data),
       sourceName: domain,
     }
   })
+}
+
+/** Stable union of spec labels (order follows first occurrence across items). */
+function orderedUnionLabels(items: ComparisonItem[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    for (const spec of item.specs) {
+      if (!seen.has(spec.label)) {
+        seen.add(spec.label)
+        out.push(spec.label)
+      }
+    }
+  }
+  return out
+}
+
+function specValueForLabel(item: ComparisonItem, label: string): string {
+  const spec = item.specs.find((s) => s.label === label)
+  return spec?.value ?? ''
+}
+
+function extractImageFromRecord(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && isImageUrl(v) && (isImageKey(k) || /image|photo|thumbnail/i.test(k))) {
+      return v.trim()
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const nested = extractImageFromRecord(v as Record<string, unknown>)
+      if (nested) return nested
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'string' && isImageUrl(v)) return v.trim()
+  }
+  return null
+}
+
+function extractImageFromSpecs(specs: ComparisonItem['specs']): string | null {
+  for (const s of specs) {
+    if (isImageKey(s.label) && isImageUrl(s.value)) return String(s.value).trim()
+  }
+  for (const s of specs) {
+    if (isImageUrl(s.value)) return String(s.value).trim()
+  }
+  return null
 }
 
 function isPartNumberKey(key: string): boolean {
@@ -318,7 +367,8 @@ export function ResearchPage() {
       const raw = localStorage.getItem('research-tabs')
       if (!raw) return [newBlankSheet()]
       const parsed = JSON.parse(raw) as TabState[]
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [newBlankSheet()]
+      // Preserve an intentionally empty tab set after user closes all tabs.
+      return Array.isArray(parsed) ? parsed : [newBlankSheet()]
     } catch {
       return [newBlankSheet()]
     }
@@ -387,7 +437,56 @@ export function ResearchPage() {
   const flushSaveRef = useRef<(() => void) | null>(null)
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
-  const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
+  const {
+    openWithItems: openComparison,
+    closeAndClear: clearComparison,
+    items: comparisonItems,
+  } = useComparison()
+  const [comparePreviewModalOpen, setComparePreviewModalOpen] = useState(false)
+  const comparePreviewNavigateStateRef = useRef<unknown>(null)
+  const [comparePreviewLayout, setComparePreviewLayout] = useState<'matrix' | 'cards'>('matrix')
+  /** Matrix view: field labels whose rows are minimized (content hidden). */
+  const [compareMatrixCollapsedFields, setCompareMatrixCollapsedFields] = useState<Set<string>>(
+    () => new Set()
+  )
+  const comparePreviewWasOpenRef = useRef(false)
+
+  const comparePreviewLabels = useMemo(
+    () => orderedUnionLabels(comparisonItems),
+    [comparisonItems]
+  )
+
+  const openComparePreviewModal = useCallback(
+    (items: ComparisonItem[], navigateState: unknown) => {
+      clearComparison()
+      openComparison(items)
+      comparePreviewNavigateStateRef.current = navigateState
+      setComparePreviewModalOpen(true)
+      showToast('Comparison preview ready')
+    },
+    [clearComparison, openComparison, showToast]
+  )
+
+  useEffect(() => {
+    if (!comparePreviewModalOpen) return
+    setComparePreviewLayout(comparisonItems.length >= 2 ? 'matrix' : 'cards')
+  }, [comparePreviewModalOpen, comparisonItems.length])
+
+  useEffect(() => {
+    if (comparePreviewModalOpen && !comparePreviewWasOpenRef.current) {
+      setCompareMatrixCollapsedFields(new Set())
+    }
+    comparePreviewWasOpenRef.current = comparePreviewModalOpen
+  }, [comparePreviewModalOpen])
+
+  useEffect(() => {
+    if (!comparePreviewModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setComparePreviewModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [comparePreviewModalOpen])
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
   const userHasEditedRef = useRef(false)
@@ -746,25 +845,29 @@ export function ResearchPage() {
   const closeTab = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation()
-      const idx = tabs.findIndex((t) => t.id === id)
-      if (idx < 0) return
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.id === id)
+        if (idx < 0) return prev
 
-      const tab = tabs[idx]
-      const next = tabs.filter((t) => t.id !== id)
-      setTabs(next)
+        const tab = prev[idx]
+        const next = prev.filter((t) => t.id !== id)
 
-      // If this tab was backed by a workspace file, clear any file-related URL params
-      if (tab.fileId != null) {
-        lastClosedFileIdRef.current = tab.fileId
-        setSearchParams({}, { replace: true })
-      }
+        // If this tab was backed by a workspace file, clear any file-related URL params.
+        if (tab?.fileId != null) {
+          lastClosedFileIdRef.current = tab.fileId
+          setSearchParams({}, { replace: true })
+        }
 
-      if (activeTabId === id) {
-        const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
-        setActiveTabId(nextActive?.id ?? null)
-      }
+        setActiveTabId((currentActiveId) => {
+          if (currentActiveId !== id) return currentActiveId
+          const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
+          return nextActive?.id ?? null
+        })
+
+        return next
+      })
     },
-    [tabs, activeTabId, setSearchParams]
+    [setSearchParams]
   )
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
@@ -1017,11 +1120,13 @@ export function ResearchPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isInspectorOpen) closeInspector()
+      if (e.key !== 'Escape' || !isInspectorOpen) return
+      if (comparePreviewModalOpen) return
+      closeInspector()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isInspectorOpen, closeInspector])
+  }, [isInspectorOpen, comparePreviewModalOpen, closeInspector])
 
   useEffect(() => {
     if (!filterOpen) return
@@ -1197,18 +1302,15 @@ export function ResearchPage() {
       ? content[1 + selectedRowIndex] ?? null
       : null
 
-  const researchAiContext = useMemo(
-    () => buildResearchInspectorContext(headers, selectedRowData, previewScrapedData),
-    [headers, selectedRowData, previewScrapedData]
-  )
-  const researchAiSessionLabel = useMemo(() => {
+  const researchAiContext = buildResearchInspectorContext(headers, selectedRowData, previewScrapedData)
+  const researchAiSessionLabel = (() => {
     const primary = selectedRowData?.[0]
     const label =
       primary != null && String(primary).trim()
         ? String(primary).trim()
         : `Row ${(selectedRowIndex ?? 0) + 1}`
     return `Research · ${label.slice(0, 100)}`
-  }, [selectedRowData, selectedRowIndex])
+  })()
   const researchAiTabRowKey = activeTab?.fileId
     ? `file:${activeTab.fileId}:row:${selectedRowIndex ?? 0}`
     : `tab:${effectiveTabId ?? 'sheet'}:row:${selectedRowIndex ?? 0}`
@@ -1250,6 +1352,317 @@ export function ResearchPage() {
               >
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {comparePreviewModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="compare-preview-title"
+          onClick={(e) => e.target === e.currentTarget && setComparePreviewModalOpen(false)}
+        >
+          <div
+            className="flex h-[min(90vh,calc(100dvh-2rem))] max-h-[min(90vh,calc(100dvh-2rem))] min-h-0 w-full max-w-[min(120rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/30 px-4 py-3 sm:px-5">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/60"
+                  aria-hidden
+                >
+                  <GitCompare className="h-5 w-5" strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h2 id="compare-preview-title" className="text-base font-semibold tracking-tight text-slate-900">
+                    Compare preview
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {comparisonItems.length === 0
+                      ? 'No sources loaded'
+                      : comparisonItems.length === 1
+                        ? '1 source — review fields below'
+                        : `${comparisonItems.length} sources — scroll vertically for fields, horizontally for vendors`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {comparisonItems.length >= 2 && (
+                  <div
+                    className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+                    role="group"
+                    aria-label="Comparison layout"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setComparePreviewLayout('matrix')}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        comparePreviewLayout === 'matrix'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Table2 className="h-3.5 w-3.5" aria-hidden />
+                      Matrix
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setComparePreviewLayout('cards')}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        comparePreviewLayout === 'cards'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+                      Cards
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setComparePreviewModalOpen(false)}
+                  className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200/80 hover:text-slate-900"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 p-3 sm:p-4">
+              {comparisonItems.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  No items to compare.
+                </p>
+              ) : comparePreviewLayout === 'matrix' && comparisonItems.length >= 2 ? (
+                <div
+                  className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-slate-200/90 bg-white shadow-sm [-webkit-overflow-scrolling:touch]"
+                  role="region"
+                  aria-label="Side-by-side field comparison"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50/90 px-3 py-2">
+                    <span className="text-[11px] text-slate-600">
+                      Use the arrow beside each field to minimize or expand that row.
+                    </span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCompareMatrixCollapsedFields(new Set())}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Expand all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompareMatrixCollapsedFields(new Set(comparePreviewLabels))
+                        }
+                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      >
+                        Minimize all
+                      </button>
+                    </div>
+                  </div>
+                  <table className="w-max min-w-full border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/95">
+                        <th
+                          scope="col"
+                          className="sticky top-0 left-0 z-30 min-w-[140px] max-w-[200px] border-r border-slate-200 bg-slate-50/95 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)] sm:min-w-[160px]"
+                        >
+                          Field
+                        </th>
+                        {comparisonItems.map((item) => {
+                          const thumb = item.imageUrl ?? extractImageFromSpecs(item.specs)
+                          return (
+                            <th
+                              key={item.id}
+                              scope="col"
+                              className="sticky top-0 z-20 min-w-[200px] max-w-[280px] border-r border-slate-100 bg-slate-50/95 px-3 py-3 align-top shadow-[0_1px_0_0_rgb(226_232_240)] last:border-r-0 sm:min-w-[220px]"
+                            >
+                              <div className="flex flex-col gap-2">
+                                {thumb ? (
+                                  <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                    <img
+                                      src={thumb}
+                                      alt={item.title ? `${item.title} — preview` : 'Product preview'}
+                                      className="h-full w-full object-contain"
+                                      loading="lazy"
+                                    />
+                                  </div>
+                                ) : null}
+                                <div className="min-w-0 text-center">
+                                  <div className="line-clamp-2 text-xs font-semibold leading-snug text-slate-900">
+                                    {item.title || '—'}
+                                  </div>
+                                  {item.sourceName != null && item.sourceName !== '' && (
+                                    <div className="mt-1 truncate text-[11px] text-emerald-700">{item.sourceName}</div>
+                                  )}
+                                </div>
+                              </div>
+                            </th>
+                          )
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparePreviewLabels.map((label, rowIdx) => {
+                        const rowBg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                        const collapsed = compareMatrixCollapsedFields.has(label)
+                        return (
+                          <tr key={label} className={`border-b border-slate-100/80 ${rowBg}`}>
+                            <th
+                              scope="row"
+                              className={`sticky left-0 z-10 max-w-[200px] border-r border-slate-200 px-2 py-1.5 text-left text-xs font-medium text-slate-600 shadow-[2px_0_8px_-2px_rgba(15,23,42,0.06)] sm:px-3 ${rowBg}`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCompareMatrixCollapsedFields((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(label)) next.delete(label)
+                                    else next.add(label)
+                                    return next
+                                  })
+                                }
+                                className="flex w-full min-w-0 items-start gap-1.5 rounded-md py-0.5 text-left text-slate-700 hover:bg-slate-200/50"
+                                aria-expanded={!collapsed}
+                                aria-label={
+                                  collapsed ? `Expand field row: ${label}` : `Minimize field row: ${label}`
+                                }
+                              >
+                                {collapsed ? (
+                                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                ) : (
+                                  <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                )}
+                                <span className="min-w-0 break-words leading-snug">{label}</span>
+                              </button>
+                            </th>
+                            {comparisonItems.map((item) => {
+                              const v = specValueForLabel(item, label)
+                              const display = v.trim() === '' ? '—' : v
+                              return (
+                                <td
+                                  key={`${item.id}-${label}`}
+                                  className={`max-w-[280px] border-r border-slate-100 px-3 align-top text-slate-800 last:border-r-0 ${rowBg} ${
+                                    collapsed ? 'py-1.5' : 'py-2.5'
+                                  }`}
+                                >
+                                  {collapsed ? (
+                                    <span className="text-xs text-slate-400" aria-hidden>
+                                      …
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="line-clamp-6 break-words text-sm leading-snug"
+                                      title={display}
+                                    >
+                                      {display}
+                                    </span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [-webkit-overflow-scrolling:touch]"
+                  role="region"
+                  aria-label="Source cards comparison"
+                >
+                  <div
+                    className={`mx-auto grid w-full max-w-full gap-4 pb-1 ${
+                      comparisonItems.length === 1
+                        ? 'grid-cols-1'
+                        : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                    }`}
+                  >
+                  {comparisonItems.map((item) => {
+                    const thumb = item.imageUrl ?? extractImageFromSpecs(item.specs)
+                    return (
+                      <article
+                        key={item.id}
+                        className="flex flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/5"
+                      >
+                        <div className="shrink-0 border-b border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 py-3">
+                          {thumb ? (
+                            <div className="mb-2 flex justify-center">
+                              <div className="h-24 w-24 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <img
+                                  src={thumb}
+                                  alt={item.title ? `${item.title} — preview` : 'Product preview'}
+                                  className="h-full w-full object-contain"
+                                  loading="lazy"
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          <h3 className="text-center text-sm font-semibold leading-snug text-slate-900">
+                            {item.title || '—'}
+                          </h3>
+                          {item.sourceName != null && item.sourceName !== '' && (
+                            <p className="mt-1 text-center text-[11px] font-medium text-emerald-700">
+                              {item.sourceName}
+                            </p>
+                          )}
+                        </div>
+                        <dl className="min-w-0 space-y-2.5 p-3">
+                          {item.specs.map((spec, idx) => (
+                            <div key={`${item.id}-${spec.label}-${idx}`} className="min-w-0 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                {spec.label}
+                              </dt>
+                              <dd className="mt-0.5 break-words text-sm text-slate-800">{spec.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </article>
+                    )
+                  })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+              <p className="text-xs text-slate-500">
+                {comparisonItems.length > 0 && (
+                  <>
+                    <span className="font-medium text-slate-700">{comparisonItems.length}</span> source
+                    {comparisonItems.length === 1 ? '' : 's'} in preview
+                  </>
+                )}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setComparePreviewModalOpen(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComparePreviewModalOpen(false)
+                    navigate(RESEARCH_COMPARE_PATH, {
+                      state: comparePreviewNavigateStateRef.current ?? { returnTo: '/research' },
+                    })
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                >
+                  Open full Compare
+                  <GitCompare className="h-4 w-4 opacity-90" aria-hidden />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1525,8 +1938,7 @@ export function ResearchPage() {
           type="button"
           onClick={() => {
             if (selectedRows.size === 0 || !content || !effectiveTabId) return
-            clearComparison()
-            const comparisonItems = Array.from(selectedRows)
+            const items = Array.from(selectedRows)
               .map((rowIndex) => {
                 const row = content[rowIndex + 1]
                 if (!row) return null
@@ -1544,17 +1956,13 @@ export function ResearchPage() {
                 }
               })
               .filter((x): x is NonNullable<typeof x> => x != null)
-            openComparison(comparisonItems)
-            showToast('Opened comparison')
-            navigate(RESEARCH_COMPARE_PATH, {
-              state: {
-                returnTo: '/research',
-                restoreResearchSelection: {
-                  selectedRows: Array.from(selectedRows),
-                  activeTabId: effectiveTabId,
-                  page: currentPage,
-                  rowsPerPage,
-                },
+            openComparePreviewModal(items, {
+              returnTo: '/research',
+              restoreResearchSelection: {
+                selectedRows: Array.from(selectedRows),
+                activeTabId: effectiveTabId,
+                page: currentPage,
+                rowsPerPage,
               },
             })
           }}
@@ -2075,7 +2483,15 @@ export function ResearchPage() {
                       showToast('Select at least one scraped source')
                       return
                     }
-                    clearComparison()
+                    const navigateState = {
+                      returnTo: '/research',
+                      restoreInspector: {
+                        mode: 'single' as const,
+                        selectedRowIndex,
+                        multiRowIndices: [] as number[],
+                        compareSelection: [] as number[],
+                      },
+                    }
                     if (hasScraped) {
                       const scrapedItems = comparisonItemsFromScrapedSources(
                         previewScrapedData,
@@ -2087,45 +2503,25 @@ export function ResearchPage() {
                         showToast('Select at least one scraped source')
                         return
                       }
-                      comparisonItemsToOpen = scrapedItems
+                      openComparePreviewModal(scrapedItems, navigateState)
                     } else {
                       const title = String(selectedRowData[0] ?? '')
                       const specs = headers.map((label, i) => ({
                         label: (label || `Column ${i + 1}`).trim(),
                         value: String(selectedRowData[i] ?? '—'),
                       }))
-                      comparisonItemsToOpen = [
-                        {
-                          id: `${effectiveTabId}-${selectedRowIndex}`,
-                          title,
-                          imageUrl: null,
-                          specs,
-                        },
-                      ]
+                      openComparePreviewModal(
+                        [
+                          {
+                            id: `${effectiveTabId}-${selectedRowIndex}`,
+                            title,
+                            imageUrl: null,
+                            specs,
+                          },
+                        ],
+                        navigateState
+                      )
                     }
-                    openComparison(comparisonItemsToOpen)
-                    showToast('Opened comparison')
-                    navigate(RESEARCH_COMPARE_PATH, {
-                      state: {
-                        initialComparisonItems: comparisonItemsToOpen,
-                        researchCompareRequest:
-                          hasScraped && activeTab
-                            ? {
-                                fileId: activeTab.fileId ?? null,
-                                tabId: activeTab.fileId ? null : effectiveTabId,
-                                rowIndex: selectedRowIndex,
-                                sourceIndices: [...inspectorScrapedSourceSelection].sort((a, b) => a - b),
-                              }
-                            : null,
-                        returnTo: '/research',
-                        restoreInspector: {
-                          mode: 'single',
-                          selectedRowIndex,
-                          multiRowIndices: [],
-                          compareSelection: [],
-                        },
-                      },
-                    })
                   }}
                   className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                 >
@@ -2235,8 +2631,7 @@ export function ResearchPage() {
                             showToast('Select at least one item to compare')
                             return
                           }
-                          clearComparison()
-                          const comparisonItems = chosen
+                          const items = chosen
                             .map((rowIndex) => {
                               const row = content[rowIndex + 1]
                               if (!row) return null
@@ -2251,22 +2646,19 @@ export function ResearchPage() {
                               }
                             })
                             .filter((x): x is NonNullable<typeof x> => x != null)
-                          openComparison(comparisonItems)
-                          navigate(RESEARCH_COMPARE_PATH, {
-                            state: {
-                              returnTo: '/research',
-                              restoreInspector: {
-                                mode: 'multi',
-                                selectedRowIndex,
-                                multiRowIndices: inspectorMultiRowIndices,
-                                compareSelection: chosen,
-                              },
-                              restoreResearchSelection: {
-                                selectedRows: Array.from(selectedRows),
-                                activeTabId: effectiveTabId,
-                                page: currentPage,
-                                rowsPerPage,
-                              },
+                          openComparePreviewModal(items, {
+                            returnTo: '/research',
+                            restoreInspector: {
+                              mode: 'multi' as const,
+                              selectedRowIndex,
+                              multiRowIndices: inspectorMultiRowIndices,
+                              compareSelection: chosen,
+                            },
+                            restoreResearchSelection: {
+                              selectedRows: Array.from(selectedRows),
+                              activeTabId: effectiveTabId,
+                              page: currentPage,
+                              rowsPerPage,
                             },
                           })
                         }}

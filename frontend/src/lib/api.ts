@@ -367,6 +367,7 @@ export type PortfolioItem = {
   price: string | null
   quantity: number | null
   url: string | null
+  image_url?: string | null
 }
 
 export async function listPortfolioItems(token: string, selectionId: number): Promise<PortfolioItem[]> {
