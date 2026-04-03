@@ -1,4 +1,12 @@
+import { getToken } from './auth'
+
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+
+/** Always read JWT from storage so requests never use a stale token captured in React closures. */
+function bearerAuthHeader(): Record<string, string> {
+  const t = getToken()
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
 
 export type SignUpPayload = { email: string; password: string; display_name?: string }
 export type SignInPayload = { email: string; password: string }
@@ -20,12 +28,13 @@ async function request<T>(
   path: string,
   options: RequestInit & { token?: string } = {}
 ): Promise<T> {
-  const { token, ...init } = options
+  const { token: _ignoredExplicitToken, ...init } = options
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(init.headers as Record<string, string>),
+    ...bearerAuthHeader(),
   }
-  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+  void _ignoredExplicitToken
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -75,7 +84,8 @@ export function profilePhotoUrl(url: string | null | undefined): string | null {
 }
 
 export async function uploadProfilePhoto(file: File, token: string): Promise<MeResponse> {
-  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
   const form = new FormData()
   form.append('file', file)
   const res = await fetch(`${API_BASE}/auth/me/photo`, {
@@ -159,8 +169,8 @@ export async function uploadWorkspaceCsv(
   form.append('file', file)
   if (parentId != null) form.append('parent_id', String(parentId))
 
-  const headers: HeadersInit = {}
-  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
 
   const res = await fetch(`${API_BASE}/workspace/upload-csv`, {
     method: 'POST',
@@ -184,8 +194,8 @@ export async function uploadWorkspaceImage(
   form.append('file', file)
   if (parentId != null) form.append('parent_id', String(parentId))
 
-  const headers: HeadersInit = {}
-  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
 
   const res = await fetch(`${API_BASE}/workspace/upload-image`, {
     method: 'POST',
@@ -213,7 +223,8 @@ export async function moveWorkspaceItem(
 }
 
 export async function getWorkspaceFileContent(itemId: number, token: string): Promise<string> {
-  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, { headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -368,10 +379,28 @@ export type PortfolioItem = {
   quantity: number | null
   url: string | null
   image_url?: string | null
+  row_index?: number | null
 }
 
-export async function listPortfolioItems(token: string, selectionId: number): Promise<PortfolioItem[]> {
-  return request<PortfolioItem[]>(`/portfolio/items?selection_id=${selectionId}`, { token })
+export type ListPortfolioItemsOptions = {
+  /** Omit to return merged offers across all saved datasheet selections (same dedupe as portfolio summary). */
+  selectionId?: number
+  rowIndex?: number
+}
+
+export async function listPortfolioItems(
+  token: string,
+  options?: ListPortfolioItemsOptions
+): Promise<PortfolioItem[]> {
+  const params = new URLSearchParams()
+  if (options?.selectionId != null) {
+    params.set('selection_id', String(options.selectionId))
+  }
+  if (options?.rowIndex != null) {
+    params.set('row_index', String(options.rowIndex))
+  }
+  const q = params.toString() ? `?${params}` : ''
+  return request<PortfolioItem[]>(`/portfolio/items${q}`, { token })
 }
 
 export type PortfolioSummary = {
@@ -421,7 +450,8 @@ export async function upsertCompareState(
 }
 
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {
-  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -508,6 +538,104 @@ export async function getAiSessionMessages(
 
 
 // ---------------------------------------------------------------------------
+// Purchase orders
+// ---------------------------------------------------------------------------
+
+export type PurchaseOrderStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'sent'
+  | 'partial'
+  | 'closed'
+
+export type PurchaseOrderLinePayload = {
+  id: string
+  sku: string
+  description: string
+  qty: number
+  uom: string
+  unit_price: number
+  /** Product or vendor page URL (e.g. from scraped research) */
+  vendor_url?: string
+}
+
+export type PurchaseOrderCreatePayload = {
+  number: string
+  vendor_name: string
+  vendor_email: string
+  issue_date: string
+  required_by: string
+  status: PurchaseOrderStatus
+  ship_to: string
+  payment_terms: string
+  notes: string
+  lines: PurchaseOrderLinePayload[]
+  /** Saved datasheet selection used to populate lines from scraped data */
+  source_selection_id?: number | null
+}
+
+export type PurchaseOrderUpdatePayload = Partial<Omit<PurchaseOrderCreatePayload, 'lines'>> & {
+  lines?: PurchaseOrderLinePayload[]
+}
+
+export type PurchaseOrderResponse = {
+  id: number
+  owner_id: number
+  number: string
+  vendor_name: string
+  vendor_email: string
+  issue_date: string
+  required_by: string
+  status: PurchaseOrderStatus
+  ship_to: string
+  payment_terms: string
+  notes: string
+  lines: PurchaseOrderLinePayload[]
+  source_selection_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export async function listPurchaseOrders(token: string): Promise<PurchaseOrderResponse[]> {
+  return request<PurchaseOrderResponse[]>('/purchase-orders', { token })
+}
+
+export async function createPurchaseOrder(
+  token: string,
+  payload: PurchaseOrderCreatePayload
+): Promise<PurchaseOrderResponse> {
+  return request<PurchaseOrderResponse>('/purchase-orders', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updatePurchaseOrder(
+  token: string,
+  id: number,
+  payload: PurchaseOrderUpdatePayload
+): Promise<PurchaseOrderResponse> {
+  return request<PurchaseOrderResponse>(`/purchase-orders/${id}`, {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deletePurchaseOrder(token: string, id: number): Promise<void> {
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
+  const res = await fetch(`${API_BASE}/purchase-orders/${id}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------
 
@@ -559,7 +687,8 @@ export async function updateReport(
 }
 
 export async function deleteReport(token: string, id: number): Promise<void> {
-  const headers: HeadersInit = { Authorization: `Bearer ${token}` }
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
   const res = await fetch(`${API_BASE}/reports/${id}`, { method: 'DELETE', headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -569,8 +698,9 @@ export async function deleteReport(token: string, id: number): Promise<void> {
 }
 
 async function fetchBlob(path: string, token: string): Promise<Blob> {
+  void token
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: bearerAuthHeader(),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))

@@ -191,7 +191,7 @@ def _add_block(doc: Document, block: dict[str, Any]) -> None:
         run.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
     elif btype == "table":
-        rows_data: list[list[str]] = block.get("rows", [])
+        rows_data: list[list[Any]] = block.get("rows", [])
         if not rows_data:
             return
         show_header = block.get("showHeader", True)
@@ -204,9 +204,17 @@ def _add_block(doc: Document, block: dict[str, Any]) -> None:
 
         for r_idx, row_data in enumerate(rows_data):
             row_cells = table.rows[r_idx].cells
-            for c_idx, cell_text in enumerate(row_data):
-                if c_idx < n_cols:
-                    row_cells[c_idx].text = cell_text
+            for c_idx in range(n_cols):
+                cell = row_cells[c_idx]
+                raw = row_data[c_idx] if c_idx < len(row_data) else ""
+                if isinstance(raw, dict) and raw.get("type") == "link":
+                    label = str(raw.get("label", "Link")).strip()
+                    cell.text = label
+                    if cell.paragraphs:
+                        for p in cell.paragraphs:
+                            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                else:
+                    cell.text = "" if raw is None else str(raw)
 
         if show_header and n_rows > 0:
             for cell in table.rows[0].cells:
@@ -374,16 +382,53 @@ def _add_pdf_block(
         return
 
     if btype == "table":
-        rows_data: list[list[str]] = block.get("rows", [])
+        rows_data: list[list[Any]] = block.get("rows", [])
         if rows_data:
             n_cols = max((len(r) for r in rows_data), default=1)
-            normalized = []
-            for row in rows_data:
-                next_row = [str(cell) for cell in row[:n_cols]]
-                if len(next_row) < n_cols:
-                    next_row.extend([""] * (n_cols - len(next_row)))
+            cell_style = ParagraphStyle(
+                name="TableCellInner",
+                parent=styles["body"],
+                fontSize=9,
+                leading=11,
+                textColor=colors.HexColor("#374151"),
+            )
+            normalized: list[list[Any]] = []
+            show_hdr = bool(block.get("showHeader", True))
+            for r_idx, row in enumerate(rows_data):
+                next_row: list[Any] = []
+                is_header_row = show_hdr and r_idx == 0
+                for c_idx in range(n_cols):
+                    cell = row[c_idx] if c_idx < len(row) else ""
+                    if isinstance(cell, dict) and cell.get("type") == "link":
+                        href = str(cell.get("href", "")).strip()
+                        label = str(cell.get("label", "Link")).strip() or "Link"
+                        if href:
+                            href_esc = (
+                                href.replace("&", "&amp;")
+                                .replace('"', "&quot;")
+                                .replace("<", "&lt;")
+                                .replace(">", "&gt;")
+                            )
+                            label_esc = _pdf_text(label)
+                            inner = f'<a href="{href_esc}" color="#2563EB">{label_esc}</a>'
+                            if is_header_row:
+                                inner = f"<b>{inner}</b>"
+                            next_row.append(Paragraph(inner, cell_style))
+                        else:
+                            t = _pdf_text(label)
+                            next_row.append(Paragraph(f"<b>{t}</b>" if is_header_row else t, cell_style))
+                    else:
+                        t = _pdf_text(cell)
+                        next_row.append(Paragraph(f"<b>{t}</b>" if is_header_row else t, cell_style))
                 normalized.append(next_row)
-            tbl = Table(normalized, hAlign="CENTER")
+            col_widths = block.get("colWidths")
+            kw: dict[str, Any] = {"hAlign": "CENTER"}
+            if isinstance(col_widths, list) and len(col_widths) == n_cols:
+                try:
+                    kw["colWidths"] = [float(w) * inch for w in col_widths]
+                except (TypeError, ValueError):
+                    pass
+            tbl = Table(normalized, **kw)
             style = TableStyle([
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D4D4D8")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),

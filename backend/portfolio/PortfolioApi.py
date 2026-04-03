@@ -418,16 +418,20 @@ async def _load_deduped_portfolio_items_for_selection(
     #    the entire row (some sheets may place part numbers in different columns).
     research_urls_cursor = mongo_db["research_urls"].find(
         {"owner_id": owner_id, "selection_id": selection_id},
-        {"id": 1, "row_data": 1},
+        {"id": 1, "row_data": 1, "row_index": 1},
     )
     research_url_ids: list[int] = []
     parts_by_research_url_id: dict[int, list[str]] = {}
+    rid_to_row_index: dict[int, int] = {}
     async for doc in research_urls_cursor:
         if "id" in doc:
             rid = int(doc["id"])
             research_url_ids.append(rid)
             row_data = doc.get("row_data")
             parts_by_research_url_id[rid] = _extract_parts_from_row_data(row_data)
+            ri = doc.get("row_index")
+            if ri is not None:
+                rid_to_row_index[rid] = int(ri)
 
     if not research_url_ids:
         return []
@@ -452,6 +456,7 @@ async def _load_deduped_portfolio_items_for_selection(
     # Iterate over all `research_urls` for this selection so the UI can list *all* parts from `row_data`
     # even when scraping/extraction is missing for some rows.
     for rid_int in research_url_ids:
+        rj = rid_to_row_index.get(rid_int)
         forced_parts = parts_by_research_url_id.get(rid_int, [])
         scraped_docs_for_rid = scraped_by_rid.get(rid_int, [])
 
@@ -466,6 +471,7 @@ async def _load_deduped_portfolio_items_for_selection(
                         "quantity": None,
                         "url": None,
                         "image_url": None,
+                        "row_index": rj,
                     },
                 )
             continue
@@ -494,7 +500,7 @@ async def _load_deduped_portfolio_items_for_selection(
                                 "image_url": None,
                             },
                         )
-                items.extend(url_items)
+                items.extend({**x, "row_index": rj} for x in url_items)
                 continue
 
             # Best-effort association of extracted items to the "search parts" from the sheet row.
@@ -597,7 +603,7 @@ async def _load_deduped_portfolio_items_for_selection(
                             }
                         )
 
-            items.extend(url_items)
+            items.extend({**x, "row_index": rj} for x in url_items)
 
     # 2b) Drop bogus scraped prices (0 or negative); keep row but clear price so UI skips them for "best".
     items = [{**it, "price": _sanitize_item_price(it.get("price"))} for it in items]
@@ -622,6 +628,7 @@ async def _load_deduped_portfolio_items_for_selection(
             it.get("quantity"),
             it.get("url"),
             it.get("image_url"),
+            it.get("row_index"),
         )
         if key in seen:
             continue
@@ -631,15 +638,54 @@ async def _load_deduped_portfolio_items_for_selection(
     return deduped[:500]
 
 
+async def _merge_portfolio_items_all_selections(
+    mongo_db: AsyncIOMotorDatabase,
+    owner_id: int,
+) -> list[dict[str, Any]]:
+    """Same merge as portfolio summary: one combined list across all saved datasheet selections."""
+    sel_cursor = mongo_db["data_sheet_selections"].find({"owner_id": owner_id}, {"id": 1})
+    selection_ids: list[int] = []
+    async for doc in sel_cursor:
+        if "id" in doc:
+            selection_ids.append(int(doc["id"]))
+
+    if not selection_ids:
+        return []
+
+    merged: list[dict[str, Any]] = []
+    seen_merge: set[tuple[Any, ...]] = set()
+    for sid in selection_ids:
+        batch = await _load_deduped_portfolio_items_for_selection(mongo_db, owner_id, sid)
+        for it in batch:
+            key = (
+                it.get("part_number"),
+                it.get("vendor_name"),
+                it.get("price"),
+                it.get("quantity"),
+            )
+            if key in seen_merge:
+                continue
+            seen_merge.add(key)
+            merged.append(it)
+
+    return merged[:500]
+
+
 @router.get("/items", response_model=list[PortfolioItemResponse])
 async def list_portfolio_items(
-    selection_id: int,
+    selection_id: int | None = None,
+    row_index: int | None = None,
     user: User = Depends(get_current_user),
     mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
-    deduped = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, selection_id)
+    if selection_id is None:
+        deduped = await _merge_portfolio_items_all_selections(mongo_db, user.id)
+    else:
+        deduped = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, selection_id)
+    if row_index is not None:
+        deduped = [it for it in deduped if it.get("row_index") == row_index]
     return [PortfolioItemResponse(**it) for it in deduped]
 
 
@@ -655,29 +701,8 @@ async def get_portfolio_summary(
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
 
-    sel_cursor = mongo_db["data_sheet_selections"].find({"owner_id": user.id}, {"id": 1})
-    selection_ids: list[int] = []
-    async for doc in sel_cursor:
-        if "id" in doc:
-            selection_ids.append(int(doc["id"]))
-
-    if not selection_ids:
+    merged = await _merge_portfolio_items_all_selections(mongo_db, user.id)
+    if not merged:
         return PortfolioSummaryResponse()
-
-    merged: list[dict[str, Any]] = []
-    seen_merge: set[tuple[Any, ...]] = set()
-    for sid in selection_ids:
-        batch = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, sid)
-        for it in batch:
-            key = (
-                it.get("part_number"),
-                it.get("vendor_name"),
-                it.get("price"),
-                it.get("quantity"),
-            )
-            if key in seen_merge:
-                continue
-            seen_merge.add(key)
-            merged.append(it)
 
     return PortfolioSummaryResponse(**_aggregate_summary_from_items(merged))

@@ -376,7 +376,9 @@ export function PortfolioPage() {
       if (selections.length === 0) return
       const [summary, ...results] = await Promise.all([
         getPortfolioSummary(token).catch(() => null),
-        ...selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[])),
+        ...selections.map((s) =>
+          listPortfolioItems(token, { selectionId: s.id }).catch(() => [] as PortfolioItem[]),
+        ),
       ])
       setPortfolioSummary(summary)
       const seen = new Set<string>()

@@ -596,7 +596,7 @@ export function ComparePage() {
         const selections = await listDataSheetSelections(token)
         if (cancelled || selections.length === 0) return
         const batches = await Promise.all(
-          selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[]))
+          selections.map((s) => listPortfolioItems(token, { selectionId: s.id }).catch(() => [] as PortfolioItem[]))
         )
         if (cancelled) return
         const nums = new Set<string>()
