@@ -14,6 +14,7 @@ from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
 from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
+from workspace_reports_folder import get_or_create_reports_folder_id
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -50,6 +51,9 @@ async def list_items(
 ):
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    if parent_id is None:
+        await get_or_create_reports_folder_id(mongo_db, user.id)
 
     query: dict = {"owner_id": user.id}
     if parent_id is None:
@@ -341,6 +345,11 @@ async def delete_item(
     )
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.get("is_reports_folder"):
+        raise HTTPException(
+            status_code=400,
+            detail="The Reports folder cannot be deleted.",
+        )
     # If folder, check it has no children
     if item["is_folder"]:
         child = await mongo_db["workspace_items"].find_one({"parent_id": item_id})
@@ -373,6 +382,11 @@ async def move_item(
     )
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.get("is_reports_folder"):
+        raise HTTPException(
+            status_code=400,
+            detail="The Reports folder cannot be moved.",
+        )
 
     new_parent_id = payload.parent_id
 

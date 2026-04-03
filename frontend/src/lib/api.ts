@@ -656,6 +656,7 @@ export type ReportResponse = {
   blocks: Array<Record<string, unknown>>
   created_at: string
   updated_at: string
+  workspace_parent_id?: number | null
 }
 
 export async function createReport(token: string, payload: ReportPayload): Promise<ReportResponse> {

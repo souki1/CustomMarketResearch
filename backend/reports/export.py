@@ -7,6 +7,7 @@ Report export engine.
 
 from __future__ import annotations
 
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,9 +39,6 @@ from reportlab.platypus import (
 
 _DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = _DIR / "templates" / "report_template.docx"
-GENERATED_DIR = _DIR / "generated"
-
-GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 _ALIGN_MAP = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -228,13 +226,12 @@ def _add_block(doc: Document, block: dict[str, Any]) -> None:
         p.alignment = align
 
 
-def generate_docx(
+def render_docx_bytes(
     title: str,
     blocks: list[dict[str, Any]],
-    report_id: int,
-) -> Path:
+) -> bytes:
     """
-    Render report blocks into a .docx file.
+    Render report blocks into a .docx file in memory.
 
     1. Load the docxtpl template and render title / date.
     2. Remove the body marker paragraph.
@@ -258,9 +255,9 @@ def generate_docx(
     for block in blocks:
         _add_block(doc, block)
 
-    out_path = GENERATED_DIR / f"report_{report_id}.docx"
-    doc.save(str(out_path))
-    return out_path
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 
 def _pdf_alignment(block: dict[str, Any]) -> int:
@@ -450,17 +447,16 @@ def _add_pdf_block(
     story.append(Spacer(1, 0.08 * inch))
 
 
-async def generate_pdf(
+def render_pdf_bytes(
     title: str,
     blocks: list[dict[str, Any]],
-    report_id: int,
-) -> Path:
+) -> bytes:
     """
-    Generate PDF directly from blocks using reportlab.
+    Generate PDF directly from blocks using reportlab (in memory).
     """
-    final_path = GENERATED_DIR / f"report_{report_id}.pdf"
+    buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        str(final_path),
+        buffer,
         pagesize=A4,
         leftMargin=0.75 * inch,
         rightMargin=0.75 * inch,
@@ -556,4 +552,4 @@ async def generate_pdf(
         _add_pdf_block(story, block, styles)
 
     doc.build(story)
-    return final_path
+    return buffer.getvalue()

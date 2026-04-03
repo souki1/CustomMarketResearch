@@ -15,6 +15,7 @@ type AllFilesViewProps = {
   onNewFolderClick: () => void
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
+  onNewReportClick?: () => void
   onImportCsvClick?: () => void
   onUploadFileClick?: () => void
   onMoveClick?: (row: FileTableRow) => void
@@ -30,6 +31,7 @@ export function AllFilesView({
   onNewFolderClick,
   onNewFileClick,
   onNewResearchClick,
+  onNewReportClick,
   onImportCsvClick,
   onUploadFileClick,
   onMoveClick,
@@ -94,6 +96,7 @@ export function AllFilesView({
             onFolderClick={onNewFolderClick}
             onFileClick={onNewFileClick}
             onNewResearchClick={onNewResearchClick}
+            onNewReportClick={onNewReportClick}
             onImportCsvClick={onImportCsvClick ?? onNewFileClick}
             onUploadFileClick={onUploadFileClick ?? onNewFileClick}
           />

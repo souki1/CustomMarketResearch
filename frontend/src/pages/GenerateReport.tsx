@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ReportGalleryHome, ReportStudio } from '@/components/reports'
 import {
   aiGroqChat,
   createReport,
   deleteReport,
+  getReport,
   listDataSheetSelections,
   listPortfolioItems,
   listReports,
@@ -295,6 +297,7 @@ async function loadReportDataset(token: string): Promise<ReportDataset> {
 
 export function GenerateReportPage() {
   const token = useMemo(() => getToken(), [])
+  const [searchParams, setSearchParams] = useSearchParams()
   const [studioMode, setStudioMode] = useState<StudioMode>('home')
   const [tab, setTab] = useState<'list' | 'create'>('list')
   const [reports, setReports] = useState<SavedReport[]>([])
@@ -386,6 +389,34 @@ export function GenerateReportPage() {
     setAiError(null)
     setStudioMode('studio')
   }, [])
+
+  const editFromUrl = searchParams.get('edit')
+  useEffect(() => {
+    if (!editFromUrl || !token) return
+    const id = Number(editFromUrl)
+    if (!Number.isFinite(id)) return
+    let cancelled = false
+    void getReport(token, id)
+      .then((r) => {
+        if (cancelled) return
+        const saved = apiResponseToSavedReport(r)
+        openStudioEdit(saved)
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('edit')
+            return next
+          },
+          { replace: true }
+        )
+      })
+      .catch(() => {
+        // invalid id or network — stay on gallery
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editFromUrl, token, setSearchParams, openStudioEdit])
 
   const openStudioPreview = useCallback((r: SavedReport) => {
     setEditingId(r.id)

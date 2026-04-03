@@ -10,4 +10,8 @@ export type FileTableRow = {
   owner: string
   access: string
   parentId?: string | null
+  /** Row is a saved report (Mongo) shown in the workspace file list */
+  rowKind?: 'workspace' | 'report'
+  /** Numeric report id when `rowKind === 'report'` */
+  reportId?: number
 }
