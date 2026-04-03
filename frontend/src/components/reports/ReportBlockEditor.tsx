@@ -1,4 +1,4 @@
-import type { ReportBlock } from '@/lib/savedReports'
+import type { ReportBlock, TableCell } from '@/lib/savedReports'
 import { ReportListBlockEditor } from '@/components/reports/ReportListBlockEditor'
 import { alignClass, calloutToneClass, spacerHeight } from '@/components/reports/reportBlockUtils'
 
@@ -7,6 +7,10 @@ type Props = {
   selected: boolean
   onSelect: () => void
   onChange: (next: ReportBlock) => void
+}
+
+function tableCellToInputString(cell: TableCell): string {
+  return typeof cell === 'string' ? cell : cell.label
 }
 
 export function ReportBlockEditor({ block, selected, onSelect, onChange }: Props) {
@@ -102,12 +106,22 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange }: Props
                         <input
                           type="text"
                           className={inputClass}
-                          value={cell}
+                          value={tableCellToInputString(cell)}
                           onChange={(e) => setCell(0, ci, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                         />
+                      ) : typeof cell !== 'string' && cell.type === 'link' ? (
+                        <a
+                          href={cell.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={cell.href}
+                          className="block min-h-5 text-blue-600 underline"
+                        >
+                          {cell.label}
+                        </a>
                       ) : (
-                        <span className="block min-h-5">{cell.trim() ? cell : '—'}</span>
+                        <span className="block min-h-5">{tableCellToInputString(cell).trim() ? tableCellToInputString(cell) : '—'}</span>
                       )}
                     </th>
                   ))}
@@ -125,12 +139,22 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange }: Props
                           <input
                             type="text"
                             className={inputClass}
-                            value={cell}
+                            value={tableCellToInputString(cell)}
                             onChange={(e) => setCell(actualRi, ci, e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                           />
+                        ) : typeof cell !== 'string' && cell.type === 'link' ? (
+                          <a
+                            href={cell.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={cell.href}
+                            className="block min-h-5 text-blue-600 underline"
+                          >
+                            {cell.label}
+                          </a>
                         ) : (
-                          <span className="block min-h-5">{cell.trim() ? cell : ''}</span>
+                          <span className="block min-h-5">{tableCellToInputString(cell).trim() ? tableCellToInputString(cell) : ''}</span>
                         )}
                       </td>
                     ))}

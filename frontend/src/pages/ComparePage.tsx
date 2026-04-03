@@ -1,7 +1,7 @@
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
@@ -288,13 +288,15 @@ export function ComparePage() {
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
     const tabs = coercePersistedTabs(persisted?.compareTabs)
-    return tabs.length > 0
-      ? tabs
-      : [newBlankCompareTab()]
+    return tabs.length > 0 ? tabs : []
   })
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(() => {
     const persisted = readPersistedCompareState()
-    return typeof persisted?.activeCompareTabId === 'string' ? persisted.activeCompareTabId : null
+    const tabs = coercePersistedTabs(persisted?.compareTabs)
+    if (tabs.length === 0) return null
+    const id = typeof persisted?.activeCompareTabId === 'string' ? persisted.activeCompareTabId : null
+    if (id && tabs.some((t) => t.id === id)) return id
+    return tabs[0]!.id
   })
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [sheetsSidebarOpen, setSheetsSidebarOpen] = useState(() => {
@@ -594,7 +596,7 @@ export function ComparePage() {
         const selections = await listDataSheetSelections(token)
         if (cancelled || selections.length === 0) return
         const batches = await Promise.all(
-          selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[]))
+          selections.map((s) => listPortfolioItems(token, { selectionId: s.id }).catch(() => [] as PortfolioItem[]))
         )
         if (cancelled) return
         const nums = new Set<string>()
@@ -733,11 +735,38 @@ export function ComparePage() {
             content: data.length > 0 ? data : [['']],
             folderPath: file.folderPath,
           }
-          updateActiveTabData((d) => ({
-            ...d,
-            selectedFilesData: [...d.selectedFilesData, newFile],
-            activeFileId: file.id,
-          }))
+          setCompareTabs((prev) => {
+            if (prev.length === 0) {
+              const tab = newBlankCompareTab()
+              setActiveCompareTabId(tab.id)
+              return [
+                {
+                  ...tab,
+                  data: {
+                    ...tab.data,
+                    selectedFilesData: [newFile],
+                    activeFileId: file.id,
+                  },
+                },
+              ]
+            }
+            const targetId = activeCompareTabId ?? prev[0]?.id
+            if (!targetId) return prev
+            return prev.map((t) =>
+              t.id === targetId
+                ? {
+                    ...t,
+                    data: {
+                      ...t.data,
+                      selectedFilesData: t.data.selectedFilesData.some((f) => f.fileId === file.id)
+                        ? t.data.selectedFilesData
+                        : [...t.data.selectedFilesData, newFile],
+                      activeFileId: file.id,
+                    },
+                  }
+                : t
+            )
+          })
         })
         .catch(() => {})
         .finally(() => setFileContentLoading((prev) => {
@@ -746,7 +775,7 @@ export function ComparePage() {
           return next
         }))
     },
-    [selectedFilesData, updateActiveTabData]
+    [selectedFilesData, activeCompareTabId]
   )
 
   useEffect(() => {
@@ -1325,7 +1354,10 @@ export function ComparePage() {
   )
 
   useEffect(() => {
-    if (!activeTab) return
+    if (!activeTab) {
+      closeAndClear()
+      return
+    }
     const external = externalItemsByTab[activeTab.id] ?? []
     if (activeTab.data.selectedFilesData.length === 0) {
       openWithItems(external)
@@ -1345,7 +1377,7 @@ export function ComparePage() {
     const merged = [...external, ...restored]
     const deduped = merged.filter((item, idx) => merged.findIndex((x) => x.id === item.id) === idx)
     openWithItems(deduped)
-  }, [activeTab, buildItemsFromFileRows, openWithItems, externalItemsByTab])
+  }, [activeTab, buildItemsFromFileRows, openWithItems, externalItemsByTab, closeAndClear])
 
   const handleAddSelectedFileRows = useCallback(
     (fileId: number) => {
@@ -1430,8 +1462,31 @@ export function ComparePage() {
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
-
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
+            {compareTabs.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+                <h2 className="text-lg font-semibold text-gray-900">Product comparison</h2>
+                <p className="max-w-sm text-sm text-gray-500">
+                  Open a file from Home or start with a new sheet.
+                </p>
+                <div className="flex gap-2">
+                  <Link
+                    to="/"
+                    className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                  >
+                    Go to Home
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={addNewCompareTab}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                  >
+                    + New tab
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
       <CompareWorkspaceSection
         compareMode={compareMode}
         selectedFilesData={selectedFilesData}
@@ -2084,9 +2139,8 @@ export function ComparePage() {
         )}
       </div>
 
-
-
-
+              </>
+            )}
 
       <CompareFilePickerModal
         open={filePickerOpen}

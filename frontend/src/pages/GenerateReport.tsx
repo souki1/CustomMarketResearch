@@ -262,7 +262,7 @@ function buildReportDatasetContextText(dataset: ReportDataset): string {
 async function loadReportDataset(token: string): Promise<ReportDataset> {
   const selections = await listDataSheetSelections(token)
   const portfolioBatches = await Promise.all(
-    selections.map((s) => listPortfolioItems(token, s.id).catch(() => [] as PortfolioItem[]))
+    selections.map((s) => listPortfolioItems(token, { selectionId: s.id }).catch(() => [] as PortfolioItem[]))
   )
 
   const byPart = new Map<string, { part_number: string | null; offers: PortfolioItem[] }>()

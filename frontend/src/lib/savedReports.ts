@@ -22,6 +22,11 @@ export type ReportBlockType =
   | 'code'
   | 'table'
 
+/** Clickable cell in exports (PDF shows label; full URL is the link target). */
+export type TableLinkCell = { type: 'link'; label: string; href: string }
+
+export type TableCell = string | TableLinkCell
+
 export type ReportBlock =
   | { id: string; type: 'title'; text: string; align?: BlockAlign }
   | { id: string; type: 'heading'; text: string; align?: BlockAlign }
@@ -36,7 +41,15 @@ export type ReportBlock =
   | { id: string; type: 'image'; src: string; alt: string; caption: string; align?: BlockAlign }
   | { id: string; type: 'metric'; label: string; value: string; align?: BlockAlign }
   | { id: string; type: 'code'; text: string; align?: BlockAlign }
-  | { id: string; type: 'table'; showHeader: boolean; rows: string[][]; align?: BlockAlign }
+  | {
+      id: string
+      type: 'table'
+      showHeader: boolean
+      rows: TableCell[][]
+      align?: BlockAlign
+      /** Optional column widths in inches (PDF export). */
+      colWidths?: number[]
+    }
 
 export type SavedReport = {
   id: number
@@ -74,7 +87,7 @@ function parseSpacerSize(v: unknown): SpacerSize {
   return 'md'
 }
 
-function defaultTableRows(): string[][] {
+function defaultTableRows(): TableCell[][] {
   return [
     ['Column 1', 'Column 2', 'Column 3'],
     ['', '', ''],
@@ -82,11 +95,26 @@ function defaultTableRows(): string[][] {
   ]
 }
 
-function normalizeTableRect(rows: string[][]): string[][] {
+function parseTableCell(raw: unknown): TableCell {
+  if (typeof raw === 'string') return raw
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>
+    if (o.type === 'link' && typeof o.href === 'string') {
+      return {
+        type: 'link',
+        label: typeof o.label === 'string' ? o.label : 'Link',
+        href: o.href,
+      }
+    }
+  }
+  return raw == null ? '' : String(raw)
+}
+
+function normalizeTableRect(rows: TableCell[][]): TableCell[][] {
   if (rows.length === 0) return [['']]
   const maxCols = Math.max(1, ...rows.map((r) => r.length))
   return rows.map((r) => {
-    const cells = [...r]
+    const cells: TableCell[] = r.map((c) => parseTableCell(c))
     while (cells.length < maxCols) cells.push('')
     return cells.slice(0, maxCols)
   })
@@ -246,6 +274,7 @@ export function normalizeBlock(b: ReportBlock): ReportBlock {
         align: b.align ?? 'left',
         showHeader: b.showHeader !== false,
         rows: normalizeTableRect(b.rows.length ? b.rows : defaultTableRows()),
+        ...(Array.isArray(b.colWidths) && b.colWidths.length > 0 ? { colWidths: b.colWidths } : {}),
       }
     default: {
       const _e: never = b
@@ -290,7 +319,17 @@ export function blocksToPlainText(blocks: ReportBlock[]): string {
         break
       case 'table':
         for (const row of b.rows) {
-          lines.push(row.join('\t'))
+          lines.push(
+            row
+              .map((c) =>
+                typeof c === 'string'
+                  ? c
+                  : c.type === 'link'
+                    ? `${c.label} (${c.href})`
+                    : String(c),
+              )
+              .join('\t'),
+          )
         }
         break
     }

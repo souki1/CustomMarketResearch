@@ -1,7 +1,12 @@
+import { useEffect, useState } from 'react'
+
 const STORAGE_KEY = 'cmr_display_name'
 const EMAIL_KEY = 'cmr_email'
 const TOKEN_KEY = 'cmr_token'
 const PHOTO_URL_KEY = 'cmr_profile_photo_url'
+
+/** Same key used in `storage` events for cross-tab token sync */
+export { TOKEN_KEY as AUTH_TOKEN_STORAGE_KEY }
 
 export const AUTH_CHANGED_EVENT = 'cmr-auth-changed'
 
@@ -104,5 +109,30 @@ export function clearAuth() {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Current JWT from localStorage, re-read after login/logout and on cross-tab updates.
+ * Prefer this over `useMemo(() => getToken(), [])`, which stays stale if auth changes without a remount.
+ */
+export function useAuthToken(): string | null {
+  const [token, setTokenState] = useState<string | null>(() => getToken())
+
+  useEffect(() => {
+    const sync = () => setTokenState(getToken())
+    sync()
+    if (typeof window === 'undefined') return
+    window.addEventListener(AUTH_CHANGED_EVENT, sync)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === TOKEN_KEY) sync()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, sync)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+
+  return token
 }
 

@@ -138,6 +138,7 @@ class PortfolioItemResponse(BaseModel):
     quantity: int | None = None
     url: str | None = None
     image_url: str | None = None
+    row_index: int | None = None
 
 
 class PortfolioSummaryResponse(BaseModel):
@@ -248,5 +249,68 @@ class ReportResponse(BaseModel):
     owner_id: int
     title: str
     blocks: list[dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Purchase orders
+# ---------------------------------------------------------------------------
+
+POStatusLiteral = Literal["draft", "submitted", "approved", "sent", "partial", "closed"]
+
+
+class PurchaseOrderLinePayload(BaseModel):
+    id: str = Field(..., min_length=1, max_length=80)
+    sku: str = Field(default="", max_length=500)
+    description: str = Field(default="", max_length=8000)
+    qty: int = Field(default=1, ge=0, le=1_000_000_000)
+    uom: str = Field(default="ea", max_length=32)
+    unit_price: float = Field(default=0, ge=0, le=1e15)
+    vendor_url: str = Field(default="", max_length=2000, description="Source / product page URL for the line")
+
+
+class PurchaseOrderCreate(BaseModel):
+    number: str = Field(..., min_length=1, max_length=120)
+    vendor_name: str = Field(default="", max_length=500)
+    vendor_email: str = Field(default="", max_length=500)
+    issue_date: str = Field(default="", max_length=32)
+    required_by: str = Field(default="", max_length=32)
+    status: POStatusLiteral = "draft"
+    ship_to: str = Field(default="", max_length=8000)
+    payment_terms: str = Field(default="", max_length=200)
+    notes: str = Field(default="", max_length=8000)
+    lines: list[PurchaseOrderLinePayload] = Field(default_factory=list, max_length=500)
+    source_selection_id: int | None = None
+
+
+class PurchaseOrderUpdate(BaseModel):
+    number: str | None = Field(default=None, max_length=120)
+    vendor_name: str | None = Field(default=None, max_length=500)
+    vendor_email: str | None = Field(default=None, max_length=500)
+    issue_date: str | None = Field(default=None, max_length=32)
+    required_by: str | None = Field(default=None, max_length=32)
+    status: POStatusLiteral | None = None
+    ship_to: str | None = Field(default=None, max_length=8000)
+    payment_terms: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=8000)
+    lines: list[PurchaseOrderLinePayload] | None = Field(default=None, max_length=500)
+    source_selection_id: int | None = None
+
+
+class PurchaseOrderResponse(BaseModel):
+    id: int
+    owner_id: int
+    number: str
+    vendor_name: str
+    vendor_email: str
+    issue_date: str
+    required_by: str
+    status: POStatusLiteral
+    ship_to: str
+    payment_terms: str
+    notes: str
+    lines: list[PurchaseOrderLinePayload]
+    source_selection_id: int | None = None
     created_at: datetime
     updated_at: datetime
