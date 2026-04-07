@@ -1,5 +1,6 @@
+import { Calculator } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { PRICE_CALCULATOR_PATH, RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -91,6 +92,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
+  const isPriceCalculator = location.pathname === PRICE_CALCULATOR_PATH
   const isSettings = location.pathname.startsWith('/settings')
 
   if (collapsed) {
@@ -124,6 +126,13 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             </Link>
             <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
               <PurchaseOrderIcon className={iconClass} />
+            </Link>
+            <Link
+              to={PRICE_CALCULATOR_PATH}
+              className={collapsedLinkClass(isPriceCalculator)}
+              title="Price calculator"
+            >
+              <Calculator className={iconClass} />
             </Link>
             <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
               <SettingsIcon className={iconClass} />
@@ -173,6 +182,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
           <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
             <PurchaseOrderIcon className={iconClass} />
             <span>Purchase Order</span>
+          </Link>
+          <Link to={PRICE_CALCULATOR_PATH} className={linkClass(isPriceCalculator)} title="Price calculator">
+            <Calculator className={iconClass} />
+            <span>Price calculator</span>
           </Link>
           <Link to="/settings" className={linkClass(isSettings)} title="Settings">
             <SettingsIcon className={iconClass} />

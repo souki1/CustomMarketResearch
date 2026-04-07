@@ -251,6 +251,7 @@ class ReportResponse(BaseModel):
     blocks: list[dict[str, Any]]
     created_at: datetime
     updated_at: datetime
+    workspace_parent_id: int | None = None
 
 
 # ---------------------------------------------------------------------------

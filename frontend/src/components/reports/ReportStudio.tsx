@@ -203,7 +203,7 @@ export function ReportStudio({
       <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
         {!readOnly && (
           <aside
-            className="hidden min-h-0 w-52 shrink-0 flex-col self-stretch border-r border-slate-200/80 bg-white py-4 pl-3 pr-2 sm:flex"
+            className="flex min-h-0 w-40 shrink-0 flex-col self-stretch border-r border-slate-200/80 bg-white py-4 pl-2 pr-1.5 sm:w-52 sm:pl-3 sm:pr-2"
             aria-label="Elements"
           >
             <p className="shrink-0 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Elements</p>
@@ -227,7 +227,7 @@ export function ReportStudio({
           </aside>
         )}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch">
           <div className="min-h-0 flex-1 overflow-auto px-4 py-8 sm:px-8">
             {showAiComposer && (
               <div className="mx-auto mb-4 w-full max-w-[560px] rounded-xl border border-violet-200 bg-violet-50/70 p-3 sm:p-4">
@@ -392,26 +392,6 @@ export function ReportStudio({
               </div>
             </div>
           </div>
-
-          {!readOnly && (
-            <aside className="max-h-64 shrink-0 overflow-y-auto border-t border-slate-200/80 bg-white p-3 sm:max-h-none sm:self-stretch sm:border-l lg:w-52 lg:border-t-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add</p>
-              <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-3 lg:grid-cols-2">
-                {ELEMENT_TOOLS.map(({ type, label, icon: Icon }) => (
-                  <button
-                    key={type}
-                    type="button"
-                    title={label}
-                    className="flex flex-col items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 py-2 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-                    onClick={() => onAddBlock(type)}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="truncate px-0.5">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </aside>
-          )}
         </div>
       </div>
     </div>

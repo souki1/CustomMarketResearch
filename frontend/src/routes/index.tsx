@@ -20,6 +20,7 @@ import { SignUpPage } from '@/pages/SignUpPage'
 import { PortfolioPage } from '@/pages/Portfolio'
 import { GenerateReportPage } from '@/pages/GenerateReport'
 import { AnalysisPage } from '@/pages/AnalysisPage'
+import { PriceCalculatorPage } from '@/pages/PriceCalculatorPage'
 
 const router = createBrowserRouter([
   {
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: 'purchase-order', element: <PurchaseOrderPage /> },
       { path: 'ai', element: <AiPlaceholderPage /> },
       { path: 'portfolio', element: <PortfolioPage /> },
+      { path: 'price-calculator', element: <PriceCalculatorPage /> },
       {
         path: 'settings',
         element: <SettingsLayout />,

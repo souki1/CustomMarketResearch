@@ -9,7 +9,17 @@ import {
   CreateFolderModal,
 } from '@/components'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv, uploadWorkspaceImage } from '@/lib/api'
+import {
+  createWorkspaceFile,
+  createWorkspaceFolder,
+  deleteReport,
+  deleteWorkspaceItem,
+  listReports,
+  listWorkspaceItems,
+  moveWorkspaceItem,
+  uploadWorkspaceCsv,
+  uploadWorkspaceImage,
+} from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
 /** Convert an Excel file to a CSV File so we can upload it via the existing CSV endpoint. */
@@ -116,8 +126,8 @@ export function HomePage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listWorkspaceItems(parentNumeric, token)
-      .then((items) => {
+    Promise.all([listWorkspaceItems(parentNumeric, token), listReports(token)])
+      .then(([items, reports]) => {
         if (cancelled) return
         const mapped: FileTableRow[] = items.map((item) => {
           const created = new Date(item.created_at)
@@ -145,7 +155,41 @@ export function HomePage() {
             parentId: item.parent_id != null ? String(item.parent_id) : null,
           }
         })
-        setRows(mapped)
+
+        const inFolder = reports.filter((r) => (r.workspace_parent_id ?? null) === parentNumeric)
+        const ownerLabel = getCurrentUserName() ?? 'You'
+        const reportRows: FileTableRow[] = inFolder.map((r) => {
+          const created = new Date(r.created_at)
+          const updated = new Date(r.updated_at)
+          const createdAt = created.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          const lastOpened = updated.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          return {
+            id: `report:${r.id}`,
+            name: r.title,
+            isFolder: false,
+            rowKind: 'report' as const,
+            reportId: r.id,
+            favorite: false,
+            createdAt,
+            lastOpened,
+            owner: ownerLabel,
+            access: 'Edit',
+            parentId: currentFolderId,
+          }
+        })
+
+        const merged = [...mapped, ...reportRows].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+        )
+        setRows(merged)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -291,7 +335,11 @@ export function HomePage() {
     }
     try {
       setError(null)
-      await deleteWorkspaceItem(Number(row.id), token)
+      if (row.rowKind === 'report' && row.reportId != null) {
+        await deleteReport(token, row.reportId)
+      } else {
+        await deleteWorkspaceItem(Number(row.id), token)
+      }
       setRows((prev) => prev.filter((r) => r.id !== row.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete item')
@@ -460,8 +508,13 @@ export function HomePage() {
       setMoveDialogOpen(false)
       return
     }
-    const sourceId = Number(moveSourceRow.id)
+    if (moveSourceRow.rowKind === 'report') {
+      setMoveDialogOpen(false)
+      setMoveSourceRow(null)
+      return
+    }
     const targetNumeric = moveTargetFolderId ? Number(moveTargetFolderId) : null
+    const sourceId = Number(moveSourceRow.id)
     try {
       setError(null)
       const updated = await moveWorkspaceItem(sourceId, targetNumeric, token)
@@ -602,6 +655,11 @@ export function HomePage() {
             onOpenFolder={handleOpenFolder}
             onGoToFolder={handleGoToFolder}
             onOpenFile={(fileId, fileName) => {
+              if (fileId.startsWith('report:')) {
+                const rid = Number(fileId.replace(/^report:/, ''))
+                if (Number.isFinite(rid)) navigate(`/reports?edit=${rid}`)
+                return
+              }
               const folderPath = breadcrumbPath.map((seg) => seg.name).join(' / ')
               const params = new URLSearchParams()
               params.set('fileId', fileId)
@@ -616,6 +674,7 @@ export function HomePage() {
               }
               navigate(`/research?${params.toString()}`)
             }}
+            onNewReportClick={() => navigate('/reports')}
             onDelete={handleDelete}
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={() => handleUploadCsvClick()}

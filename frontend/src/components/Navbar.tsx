@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
@@ -181,6 +181,9 @@ const TIP_SEEN_KEY = 'cmr_command_palette_tip_seen'
 
 export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalette }: NavbarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const showSearchOnNarrow =
+    location.pathname === '/research' || location.pathname.startsWith('/research/')
   const { items: bucketItems, removeItem, drawerOpen, setDrawerOpen } = useBucket()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -355,7 +358,10 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
             </button>
 
             {onOpenCommandPalette && (
-              <div className="relative hidden sm:block flex-1 min-w-0 max-w-md mx-4" ref={searchBarRef}>
+              <div
+                className={`relative flex-1 min-w-0 max-w-md mx-4 ${showSearchOnNarrow ? 'block' : 'hidden sm:block'}`}
+                ref={searchBarRef}
+              >
                 <button
                   type="button"
                   onClick={handleOpenCommandPalette}
