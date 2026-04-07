@@ -11,7 +11,7 @@ export type CompareTabData = {
   selectedFilesData: LoadedFile[]
   selectedFileRows: Record<number, number[]>
   activeFileId: number | null
-  selectedRowForScraped: { fileId: number; rowIdx: number; partLabel: string } | null
+  selectedRowForScraped: { fileId: number | null; tabId: string | null; rowIdx: number; partLabel: string } | null
 }
 
 export type CompareTab = {

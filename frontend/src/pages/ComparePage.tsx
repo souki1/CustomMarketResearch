@@ -20,6 +20,7 @@ import {
 } from '@/lib/api'
 import type { PortfolioItem, ScrapedDataItem } from '@/lib/api'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
+import { useBucket, type BucketItem } from '@/contexts/BucketContext'
 
 function parseCsv(text: string): string[][] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
@@ -226,7 +227,12 @@ function coercePersistedTabs(raw: unknown): CompareTab[] {
       const activeFileId = data.activeFileId == null ? null : Number(data.activeFileId)
       const selectedRowForScraped =
         data.selectedRowForScraped && typeof data.selectedRowForScraped === 'object'
-          ? (data.selectedRowForScraped as { fileId: number; rowIdx: number; partLabel: string })
+          ? (data.selectedRowForScraped as {
+              fileId: number | null
+              tabId: string | null
+              rowIdx: number
+              partLabel: string
+            })
           : null
       return {
         id,
@@ -285,6 +291,8 @@ type ResearchCompareRequestState = {
 export function ComparePage() {
   const location = useLocation()
   const { items, addItems, closeAndClear, openWithItems } = useComparison()
+  const { addItem: addBucketItem, addItemsIfMissing, items: bucketItems, showToast: showBucketToast } =
+    useBucket()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
     const tabs = coercePersistedTabs(persisted?.compareTabs)
@@ -1035,6 +1043,7 @@ export function ComparePage() {
           id: item.id,
           label: (item.title || '—').trim() || '—',
           vendorCount: domains.size,
+          sourceCount: list.length,
           minPrice: minP,
           maxPrice: maxP,
           avgPrice: avgP,
@@ -1111,6 +1120,7 @@ export function ComparePage() {
             id: 'same-part',
             label: partLabel,
             vendorCount: domains.size,
+            sourceCount: list.length,
             minPrice: minP,
             maxPrice: maxP,
             avgPrice: avgP,
@@ -1162,11 +1172,12 @@ export function ComparePage() {
 
     updateActiveTabData((d) => ({
       ...d,
-      selectedRowForScraped: {
-        fileId: parsed.fileId,
-        rowIdx: parsed.rowIdx,
-        partLabel: nextPart.title || '—',
-      },
+          selectedRowForScraped: {
+            fileId: parsed.fileId,
+            tabId: null,
+            rowIdx: parsed.rowIdx,
+            partLabel: nextPart.title || '—',
+          },
     }))
   }, [
     compareMode,
@@ -1211,6 +1222,39 @@ export function ComparePage() {
   const [scrapedColumnViewSourceColWidth, setScrapedColumnViewSourceColWidth] = useState(220)
   const [scrapedSourceColWidths, setScrapedSourceColWidths] = useState<Record<string, number>>({})
   const [scrapedFieldColWidths, setScrapedFieldColWidths] = useState<Record<string, number>>({})
+  /** Indices into `scrapedTableRows` — URL alone is not unique (empty/duplicate URLs). */
+  const [selectedBucketSourceRowIndices, setSelectedBucketSourceRowIndices] = useState<Set<number>>(
+    new Set()
+  )
+  const [bucketSourceRowIndicesInSession, setBucketSourceRowIndicesInSession] = useState<Set<number>>(
+    new Set()
+  )
+
+  const scrapedPartSelectionKey = selectedRowForScraped
+    ? `${selectedRowForScraped.fileId ?? 'f'}:${selectedRowForScraped.tabId ?? 't'}:${selectedRowForScraped.rowIdx}`
+    : ''
+
+  useEffect(() => {
+    setSelectedBucketSourceRowIndices(new Set())
+    setBucketSourceRowIndicesInSession(new Set())
+  }, [scrapedPartSelectionKey])
+
+  useEffect(() => {
+    setSelectedBucketSourceRowIndices((prev) => {
+      const next = new Set<number>()
+      for (const i of prev) {
+        if (i >= 0 && i < scrapedTableRows.length) next.add(i)
+      }
+      return next
+    })
+    setBucketSourceRowIndicesInSession((prev) => {
+      const next = new Set<number>()
+      for (const i of prev) {
+        if (i >= 0 && i < scrapedTableRows.length) next.add(i)
+      }
+      return next
+    })
+  }, [scrapedTableSignature, scrapedTableRows.length])
 
   useEffect(() => {
     setScrapedColumnOrder(scrapedTableRows.map((_, i) => i))
@@ -1275,6 +1319,15 @@ export function ComparePage() {
     [scrapedFieldKeys.length]
   )
 
+  const toggleBucketSourceRowSelection = useCallback((rowIndex: number, checked: boolean) => {
+    setSelectedBucketSourceRowIndices((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(rowIndex)
+      else next.delete(rowIndex)
+      return next
+    })
+  }, [])
+
   const startColumnResize = useCallback(
     (
       e: ReactMouseEvent<HTMLSpanElement>,
@@ -1319,6 +1372,7 @@ export function ComparePage() {
           ...d,
           selectedRowForScraped: {
             fileId: parsed.fileId,
+            tabId: null,
             rowIdx: parsed.rowIdx,
             partLabel: first.title || '—',
           },
@@ -1602,6 +1656,7 @@ export function ComparePage() {
                             ...d,
                             selectedRowForScraped: {
                               fileId: parsed.fileId,
+                              tabId: null,
                               rowIdx: parsed.rowIdx,
                               partLabel: item.title || '—',
                             },
@@ -1801,6 +1856,28 @@ export function ComparePage() {
                     <CompareVendorMindMap
                       model={vendorOverviewPayload.mindMap}
                       onSelectVendor={(domain) => setScrapedVendorFilter(domain)}
+                      onAddVendorToBucket={({ domain, parts }) => {
+                        let added = 0
+                        for (const part of parts) {
+                          const id = `mindmap-${domain}-${part.partId}`
+                          const result = addBucketItem({
+                            id,
+                            title: part.partLabel,
+                            manufacturer: domain,
+                            price: part.priceLabel ?? '',
+                            rowIndex: 0,
+                            tabId: undefined,
+                          })
+                          if (result.added) added += 1
+                        }
+                        if (added > 0) {
+                          showBucketToast(
+                            `${added} offer${added === 1 ? '' : 's'} added to Bucket from mind map`
+                          )
+                        } else {
+                          showBucketToast('Vendor already in Bucket from mind map')
+                        }
+                      }}
                     />
                   ) : (
                     <CompareVendorOverview
@@ -1935,8 +2012,8 @@ export function ComparePage() {
                   return highlightNeedle(display)
                 }
                 return (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-                    <div className="overflow-x-auto">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5 max-h-[70vh] flex flex-col">
+                    <div className="overflow-x-auto overflow-y-auto flex-1">
                       {visibleFieldKeys.length === 0 ? (
                         <div className="px-5 py-8 text-center text-sm text-slate-500">
                           No fields match the current filters.
@@ -1958,9 +2035,11 @@ export function ComparePage() {
                                   title="Resize column"
                                 />
                               </th>
-                              {displayScrapedRows.map((item, displayIdx) => (
+                              {displayScrapedRows.map((item, displayIdx) => {
+                                const sourceRowIndex = colOrder[displayIdx]!
+                                return (
                                 <th
-                                  key={item.url}
+                                  key={`src-${sourceRowIndex}-${item.url}`}
                                   draggable
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
                                   onDragOver={handleScrapedDragOver}
@@ -1976,9 +2055,20 @@ export function ComparePage() {
                                       </svg>
                                     </span>
                                     <div className="min-w-0 flex-1">
-                                      <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                        Source {displayIdx + 1}
-                                      </p>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                          checked={selectedBucketSourceRowIndices.has(sourceRowIndex)}
+                                          onChange={(e) =>
+                                            toggleBucketSourceRowSelection(sourceRowIndex, e.target.checked)
+                                          }
+                                          aria-label={`Select Source ${displayIdx + 1} for Bucket`}
+                                        />
+                                        <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                          Source {displayIdx + 1}
+                                        </p>
+                                      </div>
                                       <a
                                         href={item.url}
                                         target="_blank"
@@ -1990,6 +2080,11 @@ export function ComparePage() {
                                       >
                                         {shortenUrl(item.url)}
                                       </a>
+                                      {bucketSourceRowIndicesInSession.has(sourceRowIndex) && (
+                                        <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
+                                          In Bucket
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                   <span
@@ -2000,7 +2095,8 @@ export function ComparePage() {
                                     title="Resize column"
                                   />
                                 </th>
-                              ))}
+                                )
+                              })}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -2020,15 +2116,18 @@ export function ComparePage() {
                                 >
                                   {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
                                 </td>
-                                {displayScrapedRows.map((item) => (
+                                {displayScrapedRows.map((item, cellIdx) => {
+                                  const cellRowIdx = colOrder[cellIdx]!
+                                  return (
                                   <td
-                                    key={`${item.url}-${key}`}
+                                    key={`${cellRowIdx}-${key}`}
                                     className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
                                     style={{ width: sourceWidth(item.url), minWidth: sourceWidth(item.url) }}
                                   >
                                     {renderScrapedCell(item, key)}
                                   </td>
-                                ))}
+                                  )
+                                })}
                               </tr>
                             ))}
                           </tbody>
@@ -2082,9 +2181,11 @@ export function ComparePage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {displayScrapedRows.map((item, displayIdx) => (
+                            {displayScrapedRows.map((item, displayIdx) => {
+                              const sourceRowIndexCol = colOrder[displayIdx]!
+                              return (
                               <tr
-                                key={item.url}
+                                key={`src-row-${sourceRowIndexCol}-${item.url}`}
                                 onDragOver={handleScrapedDragOver}
                                 onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
                                 className="group transition-colors hover:bg-slate-50/60"
@@ -2099,9 +2200,20 @@ export function ComparePage() {
                                   }}
                                   title="Drag to reorder sources"
                                 >
-                                  <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Source {displayIdx + 1}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                      checked={selectedBucketSourceRowIndices.has(sourceRowIndexCol)}
+                                      onChange={(e) =>
+                                        toggleBucketSourceRowSelection(sourceRowIndexCol, e.target.checked)
+                                      }
+                                      aria-label={`Select Source ${displayIdx + 1} for Bucket`}
+                                    />
+                                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      Source {displayIdx + 1}
+                                    </p>
+                                  </div>
                                   <a
                                     href={item.url}
                                     target="_blank"
@@ -2111,10 +2223,15 @@ export function ComparePage() {
                                   >
                                     {shortenUrl(item.url)}
                                   </a>
+                                  {bucketSourceRowIndicesInSession.has(sourceRowIndexCol) && (
+                                    <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
+                                      In Bucket
+                                    </p>
+                                  )}
                                 </td>
                                 {visibleFieldKeys.map((key) => (
                                   <td
-                                    key={`${item.url}-${key}`}
+                                    key={`${sourceRowIndexCol}-${key}`}
                                     className="border-l border-slate-100 px-4 py-2.5 text-sm text-slate-800 align-top"
                                     style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   >
@@ -2122,11 +2239,83 @@ export function ComparePage() {
                                   </td>
                                 ))}
                               </tr>
-                            ))}
+                              )
+                            })}
                           </tbody>
                         </table>
                       )}
                     </div>
+                    {scrapedData.length > 0 && (
+                      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/95 px-4 py-3">
+                        <p className="text-[11px] text-slate-500">
+                          {bucketSourceRowIndicesInSession.size > 0
+                            ? `${bucketSourceRowIndicesInSession.size} source${
+                                bucketSourceRowIndicesInSession.size === 1 ? '' : 's'
+                              } already in Bucket from this part`
+                            : 'No sources from this part in Bucket yet'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!selectedRowForScraped || !scrapedTableRows.length) return
+                            const rowIndices = [...selectedBucketSourceRowIndices].sort((a, b) => a - b)
+                            if (rowIndices.length === 0) {
+                              showBucketToast('Select at least one source')
+                              return
+                            }
+                            const existingIds = new Set(bucketItems.map((i) => i.id))
+                            const payload: { rowIndex: number; item: BucketItem }[] = []
+                            for (const rowIndex of rowIndices) {
+                              const src = scrapedTableRows[rowIndex]
+                              if (!src) continue
+                              const url = src.url
+                              const data = (src.data ?? {}) as Record<string, unknown>
+                              const id =
+                                selectedRowForScraped.fileId != null
+                                  ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}-src${rowIndex}-${url}`
+                                  : `tab-${String(selectedRowForScraped.tabId ?? '')}-${selectedRowForScraped.rowIdx}-src${rowIndex}-${url}`
+                              if (existingIds.has(id)) continue
+                              existingIds.add(id)
+                              const title =
+                                getFirstPartNumber(data) ??
+                                (selectedRowForScraped.partLabel || 'Selected part')
+                              const domain = extractDomain(url)
+                              const priceSpecs = collectScalarSpecs(data).filter((s) =>
+                                /price|cost|amount|msrp|usd|\$/i.test(s.label)
+                              )
+                              const price = priceSpecs.length ? priceSpecs[0]!.value : ''
+                              payload.push({
+                                rowIndex,
+                                item: {
+                                  id,
+                                  title: String(title),
+                                  manufacturer: domain || '',
+                                  price: String(price),
+                                  rowIndex: selectedRowForScraped.rowIdx,
+                                  tabId: selectedRowForScraped.tabId ?? undefined,
+                                },
+                              })
+                            }
+                            if (payload.length === 0) {
+                              showBucketToast('Selected sources are already in Bucket')
+                              return
+                            }
+                            addItemsIfMissing(payload.map((p) => p.item))
+                            setBucketSourceRowIndicesInSession((prev) => {
+                              const next = new Set(prev)
+                              for (const { rowIndex } of payload) next.add(rowIndex)
+                              return next
+                            })
+                            showBucketToast(
+                              `${payload.length} source${payload.length === 1 ? '' : 's'} added to Bucket`
+                            )
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800"
+                        >
+                          Add selected sources to Bucket
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })()

@@ -73,9 +73,16 @@ type CompareVendorMindMapProps = {
    * Useful for vendor-driven selection in ComparePage.
    */
   onSelectVendor?: (domain: string) => void
+  /**
+   * Called when user wants to send vendor offers into the report bucket.
+   */
+  onAddVendorToBucket?: (payload: {
+    domain: string
+    parts: { partId: string; partLabel: string; priceLabel: string | null }[]
+  }) => void
 }
 
-export function CompareVendorMindMap({ model, onSelectVendor }: CompareVendorMindMapProps) {
+export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucket }: CompareVendorMindMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const partRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -397,11 +404,27 @@ export function CompareVendorMindMap({ model, onSelectVendor }: CompareVendorMin
                       {v.priceLabel ? (
                         <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">{v.priceLabel}</p>
                       ) : null}
-                      {v.isCommon && !isSyntheticVendorDomain(v.domain) ? (
-                        <span className="mt-1 inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
-                          Shared (≥2 parts) · view
-                        </span>
-                      ) : null}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {v.isCommon && !isSyntheticVendorDomain(v.domain) ? (
+                          <span className="inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                            Shared (≥2 parts) · view
+                          </span>
+                        ) : null}
+                        {onAddVendorToBucket && !isSyntheticVendorDomain(v.domain) ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rows = partsForDomain(model, v.domain)
+                              if (rows.length === 0) return
+                              onAddVendorToBucket({ domain: v.domain, parts: rows })
+                            }}
+                            className="inline-flex items-center rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm hover:bg-slate-800"
+                          >
+                            Add to Bucket
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
