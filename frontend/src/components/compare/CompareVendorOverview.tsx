@@ -4,6 +4,7 @@ export type VendorOverviewPartRow = {
   id: string
   label: string
   vendorCount: number
+  sourceCount: number
   minPrice: number | null
   maxPrice: number | null
   avgPrice: number | null
@@ -90,6 +91,9 @@ export function CompareVendorOverview({
                   )}
                 </span>
               </div>
+              <p className="mb-1 text-[11px] text-slate-500">
+                {row.sourceCount} source{row.sourceCount === 1 ? '' : 's'}
+              </p>
               <div className="flex h-8 w-full items-center gap-3">
                 <div className="h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/90">
                   <div

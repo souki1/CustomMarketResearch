@@ -21,6 +21,8 @@ export type BucketItem = {
 type BucketContextValue = {
   items: BucketItem[]
   addItem: (item: BucketItem) => { added: boolean }
+  /** Appends items whose ids are not already present. Single state update (safe for multi-select). */
+  addItemsIfMissing: (incoming: BucketItem[]) => void
   removeItem: (id: string) => void
   toast: string | null
   showToast: (message: string) => void
@@ -59,12 +61,31 @@ export function BucketProvider({ children }: { children: ReactNode }) {
   }, [items])
 
   const addItem = useCallback((item: BucketItem) => {
-    const alreadyExists = items.some((i) => i.id === item.id)
-    if (!alreadyExists) {
-      setItems((prev) => [...prev, item])
-    }
-    return { added: !alreadyExists }
-  }, [items])
+    let added = false
+    setItems((prev) => {
+      if (prev.some((i) => i.id === item.id)) {
+        return prev
+      }
+      added = true
+      return [...prev, item]
+    })
+    return { added }
+  }, [])
+
+  const addItemsIfMissing = useCallback((incoming: BucketItem[]) => {
+    if (incoming.length === 0) return
+    setItems((prev) => {
+      const seen = new Set(prev.map((i) => i.id))
+      const toAdd: BucketItem[] = []
+      for (const item of incoming) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        toAdd.push(item)
+      }
+      if (toAdd.length === 0) return prev
+      return [...prev, ...toAdd]
+    })
+  }, [])
 
   const removeItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id))
@@ -79,6 +100,7 @@ export function BucketProvider({ children }: { children: ReactNode }) {
   const value: BucketContextValue = {
     items,
     addItem,
+    addItemsIfMissing,
     removeItem,
     toast,
     showToast,
