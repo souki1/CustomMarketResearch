@@ -17,8 +17,6 @@ import {
 import { getToken } from '@/lib/auth'
 import { aiGroqChat, listPortfolioItems } from '@/lib/api'
 import type { AiChatHistoryMessage, PortfolioItem } from '@/lib/api'
-import { Card } from '@/components'
-
 function partLabel(item: PortfolioItem): string {
   const p = item.part_number
   return p != null && String(p).trim() ? String(p).trim() : '—'
@@ -180,11 +178,6 @@ function urlLinkLabel(href: string): string {
 const PART_CHECK =
   'h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600 focus:ring-blue-500/40'
 
-const INPUT_SM =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
-
-const SELECT_SM =
-  'w-full cursor-pointer rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm text-gray-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
 
 type OfferSortMode = 'part-asc' | 'vendor-asc' | 'vendor-desc' | 'price-asc' | 'price-desc'
 
@@ -696,41 +689,60 @@ export function PriceCalculatorPage() {
   const showEmpty = token && !loading && !loadError && items.length === 0
 
   return (
-    <div className="min-h-full bg-linear-to-b from-slate-50/90 to-white pb-12">
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <header className="mb-8">
-          <div className="flex flex-wrap items-center gap-2 text-blue-600">
-            <Calculator className="h-5 w-5" aria-hidden />
-            <span className="text-xs font-semibold uppercase tracking-wide">Pricing</span>
+    <div className="min-h-full bg-gray-50/60">
+      <div className="mx-auto max-w-352 px-4 py-4 sm:px-6">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-to-br from-blue-600 to-blue-700 shadow-sm">
+              <Calculator className="h-[18px] w-[18px] text-white" aria-hidden />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-gray-900">Price Calculator</h1>
+              <p className="text-xs text-gray-500">Select parts, compare vendor offers & scenarios side by side</p>
+            </div>
           </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-gray-900 md:text-3xl">
-            Price calculator
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
-            Select parts, filter offers, then tick lines and add them to Compare 1, Compare 2, or more slots to
-            contrast scenarios side by side—without leaving this page.
-          </p>
+          {totalLinesAllSlots > 0 && (
+            <div className="hidden items-center gap-2 sm:flex">
+              {[
+                { label: 'Scenarios', value: String(compareGroups.length), highlight: false },
+                { label: 'Lines', value: String(totalLinesAllSlots), highlight: false },
+                { label: 'Vendors', value: String(totalVendorsAllSlots), highlight: false },
+                ...(lowestTotalSlotIdx >= 0
+                  ? [{ label: 'Best total', value: formatUsd(groupSummaries[lowestTotalSlotIdx]!.sumExt), highlight: true }]
+                  : []),
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className={`rounded-lg border px-3 py-1.5 text-center ${
+                    s.highlight ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{s.label}</p>
+                  <p className={`text-sm font-bold tabular-nums ${s.highlight ? 'text-emerald-700' : 'text-gray-900'}`}>
+                    {s.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </header>
 
         {authHint && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900">
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-2.5 text-sm text-amber-900">
             {authHint}
           </p>
         )}
-
         {loadError && (
-          <p className="rounded-lg border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-800" role="alert">
+          <p className="mb-4 rounded-lg border border-red-200 bg-red-50/90 px-4 py-2.5 text-sm text-red-800" role="alert">
             {loadError}
           </p>
         )}
-
         {token && loading && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 py-8 text-sm text-gray-600">
             <Loader2 className="h-5 w-5 shrink-0 animate-spin text-blue-600" aria-hidden />
-            Loading portfolio…
+            Loading portfolio\u2026
           </div>
         )}
-
         {showEmpty && (
           <p className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm">
             No portfolio data yet. Save offers from your research sheets to see parts and vendors here.
@@ -738,44 +750,44 @@ export function PriceCalculatorPage() {
         )}
 
         {token && !loading && !loadError && items.length > 0 && (
-          <>
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,17rem)_1fr]">
-            <Card className="border-gray-200/80 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                  <Package className="h-4 w-4 text-gray-500" aria-hidden />
-                  Parts ({uniqueParts.length})
+          <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+            <aside className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm lg:sticky lg:top-4 lg:self-start">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+                  <Package className="h-4 w-4 text-gray-400" aria-hidden />
+                  Parts
+                  <span className="text-xs font-normal text-gray-400">({uniqueParts.length})</span>
                 </div>
                 {selectedCount > 0 && (
                   <button
                     type="button"
                     onClick={clearPartSelection}
-                    className="text-xs font-medium text-blue-700 underline decoration-blue-400/50 underline-offset-2 hover:text-blue-900"
+                    className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                   >
-                    Clear
+                    Clear ({selectedCount})
                   </button>
                 )}
               </div>
-              <div className="relative mt-3">
+              <div className="relative mt-2">
                 <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
                   aria-hidden
                 />
                 <input
                   type="search"
                   value={partListSearch}
                   onChange={(e) => setPartListSearch(e.target.value)}
-                  placeholder="Filter parts\u2026"
-                  className={`${INPUT_SM} pl-9`}
+                  placeholder="Filter\u2026"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50/80 py-1.5 pl-8 pr-3 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
                   aria-label="Filter parts list"
                 />
               </div>
               <ul
-                className="mt-3 max-h-[min(28rem,55vh)] space-y-1 overflow-y-auto rounded-lg border border-gray-100 bg-slate-50/50 p-1"
+                className="mt-2 max-h-[calc(100vh-180px)] space-y-0.5 overflow-y-auto"
                 aria-label="Parts"
               >
                 {filteredPartsForList.length === 0 ? (
-                  <li className="px-2 py-3 text-center text-xs text-gray-500">No parts match.</li>
+                  <li className="px-2 py-3 text-center text-xs text-gray-400">No parts match.</li>
                 ) : (
                   filteredPartsForList.map((label) => {
                     const checked = selectedPartLabels.has(label)
@@ -784,8 +796,8 @@ export function PriceCalculatorPage() {
                       <li key={label}>
                         <label
                           htmlFor={id}
-                          className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition ${
-                            checked ? 'bg-blue-50 font-medium text-gray-900' : 'text-gray-800 hover:bg-white'
+                          className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition ${
+                            checked ? 'bg-blue-50 font-medium text-blue-900' : 'text-gray-700 hover:bg-gray-50'
                           }`}
                         >
                           <input
@@ -802,658 +814,567 @@ export function PriceCalculatorPage() {
                   })
                 )}
               </ul>
-            </Card>
+            </aside>
 
-            <Card className="border-gray-200/80 p-5">
+            <div className="min-w-0 space-y-4">
               {selectedCount === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-gray-500">
+                <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
                   <Building2 className="h-10 w-10 text-gray-300" aria-hidden />
-                  <p>Select one or more parts on the left to see vendors, prices, and URLs.</p>
+                  <p className="text-sm text-gray-500">Select parts on the left to see vendor offers and prices.</p>
                 </div>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 pb-3">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      {selectedCount === 1 ? (
-                        <>
-                          Offers for <span className="text-blue-700">{offersSubtitle(selectedPartLabels)}</span>
-                        </>
-                      ) : (
-                        <>
-                          Offers for <span className="text-blue-700">{selectedCount} parts</span>
-                          <span className="mt-1 block text-xs font-normal text-gray-500">
-                            {offersSubtitle(selectedPartLabels)}
+                  <section className="overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2.5">
+                      <h2 className="text-sm font-semibold text-gray-900">
+                        Offers
+                        {selectedCount === 1 ? (
+                          <span className="ml-1.5 font-normal text-gray-500">
+                            for <span className="font-medium text-blue-700">{offersSubtitle(selectedPartLabels)}</span>
                           </span>
-                        </>
-                      )}
-                    </h2>
-                    <span className="text-xs text-gray-500">
-                      {filteredOffers.length}
-                      {filteredOffers.length !== offersForSelection.length
-                        ? ` of ${offersForSelection.length}`
-                        : ''}{' '}
-                      line{filteredOffers.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-col gap-3 rounded-xl border border-gray-100 bg-slate-50/80 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filters</span>
-                      {hasActiveOfferFilters && (
-                        <button
-                          type="button"
-                          onClick={clearOfferFilters}
-                          className="text-xs font-medium text-blue-700 hover:text-blue-900"
-                        >
-                          Reset filters
-                        </button>
-                      )}
+                        ) : (
+                          <span className="ml-1.5 font-normal text-gray-500">
+                            for <span className="font-medium text-blue-700">{selectedCount} parts</span>
+                          </span>
+                        )}
+                      </h2>
+                      <span className="text-xs tabular-nums text-gray-400">
+                        {filteredOffers.length}
+                        {filteredOffers.length !== offersForSelection.length
+                          ? ` / ${offersForSelection.length}`
+                          : ''}{' '}
+                        row{filteredOffers.length === 1 ? '' : 's'}
+                      </span>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="relative sm:col-span-2 lg:col-span-2">
+
+                    <div className="flex flex-wrap items-center gap-2 border-b border-gray-50 bg-gray-50/50 px-4 py-2">
+                      <div className="relative min-w-[180px] max-w-xs flex-1">
                         <Search
-                          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                          className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
                           aria-hidden
                         />
                         <input
                           type="search"
                           value={offerSearch}
                           onChange={(e) => setOfferSearch(e.target.value)}
-                          placeholder="Search part, vendor, price, URL\u2026"
-                          className={`${INPUT_SM} pl-9`}
+                          placeholder="Search offers\u2026"
+                          className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
                           aria-label="Search offers"
                         />
                       </div>
-                      <div>
-                        <label htmlFor="price-calc-vendor" className="sr-only">
-                          Vendor
-                        </label>
-                        <select
-                          id="price-calc-vendor"
-                          value={vendorFilter}
-                          onChange={(e) => setVendorFilter(e.target.value)}
-                          className={SELECT_SM}
-                          aria-label="Filter by vendor"
+                      <select
+                        value={vendorFilter}
+                        onChange={(e) => setVendorFilter(e.target.value)}
+                        className="cursor-pointer rounded-md border border-gray-200 bg-white py-1.5 pl-2.5 pr-7 text-xs text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                        aria-label="Filter by vendor"
+                      >
+                        <option value="all">All vendors</option>
+                        {vendorNamesInSelection.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={offerSort}
+                        onChange={(e) => setOfferSort(e.target.value as OfferSortMode)}
+                        className="cursor-pointer rounded-md border border-gray-200 bg-white py-1.5 pl-2.5 pr-7 text-xs text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                        aria-label="Sort offers"
+                      >
+                        <option value="part-asc">Part A\u2013Z</option>
+                        <option value="vendor-asc">Vendor A\u2013Z</option>
+                        <option value="vendor-desc">Vendor Z\u2013A</option>
+                        <option value="price-asc">Price \u2191</option>
+                        <option value="price-desc">Price \u2193</option>
+                      </select>
+                      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={requireUrl}
+                          onChange={(e) => setRequireUrl(e.target.checked)}
+                          className={PART_CHECK}
+                        />
+                        Has link
+                      </label>
+                      {hasActiveOfferFilters && (
+                        <button
+                          type="button"
+                          onClick={clearOfferFilters}
+                          className="ml-auto text-[11px] font-medium text-blue-600 hover:text-blue-800"
                         >
-                          <option value="all">All vendors</option>
-                          {vendorNamesInSelection.map((name) => (
-                            <option key={name} value={name}>
-                              {name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="price-calc-sort" className="sr-only">
-                          Sort
-                        </label>
-                        <select
-                          id="price-calc-sort"
-                          value={offerSort}
-                          onChange={(e) => setOfferSort(e.target.value as OfferSortMode)}
-                          className={SELECT_SM}
-                          aria-label="Sort offers"
-                        >
-                          <option value="part-asc">Sort: Part A\u2013Z</option>
-                          <option value="vendor-asc">Sort: Vendor A\u2013Z</option>
-                          <option value="vendor-desc">Sort: Vendor Z\u2013A</option>
-                          <option value="price-asc">Sort: Price low \u2192 high</option>
-                          <option value="price-desc">Sort: Price high \u2192 low</option>
-                        </select>
-                      </div>
+                          Reset
+                        </button>
+                      )}
                     </div>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={requireUrl}
-                        onChange={(e) => setRequireUrl(e.target.checked)}
-                        className={PART_CHECK}
-                      />
-                      <span>Has product link only</span>
-                    </label>
-                  </div>
 
-                  {filteredOffers.length === 0 ? (
-                    <p className="mt-4 text-sm text-gray-600">
-                      {offersForSelection.length === 0
-                        ? 'No offers found for the selected parts.'
-                        : 'No offers match the current filters.'}
-                    </p>
-                  ) : (
-                    <div className="mt-4 overflow-x-auto rounded-lg border border-gray-100">
-                      <table className="w-full min-w-lg text-left text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-100 bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            <th className="w-11 px-2 py-2.5">
-                              <span className="sr-only">Select row</span>
-                              <input
-                                type="checkbox"
-                                ref={(el) => {
-                                  if (el) el.indeterminate = filteredSelectionIndeterminate
-                                }}
-                                checked={allFilteredChecked}
-                                onChange={toggleAllFiltered}
-                                disabled={filteredOfferKeys.length === 0}
-                                className={PART_CHECK}
-                                title="Select all visible rows"
-                                aria-label="Select all visible rows"
-                              />
-                            </th>
-                            {multiPart && <th className="px-3 py-2.5">Part</th>}
-                            <th className="px-3 py-2.5">Vendor</th>
-                            <th className="px-3 py-2.5">Price</th>
-                            <th className="px-3 py-2.5">Qty</th>
-                            <th className="px-3 py-2.5">URL</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {filteredOffers.map((row, idx) => {
-                            const href = safeHttpUrl(row.url)
-                            const rowKey = offerStableKey(row)
-                            const trKey = `${idx}-${rowKey}`
-                            const rowChecked = checkedOfferKeys.has(rowKey)
-                            return (
-                              <tr key={trKey} className="hover:bg-slate-50/60">
-                                <td className="px-2 py-2.5 align-middle">
-                                  <input
-                                    type="checkbox"
-                                    checked={rowChecked}
-                                    onChange={() => toggleOfferChecked(rowKey)}
-                                    className={PART_CHECK}
-                                    aria-label={`Select offer ${partLabel(row)} \u00b7 ${vendorLabel(row)}`}
-                                  />
-                                </td>
-                                {multiPart && (
-                                  <td className="px-3 py-2.5 font-medium text-gray-800">{partLabel(row)}</td>
-                                )}
-                                <td className="px-3 py-2.5 font-medium text-gray-900">{vendorLabel(row)}</td>
-                                <td className="px-3 py-2.5 tabular-nums text-gray-800">
-                                  {row.price != null && String(row.price).trim() ? row.price : '\u2014'}
-                                </td>
-                                <td className="px-3 py-2.5 tabular-nums text-gray-700">
-                                  {row.quantity != null && Number.isFinite(row.quantity)
-                                    ? String(row.quantity)
-                                    : '\u2014'}
-                                </td>
-                                <td className="max-w-48 px-3 py-2.5 sm:max-w-xs">
-                                  {href ? (
-                                    <a
-                                      href={href}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title={href}
-                                      className="inline-flex max-w-full items-center gap-1 text-blue-700 hover:underline"
-                                    >
-                                      <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                      <span className="min-w-0 truncate">{urlLinkLabel(href)}</span>
-                                    </a>
-                                  ) : (
-                                    <span className="text-gray-400">\u2014</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="flex items-center gap-2 border-b border-gray-100 bg-white px-4 py-2">
+                      <span className="text-xs text-gray-500">Add checked to</span>
+                      <select
+                        value={addToSlotIndex}
+                        onChange={(e) => setAddToSlotIndex(Number(e.target.value))}
+                        className="rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-6 text-xs font-medium text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                        aria-label="Target compare slot"
+                      >
+                        {compareGroups.map((g, i) => (
+                          <option key={g.id} value={i}>Compare {i + 1}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={addCheckedToSlot}
+                        disabled={checkedOfferKeys.size === 0}
+                        className="inline-flex items-center gap-1 rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white shadow-sm transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <Plus className="h-3 w-3" aria-hidden />
+                        Add{checkedOfferKeys.size > 0 ? ` ${checkedOfferKeys.size}` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addCompareSlot}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                      >
+                        New slot
+                      </button>
                     </div>
-                  )}
-                </>
-              )}
-            </Card>
-          </div>
 
-          {selectedCount > 0 && (
-            <>
-            {/* Scenario builder */}
-            <section className="mt-8 space-y-6">
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold tracking-tight text-gray-900">Scenario builder</h3>
-                  <p className="mt-1 max-w-xl text-sm text-gray-500">
-                    Tick offer rows above, then add them to a scenario slot. Adjust quantities per line.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    id="price-calc-add-slot"
-                    value={addToSlotIndex}
-                    onChange={(e) => setAddToSlotIndex(Number(e.target.value))}
-                    className="rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm font-medium text-gray-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                    aria-label="Target compare slot"
-                  >
-                    {compareGroups.map((g, i) => (
-                      <option key={g.id} value={i}>
-                        Compare {i + 1}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={addCheckedToSlot}
-                    disabled={checkedOfferKeys.size === 0}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Plus className="h-3.5 w-3.5" aria-hidden />
-                    Add{checkedOfferKeys.size > 0 ? ` ${checkedOfferKeys.size}` : ''}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={addCompareSlot}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
-                  >
-                    New slot
-                  </button>
-                </div>
-              </div>
-
-              {totalLinesAllSlots > 0 && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Scenarios</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{compareGroups.length}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Total lines</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{totalLinesAllSlots}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Vendors</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{totalVendorsAllSlots}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Best total</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">
-                      {lowestTotalSlotIdx >= 0
-                        ? formatUsd(groupSummaries[lowestTotalSlotIdx]!.sumExt)
-                        : '\u2014'}
-                    </p>
-                    {lowestTotalSlotIdx >= 0 && (
-                      <p className="mt-0.5 text-[10px] font-semibold uppercase text-emerald-700">
-                        Compare {lowestTotalSlotIdx + 1}
+                    {filteredOffers.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-gray-500">
+                        {offersForSelection.length === 0
+                          ? 'No offers found for the selected parts.'
+                          : 'No offers match the current filters.'}
                       </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-100 bg-gray-50/60 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                              <th className="w-10 px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  ref={(el) => {
+                                    if (el) el.indeterminate = filteredSelectionIndeterminate
+                                  }}
+                                  checked={allFilteredChecked}
+                                  onChange={toggleAllFiltered}
+                                  disabled={filteredOfferKeys.length === 0}
+                                  className={PART_CHECK}
+                                  title="Select all visible rows"
+                                  aria-label="Select all visible rows"
+                                />
+                              </th>
+                              {multiPart && <th className="px-3 py-2">Part</th>}
+                              <th className="px-3 py-2">Vendor</th>
+                              <th className="px-3 py-2">Price</th>
+                              <th className="px-3 py-2">Qty</th>
+                              <th className="px-3 py-2">URL</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {filteredOffers.map((row, idx) => {
+                              const href = safeHttpUrl(row.url)
+                              const rowKey = offerStableKey(row)
+                              const trKey = `${idx}-${rowKey}`
+                              const rowChecked = checkedOfferKeys.has(rowKey)
+                              return (
+                                <tr
+                                  key={trKey}
+                                  className={`transition-colors hover:bg-blue-50/40 ${rowChecked ? 'bg-blue-50/60' : ''}`}
+                                >
+                                  <td className="px-3 py-2 align-middle">
+                                    <input
+                                      type="checkbox"
+                                      checked={rowChecked}
+                                      onChange={() => toggleOfferChecked(rowKey)}
+                                      className={PART_CHECK}
+                                      aria-label={`Select offer ${partLabel(row)} \u00b7 ${vendorLabel(row)}`}
+                                    />
+                                  </td>
+                                  {multiPart && (
+                                    <td className="px-3 py-2 text-xs font-medium text-gray-700">{partLabel(row)}</td>
+                                  )}
+                                  <td className="px-3 py-2 text-xs font-medium text-gray-900">{vendorLabel(row)}</td>
+                                  <td className="px-3 py-2 text-xs tabular-nums text-gray-800">
+                                    {row.price != null && String(row.price).trim() ? row.price : '\u2014'}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs tabular-nums text-gray-600">
+                                    {row.quantity != null && Number.isFinite(row.quantity)
+                                      ? String(row.quantity)
+                                      : '\u2014'}
+                                  </td>
+                                  <td className="max-w-40 px-3 py-2">
+                                    {href ? (
+                                      <a
+                                        href={href}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={href}
+                                        className="inline-flex max-w-full items-center gap-1 text-xs text-blue-600 hover:underline"
+                                      >
+                                        <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+                                        <span className="min-w-0 truncate">{urlLinkLabel(href)}</span>
+                                      </a>
+                                    ) : (
+                                      <span className="text-xs text-gray-300">\u2014</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
-                  </div>
-                </div>
-              )}
+                  </section>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {compareGroups.map((group, slotIndex) => {
-                  const summary = groupSummaries[slotIndex] ?? {
-                    lines: 0,
-                    sumExt: 0,
-                    minUnit: null as number | null,
-                    vendorCount: 0,
-                  }
-                  const colors = slotColor(slotIndex)
-                  const isWinner = lowestTotalSlotIdx === slotIndex
-                  return (
-                    <div
-                      key={group.id}
-                      className={`flex flex-col overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-sm ${colors.top}`}
-                    >
-                      <div className="flex items-center justify-between gap-2 bg-gray-50/80 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-bold text-white ${colors.badge}`}>
-                            {slotIndex + 1}
-                          </span>
-                          <span className="text-sm font-semibold text-gray-900">
-                            Compare {slotIndex + 1}
-                          </span>
-                          {isWinner && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                              <Crown className="h-3 w-3" aria-hidden />
-                              Best
-                            </span>
-                          )}
+                  <section>
+                    <h3 className="mb-3 text-sm font-semibold text-gray-900">Scenarios</h3>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {compareGroups.map((group, slotIndex) => {
+                        const summary = groupSummaries[slotIndex] ?? {
+                          lines: 0,
+                          sumExt: 0,
+                          minUnit: null as number | null,
+                          vendorCount: 0,
+                        }
+                        const colors = slotColor(slotIndex)
+                        const isWinner = lowestTotalSlotIdx === slotIndex
+                        return (
+                          <div
+                            key={group.id}
+                            className={`flex flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm ${colors.top}`}
+                          >
+                            <div className="flex items-center justify-between gap-2 px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded text-[10px] font-bold text-white ${colors.badge}`}>
+                                  {slotIndex + 1}
+                                </span>
+                                <span className="text-xs font-semibold text-gray-900">Compare {slotIndex + 1}</span>
+                                {isWinner && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-800">
+                                    <Crown className="h-2.5 w-2.5" aria-hidden />
+                                    Best
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => clearSlot(slotIndex)}
+                                  disabled={group.lines.length === 0}
+                                  className="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30"
+                                >
+                                  Clear
+                                </button>
+                                {compareGroups.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeCompareSlot(slotIndex)}
+                                    className="rounded p-1 text-gray-300 transition hover:bg-red-50 hover:text-red-500"
+                                    title="Remove slot"
+                                    aria-label={`Remove Compare ${slotIndex + 1}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="border-t border-gray-100 px-3 py-3">
+                              <p className="text-2xl font-bold tabular-nums tracking-tight text-gray-900">
+                                {summary.lines > 0 && summary.sumExt > 0 ? formatUsd(summary.sumExt) : '\u2014'}
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] text-gray-400">
+                                <span>{summary.lines} line{summary.lines === 1 ? '' : 's'}</span>
+                                {summary.vendorCount > 0 && (
+                                  <span>\u00b7 {summary.vendorCount} vendor{summary.vendorCount === 1 ? '' : 's'}</span>
+                                )}
+                                {summary.minUnit != null && (
+                                  <span className="tabular-nums">\u00b7 Best unit {formatUsd(summary.minUnit)}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto border-t border-gray-50 px-1 py-1" style={{ maxHeight: '14rem' }}>
+                              {group.lines.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center gap-1 py-6 text-center text-[11px] text-gray-300">
+                                  <Package className="h-5 w-5" aria-hidden />
+                                  <p>Check rows above &amp; click Add</p>
+                                </div>
+                              ) : (
+                                <table className="w-full text-[11px]">
+                                  <thead>
+                                    <tr className="text-left text-[9px] font-semibold uppercase tracking-widest text-gray-300">
+                                      <th className="px-2 pb-1">Part / Vendor</th>
+                                      <th className="px-1.5 pb-1 text-right">Unit</th>
+                                      <th className="w-16 px-1.5 pb-1 text-right">Qty</th>
+                                      <th className="px-1.5 pb-1 text-right">Ext.</th>
+                                      <th className="w-6 pb-1" />
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.lines
+                                      .filter((line) => offerByKey.has(line.key))
+                                      .map((line) => {
+                                        const row = offerByKey.get(line.key)!
+                                        const qEff = effectiveScenarioQty(line.qty, row)
+                                        const unit = parsePrice(row.price)
+                                        return (
+                                          <tr key={line.key} className="group border-t border-gray-50">
+                                            <td className="px-2 py-1">
+                                              <div className="flex items-center gap-1">
+                                                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${colors.dot}`} />
+                                                <span className="font-medium text-gray-800">{partLabel(row)}</span>
+                                              </div>
+                                              <span className="ml-3 text-gray-400">{vendorLabel(row)}</span>
+                                            </td>
+                                            <td className="whitespace-nowrap px-1.5 py-1 text-right tabular-nums text-gray-600">
+                                              {row.price != null && String(row.price).trim() ? row.price : '\u2014'}
+                                            </td>
+                                            <td className="px-1.5 py-1 text-right">
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={line.qty}
+                                                onChange={(e) => updateLineQty(slotIndex, line.key, e.target.value)}
+                                                className="w-full rounded border border-gray-200 bg-transparent px-1 py-0.5 text-right tabular-nums text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                                                aria-label={`Qty ${partLabel(row)} ${vendorLabel(row)}`}
+                                              />
+                                            </td>
+                                            <td className="whitespace-nowrap px-1.5 py-1 text-right font-semibold tabular-nums text-gray-900">
+                                              {unit != null ? formatUsd(unit * qEff) : '\u2014'}
+                                            </td>
+                                            <td className="px-0.5 py-1 text-center">
+                                              <button
+                                                type="button"
+                                                onClick={() => removeKeyFromSlot(slotIndex, line.key)}
+                                                className="rounded p-0.5 text-gray-200 opacity-0 transition group-hover:opacity-100 hover:text-red-500"
+                                                aria-label="Remove line"
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <section className="overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm">
+                      <div className="border-b border-gray-100 bg-gray-50/60 px-4 py-2.5">
+                        <h3 className="text-sm font-semibold text-gray-900">
+                          Impact
+                          <span className="ml-1.5 text-xs font-normal text-gray-400">Compare 1 vs 2</span>
+                        </h3>
+                      </div>
+                      <div className="space-y-4 px-4 py-4">
+                        <label className="block max-w-[200px] text-[11px] font-medium text-gray-500">
+                          Switch cost (one-time)
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={scenarioSwitchCost}
+                            onChange={(e) => setScenarioSwitchCost(e.target.value)}
+                            placeholder="0"
+                            className="mt-1 w-full rounded-md border border-gray-200 bg-gray-50/80 px-2.5 py-1.5 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                            autoComplete="off"
+                          />
+                        </label>
+
+                        {compare12Metrics.canCompare ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="rounded-lg border-l-[3px] border-l-slate-600 bg-gray-50/80 px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">Compare 1</p>
+                                <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">{formatUsd(compare12Metrics.spendA)}</p>
+                              </div>
+                              <div className="rounded-lg border-l-[3px] border-l-emerald-500 bg-gray-50/80 px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">Compare 2</p>
+                                <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">{formatUsd(compare12Metrics.spendB)}</p>
+                              </div>
+                            </div>
+
+                            <div
+                              className={`rounded-xl p-4 ${
+                                compare12Metrics.savings >= 0
+                                  ? 'bg-linear-to-br from-emerald-50 to-emerald-100/30'
+                                  : 'bg-linear-to-br from-amber-50 to-amber-100/30'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                {compare12Metrics.savings >= 0 ? (
+                                  <ArrowDownRight className="h-4 w-4 text-emerald-600" aria-hidden />
+                                ) : (
+                                  <ArrowUpRight className="h-4 w-4 text-amber-600" aria-hidden />
+                                )}
+                                <span className="text-xs font-semibold text-gray-700">
+                                  {compare12Metrics.savings >= 0 ? 'Savings' : 'Extra cost'}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-2xl font-extrabold tabular-nums tracking-tight text-gray-900">
+                                {formatUsd(Math.abs(compare12Metrics.savings))}
+                              </p>
+                              {compare12Metrics.spendA > 0 && (
+                                <p className="mt-0.5 text-xs tabular-nums text-gray-600">
+                                  {formatPct(Math.abs(compare12Metrics.savingsPct))}
+                                  <span className="text-gray-400">
+                                    {' '}{compare12Metrics.savings >= 0 ? 'reduction' : 'increase'}
+                                  </span>
+                                </p>
+                              )}
+                              <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-gray-600 ring-1 ring-gray-900/5">
+                                <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                                {compare12Metrics.savings > 0 &&
+                                compare12Metrics.nre > 0 &&
+                                compare12Metrics.paybackMonths != null ? (
+                                  <span className="tabular-nums">
+                                    ~{compare12Metrics.paybackMonths.toFixed(1)} mo to recover {formatUsd(compare12Metrics.nre)}
+                                  </span>
+                                ) : compare12Metrics.savings > 0 && compare12Metrics.nre <= 0 ? (
+                                  <span>Immediate \u2014 no switch cost</span>
+                                ) : compare12Metrics.savings <= 0 ? (
+                                  <span className="text-gray-400">N/A \u2014 no savings</span>
+                                ) : (
+                                  <span className="text-gray-400">Enter switch cost above</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">Spend comparison</p>
+                              {[
+                                { label: 'Compare 1', value: compare12Metrics.spendA, pct: compare12Metrics.barA, idx: 0 },
+                                { label: 'Compare 2', value: compare12Metrics.spendB, pct: compare12Metrics.barB, idx: 1 },
+                              ].map((bar) => (
+                                <div key={bar.label}>
+                                  <div className="mb-0.5 flex items-baseline justify-between gap-2 text-[11px]">
+                                    <span className="flex items-center gap-1.5 font-medium text-gray-600">
+                                      <span className={`inline-block h-2 w-2 rounded-sm ${slotColor(bar.idx).bar}`} />
+                                      {bar.label}
+                                    </span>
+                                    <span className="font-bold tabular-nums text-gray-900">{formatUsd(bar.value)}</span>
+                                  </div>
+                                  <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                                    <div
+                                      className={`h-full rounded-full transition-[width] duration-500 ease-out ${slotColor(bar.idx).bar}`}
+                                      style={{ width: `${bar.pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/40 px-4 py-6 text-center text-xs text-gray-400">
+                            Add offers to <strong className="font-semibold text-gray-600">both</strong> Compare 1 and
+                            Compare 2 to see savings &amp; payback.
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="flex flex-col overflow-hidden rounded-xl border border-violet-200/50 bg-linear-to-br from-violet-50/50 to-white shadow-sm">
+                      <div className="flex items-center justify-between gap-2 border-b border-violet-100/80 bg-violet-50/40 px-4 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5 text-violet-500" aria-hidden />
+                          <span className="text-sm font-semibold text-violet-900">AI Advisor</span>
                         </div>
-                        <div className="flex shrink-0 items-center gap-0.5">
+                        {(aiMessages.length > 0 || aiSessionId) && (
                           <button
                             type="button"
-                            onClick={() => clearSlot(slotIndex)}
-                            disabled={group.lines.length === 0}
-                            className="rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-30"
+                            onClick={clearAiChat}
+                            className="text-[11px] font-medium text-violet-500 hover:text-violet-800"
                           >
                             Clear
                           </button>
-                          {compareGroups.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeCompareSlot(slotIndex)}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600"
-                              title="Remove slot"
-                              aria-label={`Remove Compare ${slotIndex + 1}`}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="border-b border-gray-100 px-4 py-4">
-                        <p className="text-3xl font-bold tabular-nums tracking-tight text-gray-900">
-                          {summary.lines > 0 && summary.sumExt > 0 ? formatUsd(summary.sumExt) : '\u2014'}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                          <span>{summary.lines} line{summary.lines === 1 ? '' : 's'}</span>
-                          {summary.vendorCount > 0 && (
-                            <span>{summary.vendorCount} vendor{summary.vendorCount === 1 ? '' : 's'}</span>
-                          )}
-                          {summary.minUnit != null && (
-                            <span className="tabular-nums">Best unit {formatUsd(summary.minUnit)}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 overflow-y-auto px-1 py-2" style={{ maxHeight: '16rem' }}>
-                        {group.lines.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center gap-1 py-8 text-center text-xs text-gray-400">
-                            <Package className="h-6 w-6 text-gray-300" aria-hidden />
-                            <p>Tick rows above, then &ldquo;Add&rdquo;</p>
-                          </div>
-                        ) : (
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                                <th className="px-3 pb-1">Part / Vendor</th>
-                                <th className="px-2 pb-1 text-right">Unit</th>
-                                <th className="w-20 px-2 pb-1 text-right">Qty</th>
-                                <th className="px-2 pb-1 text-right">Ext.</th>
-                                <th className="w-7 pb-1" />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.lines
-                                .filter((line) => offerByKey.has(line.key))
-                                .map((line) => {
-                                  const row = offerByKey.get(line.key)!
-                                  const qEff = effectiveScenarioQty(line.qty, row)
-                                  const unit = parsePrice(row.price)
-                                  return (
-                                    <tr key={line.key} className="group border-t border-gray-100/80">
-                                      <td className="px-3 py-1.5">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className={`h-2 w-2 shrink-0 rounded-full ${colors.dot}`} />
-                                          <span className="font-medium text-gray-900">{partLabel(row)}</span>
-                                        </div>
-                                        <span className="ml-3.5 text-gray-500">{vendorLabel(row)}</span>
-                                      </td>
-                                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-gray-700">
-                                        {row.price != null && String(row.price).trim() ? row.price : '\u2014'}
-                                      </td>
-                                      <td className="px-2 py-1.5 text-right">
-                                        <input
-                                          type="text"
-                                          inputMode="decimal"
-                                          value={line.qty}
-                                          onChange={(e) => updateLineQty(slotIndex, line.key, e.target.value)}
-                                          className="w-full rounded border border-gray-200 bg-transparent px-1.5 py-1 text-right tabular-nums text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                                          aria-label={`Qty ${partLabel(row)} ${vendorLabel(row)}`}
-                                        />
-                                      </td>
-                                      <td className="whitespace-nowrap px-2 py-1.5 text-right font-medium tabular-nums text-gray-900">
-                                        {unit != null ? formatUsd(unit * qEff) : '\u2014'}
-                                      </td>
-                                      <td className="px-1 py-1.5 text-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => removeKeyFromSlot(slotIndex, line.key)}
-                                          className="rounded p-0.5 text-gray-300 opacity-0 transition group-hover:opacity-100 hover:text-red-500"
-                                          aria-label="Remove line"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                            </tbody>
-                          </table>
                         )}
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-
-            {/* Impact analysis */}
-            <section className="mt-6 overflow-hidden rounded-2xl border border-gray-200/90 bg-white shadow-sm">
-              <div className="border-b border-gray-100 bg-gray-50/60 px-5 py-4">
-                <h3 className="text-base font-semibold tracking-tight text-gray-900">
-                  Impact analysis
-                  <span className="ml-2 text-sm font-normal text-gray-500">Compare 1 vs Compare 2</span>
-                </h3>
-              </div>
-
-              <div className="space-y-5 px-5 py-5">
-                <label className="block max-w-xs text-xs font-medium text-gray-600">
-                  One-time switch cost
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={scenarioSwitchCost}
-                    onChange={(e) => setScenarioSwitchCost(e.target.value)}
-                    placeholder="0"
-                    className={`${INPUT_SM} mt-1`}
-                    autoComplete="off"
-                  />
-                </label>
-
-                {compare12Metrics.canCompare ? (
-                  <>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border-l-4 border-l-slate-700 bg-gray-50/80 px-4 py-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                          Compare 1 \u2014 baseline
-                        </p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">
-                          {formatUsd(compare12Metrics.spendA)}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border-l-4 border-l-emerald-600 bg-gray-50/80 px-4 py-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                          Compare 2 \u2014 alternative
-                        </p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">
-                          {formatUsd(compare12Metrics.spendB)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`rounded-2xl p-5 ${
-                        compare12Metrics.savings >= 0
-                          ? 'bg-linear-to-br from-emerald-50 to-emerald-100/40'
-                          : 'bg-linear-to-br from-amber-50 to-amber-100/40'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-start gap-6 lg:gap-10">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            {compare12Metrics.savings >= 0 ? (
-                              <ArrowDownRight className="h-5 w-5 text-emerald-600" aria-hidden />
-                            ) : (
-                              <ArrowUpRight className="h-5 w-5 text-amber-600" aria-hidden />
-                            )}
-                            <span className="text-sm font-semibold text-gray-800">
-                              {compare12Metrics.savings >= 0 ? 'Savings' : 'Extra cost'} switching to Compare 2
-                            </span>
-                          </div>
-                          <p className="mt-2 text-4xl font-extrabold tabular-nums tracking-tight text-gray-900">
-                            {formatUsd(Math.abs(compare12Metrics.savings))}
-                          </p>
-                          {compare12Metrics.spendA > 0 && (
-                            <p className="mt-1 text-sm tabular-nums text-gray-700">
-                              {formatPct(Math.abs(compare12Metrics.savingsPct))}
-                              <span className="font-normal text-gray-500">
-                                {' '}
-                                {compare12Metrics.savings >= 0 ? 'reduction' : 'increase'} vs baseline
-                              </span>
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-start gap-3 rounded-xl bg-white/80 px-4 py-3 shadow-sm ring-1 ring-gray-900/5">
-                          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-                          <div className="text-sm text-gray-700">
-                            <p className="font-semibold text-gray-900">Payback</p>
-                            {compare12Metrics.savings > 0 &&
-                            compare12Metrics.nre > 0 &&
-                            compare12Metrics.paybackMonths != null ? (
-                              <p className="mt-0.5 tabular-nums">
-                                ~{compare12Metrics.paybackMonths.toFixed(1)} months
-                                <span className="text-gray-500">
-                                  {' '}to recover {formatUsd(compare12Metrics.nre)}
+                      <div className="flex flex-1 flex-col px-4 py-3">
+                        {!token && (
+                          <p className="mb-2 text-xs text-amber-800">Sign in to use AI.</p>
+                        )}
+                        {aiError && (
+                          <p className="mb-2 text-xs text-red-700" role="alert">{aiError}</p>
+                        )}
+                        {aiMessages.length > 0 && (
+                          <ul
+                            className="mb-3 flex-1 space-y-1.5 overflow-y-auto rounded-lg border border-violet-100/80 bg-white/80 p-2 text-xs"
+                            style={{ maxHeight: '16rem' }}
+                            aria-label="AI conversation"
+                          >
+                            {aiMessages.map((m, i) => (
+                              <li
+                                key={`ai-msg-${i}-${m.role}`}
+                                className={
+                                  m.role === 'user'
+                                    ? 'rounded-md bg-violet-100/60 px-2.5 py-1.5 text-violet-950'
+                                    : 'whitespace-pre-wrap rounded-md bg-slate-50 px-2.5 py-1.5 text-slate-800'
+                                }
+                              >
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
+                                  {m.role === 'user' ? 'You' : 'AI'}
                                 </span>
-                              </p>
-                            ) : compare12Metrics.savings > 0 && compare12Metrics.nre <= 0 ? (
-                              <p className="mt-0.5">Immediate \u2014 no switch cost.</p>
-                            ) : compare12Metrics.savings <= 0 ? (
-                              <p className="mt-0.5 text-gray-500">N/A \u2014 no savings.</p>
-                            ) : (
-                              <p className="mt-0.5 text-gray-500">Enter a switch cost.</p>
+                                <div className="mt-0.5">{m.content}</div>
+                              </li>
+                            ))}
+                            {aiLoading && (
+                              <li className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                                Thinking\u2026
+                              </li>
                             )}
+                          </ul>
+                        )}
+                        {aiMessages.length === 0 && aiLoading && (
+                          <div className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            Thinking\u2026
                           </div>
+                        )}
+                        <div className="mt-auto flex gap-2">
+                          <textarea
+                            value={aiInput}
+                            onChange={(e) => setAiInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                void runScenarioAi()
+                              }
+                            }}
+                            placeholder="Ask about your scenarios\u2026"
+                            rows={2}
+                            disabled={!token || aiLoading}
+                            className="min-h-[38px] flex-1 resize-none rounded-lg border border-violet-200/80 bg-white px-3 py-2 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-violet-400 focus:ring-1 focus:ring-violet-400/20 disabled:opacity-50"
+                            aria-label="Ask AI about compare scenarios"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void runScenarioAi()}
+                            disabled={!token || aiLoading || !hasScenarioLines || !aiInput.trim()}
+                            className="inline-flex shrink-0 items-center justify-center rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {aiLoading ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                            )}
+                          </button>
                         </div>
+                        {!hasScenarioLines && token && (
+                          <p className="mt-1.5 text-[11px] text-gray-400">Add lines to a compare slot first.</p>
+                        )}
                       </div>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/50 px-5 py-4">
-                      <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-gray-400">
-                        Spend comparison
-                      </p>
-                      <div className="space-y-3">
-                        {[
-                          { label: 'Compare 1', value: compare12Metrics.spendA, pct: compare12Metrics.barA, idx: 0 },
-                          { label: 'Compare 2', value: compare12Metrics.spendB, pct: compare12Metrics.barB, idx: 1 },
-                        ].map((bar) => (
-                          <div key={bar.label}>
-                            <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
-                              <span className="flex items-center gap-2 font-medium text-gray-700">
-                                <span className={`inline-block h-2.5 w-2.5 rounded-sm ${slotColor(bar.idx).bar}`} />
-                                {bar.label}
-                              </span>
-                              <span className="font-bold tabular-nums text-gray-900">{formatUsd(bar.value)}</span>
-                            </div>
-                            <div className="h-4 overflow-hidden rounded-full bg-gray-200/70">
-                              <div
-                                className={`h-full rounded-full transition-[width] duration-500 ease-out ${slotColor(bar.idx).bar}`}
-                                style={{ width: `${bar.pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-8 text-center text-sm text-gray-500">
-                    Add offers to <strong className="font-semibold text-gray-700">both</strong> Compare 1 and
-                    Compare 2 to see savings, payback, and spend bars.
+                    </section>
                   </div>
-                )}
-              </div>
-            </section>
-
-            {/* AI scenario advisor */}
-            <section className="mt-6 overflow-hidden rounded-2xl border border-violet-200/60 bg-linear-to-br from-violet-50/70 to-white shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-100 bg-violet-50/50 px-5 py-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-violet-600" aria-hidden />
-                  <span className="text-sm font-semibold text-violet-900">AI scenario advisor</span>
-                </div>
-                {(aiMessages.length > 0 || aiSessionId) && (
-                  <button
-                    type="button"
-                    onClick={clearAiChat}
-                    className="text-xs font-medium text-violet-600 hover:text-violet-900"
-                  >
-                    Clear chat
-                  </button>
-                )}
-              </div>
-              <div className="px-5 py-4">
-                {!token && (
-                  <p className="mb-3 text-xs text-amber-800">Sign in to use AI.</p>
-                )}
-                {aiError && (
-                  <p className="mb-3 text-xs text-red-700" role="alert">
-                    {aiError}
-                  </p>
-                )}
-                {aiMessages.length > 0 && (
-                  <ul
-                    className="mb-4 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-violet-100 bg-white/90 p-3 text-sm"
-                    aria-label="AI conversation"
-                  >
-                    {aiMessages.map((m, i) => (
-                      <li
-                        key={`ai-msg-${i}-${m.role}`}
-                        className={
-                          m.role === 'user'
-                            ? 'rounded-lg bg-violet-100/70 px-3 py-2 text-violet-950'
-                            : 'whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-slate-800'
-                        }
-                      >
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                          {m.role === 'user' ? 'You' : 'AI'}
-                        </span>
-                        <div className="mt-0.5">{m.content}</div>
-                      </li>
-                    ))}
-                    {aiLoading && (
-                      <li className="flex items-center gap-2 text-xs text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        Thinking\u2026
-                      </li>
-                    )}
-                  </ul>
-                )}
-                {aiMessages.length === 0 && aiLoading && (
-                  <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Thinking\u2026
-                  </div>
-                )}
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <textarea
-                    value={aiInput}
-                    onChange={(e) => setAiInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        void runScenarioAi()
-                      }
-                    }}
-                    placeholder="e.g. Which scenario gives me the lowest total cost and why?"
-                    rows={2}
-                    disabled={!token || aiLoading}
-                    className="min-h-11 flex-1 resize-y rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none placeholder:text-gray-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:opacity-50"
-                    aria-label="Ask AI about compare scenarios"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void runScenarioAi()}
-                    disabled={!token || aiLoading || !hasScenarioLines || !aiInput.trim()}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {aiLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <Sparkles className="h-4 w-4" aria-hidden />
-                    )}
-                    Ask AI
-                  </button>
-                </div>
-                {!hasScenarioLines && token && (
-                  <p className="mt-2 text-xs text-gray-500">Add lines to a compare slot first.</p>
-                )}
-              </div>
-            </section>
-            </>
-          )}
-          </>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

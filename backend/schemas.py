@@ -151,6 +151,16 @@ class PortfolioSummaryResponse(BaseModel):
     prices_included: int = 0
 
 
+class PortfolioExcludeRequest(BaseModel):
+    part_number: str
+    """When True, hide every offer for this part number."""
+    exclude_entire_part: bool = False
+    vendor_name: str | None = None
+    url: str | None = None
+    price: str | None = None
+    quantity: int | None = None
+
+
 class AiChatHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str

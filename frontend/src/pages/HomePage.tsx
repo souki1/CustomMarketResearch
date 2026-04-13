@@ -43,7 +43,7 @@ const FEATURE_CARDS = [
     title: 'Upload Image',
     description: 'Upload images from your device or drag and drop.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-emerald-50 to-emerald-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-emerald-50 to-emerald-100/90`}>
         <svg className="h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
@@ -55,7 +55,7 @@ const FEATURE_CARDS = [
     title: 'Import data',
     description: 'Import your existing list from CRM or CSV.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-violet-50 to-violet-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-violet-50 to-violet-100/90`}>
         <svg className="h-8 w-8 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
         </svg>
@@ -67,7 +67,7 @@ const FEATURE_CARDS = [
     title: 'Start from template',
     description: 'Choose from pre-built workflows to get started.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-blue-50 to-blue-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-blue-50 to-blue-100/90`}>
         <svg className="h-8 w-8 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
         </svg>

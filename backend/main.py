@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
         await db["compare_states"].create_index([("updated_at", -1)])
         await db["reports"].create_index([("owner_id", 1), ("updated_at", -1)])
         await db["purchase_orders"].create_index([("owner_id", 1), ("updated_at", -1)])
+        await db["portfolio_exclusions"].create_index([("owner_id", 1), ("part_number", 1)])
     yield
 
 

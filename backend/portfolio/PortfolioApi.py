@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -12,7 +14,7 @@ from auth_utils import decode_access_token
 from database import get_db
 from models import User
 from mongo import get_mongo_db
-from schemas import PortfolioItemResponse, PortfolioSummaryResponse
+from schemas import PortfolioExcludeRequest, PortfolioItemResponse, PortfolioSummaryResponse
 
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -671,6 +673,103 @@ async def _merge_portfolio_items_all_selections(
     return merged[:500]
 
 
+def _norm_part_key(p: Any) -> str:
+    return (p or "").strip().upper()
+
+
+def _norm_vendor_key(v: Any) -> str:
+    return (v or "").strip().upper()
+
+
+def _norm_url_key(u: Any) -> str:
+    if u is None:
+        return ""
+    s = str(u).strip()
+    if not s:
+        return ""
+    try:
+        p = urlparse(s)
+        netloc = (p.netloc or "").lower()
+        path = (p.path or "").rstrip("/") or "/"
+        return urlunparse((p.scheme.lower(), netloc, path, "", p.query, ""))
+    except Exception:
+        return s.lower()
+
+
+def _offer_exclusion_matches(item: dict[str, Any], ex: dict[str, Any]) -> bool:
+    """Every field present on the exclusion must match the portfolio row."""
+    if _norm_part_key(item.get("part_number")) != _norm_part_key(ex.get("part_number")):
+        return False
+    if ex.get("exclude_entire_part"):
+        return True
+    if "vendor_name" in ex:
+        if _norm_vendor_key(item.get("vendor_name")) != _norm_vendor_key(ex.get("vendor_name")):
+            return False
+    if "url" in ex:
+        if _norm_url_key(item.get("url")) != _norm_url_key(ex.get("url")):
+            return False
+    if "price" in ex:
+        if str(item.get("price") or "") != str(ex.get("price") or ""):
+            return False
+    if "quantity" in ex and ex.get("quantity") is not None:
+        if item.get("quantity") != ex.get("quantity"):
+            return False
+    return True
+
+
+async def _load_exclusions(
+    mongo_db: AsyncIOMotorDatabase,
+    owner_id: int,
+) -> list[dict[str, Any]]:
+    cursor = mongo_db["portfolio_exclusions"].find({"owner_id": owner_id})
+    exclusions: list[dict[str, Any]] = []
+    async for doc in cursor:
+        ex: dict[str, Any] = {
+            "part_number": doc.get("part_number"),
+            "exclude_entire_part": bool(doc.get("exclude_entire_part")),
+        }
+        if "vendor_name" in doc:
+            ex["vendor_name"] = doc.get("vendor_name")
+        if "url" in doc:
+            ex["url"] = doc.get("url")
+        if "price" in doc:
+            ex["price"] = doc.get("price")
+        if "quantity" in doc:
+            ex["quantity"] = doc.get("quantity")
+        exclusions.append(ex)
+    return exclusions
+
+
+def _apply_exclusions(
+    items: list[dict[str, Any]],
+    exclusions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not exclusions:
+        return items
+    result: list[dict[str, Any]] = []
+    for item in items:
+        item_pn = _norm_part_key(item.get("part_number"))
+        excluded = False
+        for ex in exclusions:
+            if _norm_part_key(ex.get("part_number")) != item_pn:
+                continue
+            if ex.get("exclude_entire_part"):
+                excluded = True
+                break
+            has_offer_keys = any(
+                k in ex for k in ("vendor_name", "url", "price", "quantity")
+            )
+            if not has_offer_keys:
+                excluded = True
+                break
+            if _offer_exclusion_matches(item, ex):
+                excluded = True
+                break
+        if not excluded:
+            result.append(item)
+    return result
+
+
 @router.get("/items", response_model=list[PortfolioItemResponse])
 async def list_portfolio_items(
     selection_id: int | None = None,
@@ -686,6 +785,8 @@ async def list_portfolio_items(
         deduped = await _load_deduped_portfolio_items_for_selection(mongo_db, user.id, selection_id)
     if row_index is not None:
         deduped = [it for it in deduped if it.get("row_index") == row_index]
+    exclusions = await _load_exclusions(mongo_db, user.id)
+    deduped = _apply_exclusions(deduped, exclusions)
     return [PortfolioItemResponse(**it) for it in deduped]
 
 
@@ -694,15 +795,124 @@ async def get_portfolio_summary(
     user: User = Depends(get_current_user),
     mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
 ):
-    """
-    Merged portfolio across all of the user's datasheet selections (same merge as the frontend).
-    Price stats use only positive numeric prices (invalid scrape values cleared earlier).
-    """
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
-
     merged = await _merge_portfolio_items_all_selections(mongo_db, user.id)
+    exclusions = await _load_exclusions(mongo_db, user.id)
+    merged = _apply_exclusions(merged, exclusions)
     if not merged:
         return PortfolioSummaryResponse()
-
     return PortfolioSummaryResponse(**_aggregate_summary_from_items(merged))
+
+
+def _portfolio_exclusion_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _has_offer_discriminator(body: PortfolioExcludeRequest) -> bool:
+    if body.vendor_name is not None and str(body.vendor_name).strip():
+        return True
+    if body.url is not None and str(body.url).strip():
+        return True
+    if body.price is not None and str(body.price).strip():
+        return True
+    if body.quantity is not None:
+        return True
+    return False
+
+
+def _build_offer_exclusion_doc(
+    user_id: int,
+    body: PortfolioExcludeRequest,
+    *,
+    part_number: str,
+    excluded_at: str,
+) -> dict[str, Any]:
+    doc: dict[str, Any] = {
+        "owner_id": user_id,
+        "part_number": part_number,
+        "exclude_entire_part": False,
+        "excluded_at": excluded_at,
+    }
+    data = body.model_dump(exclude_unset=True)
+    for k in ("vendor_name", "url", "price", "quantity"):
+        if k in data:
+            doc[k] = data[k]
+    return doc
+
+
+def _offer_exclusion_filter(user_id: int, doc: dict[str, Any]) -> dict[str, Any]:
+    flt: dict[str, Any] = {
+        "owner_id": user_id,
+        "part_number": doc["part_number"],
+        "exclude_entire_part": False,
+    }
+    for k in ("vendor_name", "url", "price", "quantity"):
+        if k in doc:
+            flt[k] = doc[k]
+    return flt
+
+
+@router.post("/items/exclude")
+async def exclude_portfolio_item(
+    body: PortfolioExcludeRequest,
+    user: User = Depends(get_current_user),
+    mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    pn = (body.part_number or "").strip()
+    if not pn:
+        raise HTTPException(status_code=400, detail="part_number is required")
+    now = _portfolio_exclusion_now()
+    if body.exclude_entire_part:
+        await mongo_db["portfolio_exclusions"].delete_many(
+            {"owner_id": user.id, "part_number": pn},
+        )
+        await mongo_db["portfolio_exclusions"].insert_one(
+            {
+                "owner_id": user.id,
+                "part_number": pn,
+                "exclude_entire_part": True,
+                "excluded_at": now,
+            },
+        )
+        return {"status": "excluded", "part_number": pn, "scope": "part"}
+    if not _has_offer_discriminator(body):
+        raise HTTPException(
+            status_code=400,
+            detail="To remove a single vendor offer, send vendor_name, url, price, and/or quantity.",
+        )
+    doc = _build_offer_exclusion_doc(user.id, body, part_number=pn, excluded_at=now)
+    flt = _offer_exclusion_filter(user.id, doc)
+    await mongo_db["portfolio_exclusions"].delete_many(flt)
+    await mongo_db["portfolio_exclusions"].insert_one(doc)
+    return {"status": "excluded", "part_number": pn, "scope": "offer"}
+
+
+@router.post("/items/restore")
+async def restore_portfolio_item(
+    body: PortfolioExcludeRequest,
+    user: User = Depends(get_current_user),
+    mongo_db: AsyncIOMotorDatabase = Depends(get_mongo_db),
+):
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    pn = (body.part_number or "").strip()
+    if not pn:
+        raise HTTPException(status_code=400, detail="part_number is required")
+    if body.exclude_entire_part:
+        result = await mongo_db["portfolio_exclusions"].delete_many(
+            {"owner_id": user.id, "part_number": pn, "exclude_entire_part": True},
+        )
+        return {"status": "restored", "deleted_count": result.deleted_count}
+    if not _has_offer_discriminator(body):
+        raise HTTPException(
+            status_code=400,
+            detail="To restore a single vendor offer, send vendor_name, url, price, and/or quantity.",
+        )
+    now = _portfolio_exclusion_now()
+    doc = _build_offer_exclusion_doc(user.id, body, part_number=pn, excluded_at=now)
+    flt = _offer_exclusion_filter(user.id, doc)
+    result = await mongo_db["portfolio_exclusions"].delete_many(flt)
+    return {"status": "restored", "deleted_count": result.deleted_count}

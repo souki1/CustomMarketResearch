@@ -415,6 +415,37 @@ export async function getPortfolioSummary(token: string): Promise<PortfolioSumma
   return request<PortfolioSummary>('/portfolio/summary', { token })
 }
 
+export type PortfolioExcludePayload = {
+  part_number: string
+  exclude_entire_part?: boolean
+  vendor_name?: string | null
+  url?: string | null
+  price?: string | null
+  quantity?: number | null
+}
+
+export async function excludePortfolioItem(
+  token: string,
+  payload: PortfolioExcludePayload,
+): Promise<{ status: string }> {
+  return request<{ status: string }>('/portfolio/items/exclude', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function restorePortfolioItem(
+  token: string,
+  payload: PortfolioExcludePayload,
+): Promise<{ status: string }> {
+  return request<{ status: string }>('/portfolio/items/restore', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
 export type CompareStatePayload = {
   compare_tabs: Array<Record<string, unknown>>
   active_compare_tab_id: string | null

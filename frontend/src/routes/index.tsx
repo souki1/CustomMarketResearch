@@ -21,6 +21,7 @@ import { PortfolioPage } from '@/pages/Portfolio'
 import { GenerateReportPage } from '@/pages/GenerateReport'
 import { AnalysisPage } from '@/pages/AnalysisPage'
 import { PriceCalculatorPage } from '@/pages/PriceCalculatorPage'
+import { WishlistPage } from '@/pages/WishlistPage'
 
 const router = createBrowserRouter([
   {
@@ -36,6 +37,7 @@ const router = createBrowserRouter([
       { path: 'purchase-order', element: <PurchaseOrderPage /> },
       { path: 'ai', element: <AiPlaceholderPage /> },
       { path: 'portfolio', element: <PortfolioPage /> },
+      { path: 'wishlist', element: <WishlistPage /> },
       { path: 'price-calculator', element: <PriceCalculatorPage /> },
       {
         path: 'settings',

@@ -1,6 +1,6 @@
-import { Calculator } from 'lucide-react'
+import { Calculator, Heart } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { PRICE_CALCULATOR_PATH, RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { PRICE_CALCULATOR_PATH, RESEARCH_COMPARE_PATH, WISHLIST_PATH } from '@/lib/paths'
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -92,6 +92,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
+  const isWishlist = location.pathname === WISHLIST_PATH
   const isPriceCalculator = location.pathname === PRICE_CALCULATOR_PATH
   const isSettings = location.pathname.startsWith('/settings')
 
@@ -123,6 +124,9 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             </Link>
             <Link to="/portfolio" className={collapsedLinkClass(isPortfolio)} title="Portfolio">
               <PortfolioIcon className={iconClass} />
+            </Link>
+            <Link to={WISHLIST_PATH} className={collapsedLinkClass(isWishlist)} title="Wishlist">
+              <Heart className={iconClass} />
             </Link>
             <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
               <PurchaseOrderIcon className={iconClass} />
@@ -178,6 +182,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
           <Link to="/portfolio" className={linkClass(isPortfolio)} title="Portfolio">
             <PortfolioIcon className={iconClass} />
             <span>Portfolio</span>
+          </Link>
+          <Link to={WISHLIST_PATH} className={linkClass(isWishlist)} title="Wishlist">
+            <Heart className={iconClass} />
+            <span>Wishlist</span>
           </Link>
           <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
             <PurchaseOrderIcon className={iconClass} />
