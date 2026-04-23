@@ -1,6 +1,6 @@
-import { Calculator, Heart } from 'lucide-react'
+import { Heart } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { PRICE_CALCULATOR_PATH, RESEARCH_COMPARE_PATH, WISHLIST_PATH } from '@/lib/paths'
+import { RESEARCH_COMPARE_PATH, WISHLIST_PATH } from '@/lib/paths'
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -27,13 +27,6 @@ function ReportsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6m4 6V9m4 10V5M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-function AnalysisIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5M4 19h16M8 15v-4m4 4V9m4 6v-6" />
     </svg>
   )
 }
@@ -88,12 +81,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
-  const isAnalysis = location.pathname === '/analysis'
   const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
   const isWishlist = location.pathname === WISHLIST_PATH
-  const isPriceCalculator = location.pathname === PRICE_CALCULATOR_PATH
   const isSettings = location.pathname.startsWith('/settings')
 
   if (collapsed) {
@@ -116,9 +107,6 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
               <ReportsIcon className={iconClass} />
             </Link>
-            <Link to="/analysis" className={collapsedLinkClass(isAnalysis)} title="Analysis">
-              <AnalysisIcon className={iconClass} />
-            </Link>
             <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
               <AiIcon className={iconClass} />
             </Link>
@@ -128,15 +116,8 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <Link to={WISHLIST_PATH} className={collapsedLinkClass(isWishlist)} title="Wishlist">
               <Heart className={iconClass} />
             </Link>
-            <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
+            <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase order board">
               <PurchaseOrderIcon className={iconClass} />
-            </Link>
-            <Link
-              to={PRICE_CALCULATOR_PATH}
-              className={collapsedLinkClass(isPriceCalculator)}
-              title="Price calculator"
-            >
-              <Calculator className={iconClass} />
             </Link>
             <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
               <SettingsIcon className={iconClass} />
@@ -171,10 +152,6 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <ReportsIcon className={iconClass} />
             <span>Reports</span>
           </Link>
-          <Link to="/analysis" className={linkClass(isAnalysis)} title="Analysis">
-            <AnalysisIcon className={iconClass} />
-            <span>Analysis</span>
-          </Link>
           <Link to="/ai" className={linkClass(isAi)} title="AI">
             <AiIcon className={iconClass} />
             <span>AI</span>
@@ -187,13 +164,9 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <Heart className={iconClass} />
             <span>Wishlist</span>
           </Link>
-          <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
+          <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase order board">
             <PurchaseOrderIcon className={iconClass} />
-            <span>Purchase Order</span>
-          </Link>
-          <Link to={PRICE_CALCULATOR_PATH} className={linkClass(isPriceCalculator)} title="Price calculator">
-            <Calculator className={iconClass} />
-            <span>Price calculator</span>
+            <span>Purchase order board</span>
           </Link>
           <Link to="/settings" className={linkClass(isSettings)} title="Settings">
             <SettingsIcon className={iconClass} />

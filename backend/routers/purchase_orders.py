@@ -1,3 +1,5 @@
+"""REST API for the purchase order board: create, list, update, and delete user-owned POs."""
+
 from datetime import datetime, timezone
 from typing import Annotated
 

@@ -84,6 +84,18 @@ function vendorUrlLinkLabel(href: string): string {
   }
 }
 
+function sourceGroupKey(url: string | null | undefined): string {
+  if (url && /^https?:\/\//i.test(url)) {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./i, "").trim()
+      if (host) return host
+    } catch {
+      /* ignore */
+    }
+  }
+  return "Unknown source"
+}
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -100,11 +112,19 @@ type VendorGroup = {
   entries: PortfolioItem[]
 }
 
-type ViewMode = "part" | "vendor"
+type SourceGroup = {
+  rowId: string
+  source_label: string | null
+  entries: PortfolioItem[]
+}
+
+type ViewMode = "part" | "vendor" | "source"
 
 type SortMode = "part-asc" | "part-desc" | "vendors-desc" | "best-asc" | "best-desc"
 
 type VendorSortMode = "vendor-asc" | "vendor-desc" | "parts-desc" | "best-asc" | "best-desc"
+
+type SourceSortMode = "source-asc" | "source-desc" | "offers-desc" | "best-asc" | "best-desc"
 
 function offerFingerprint(e: PortfolioItem): string {
   return `${e.part_number}|${e.vendor_name}|${e.price}|${e.quantity}|${e.url}`
@@ -360,6 +380,7 @@ export function PortfolioPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("part")
   const [sortMode, setSortMode] = useState<SortMode>("part-asc")
   const [vendorSortMode, setVendorSortMode] = useState<VendorSortMode>("vendor-asc")
+  const [sourceSortMode, setSourceSortMode] = useState<SourceSortMode>("source-asc")
 
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState<number>(5)
@@ -508,7 +529,76 @@ export function PortfolioPage() {
     return sorted
   }, [vendorGroups, search, vendorSortMode])
 
-  const activeFilteredList = viewMode === "part" ? filteredSortedPartGroups : filteredSortedVendorGroups
+  const sourceGroups: SourceGroup[] = useMemo(() => {
+    const map = new Map<string, PortfolioItem[]>()
+    for (const item of portfolioItems) {
+      const k = sourceGroupKey(item.url)
+      const arr = map.get(k)
+      if (arr) arr.push(item)
+      else map.set(k, [item])
+    }
+    const out: SourceGroup[] = []
+    let i = 0
+    for (const [k, entries] of map.entries()) {
+      const source_label = k || null
+      out.push({
+        rowId: source_label != null ? `source:${source_label}` : `source:null:${i}`,
+        source_label,
+        entries,
+      })
+      i += 1
+    }
+    return out
+  }, [portfolioItems])
+
+  const filteredSortedSourceGroups = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let list = sourceGroups
+    if (q) {
+      list = list.filter((sg) => {
+        const sn = (sg.source_label ?? "").toLowerCase()
+        if (sn.includes(q)) return true
+        return sg.entries.some(
+          (e) =>
+            (e.part_number ?? "").toLowerCase().includes(q) ||
+            (e.vendor_name ?? "").toLowerCase().includes(q) ||
+            (e.price ?? "").toLowerCase().includes(q),
+        )
+      })
+    }
+    const sorted = [...list]
+    sorted.sort((a, b) => {
+      const nameA = (a.source_label ?? "").toLowerCase()
+      const nameB = (b.source_label ?? "").toLowerCase()
+      const minPrice = (sg: SourceGroup) => {
+        const nums = sg.entries
+          .map((e) => parsePrice(e.price))
+          .filter((n): n is number => n != null)
+        return nums.length ? Math.min(...nums) : Number.POSITIVE_INFINITY
+      }
+      switch (sourceSortMode) {
+        case "source-desc":
+          return nameB.localeCompare(nameA)
+        case "offers-desc":
+          return b.entries.length - a.entries.length
+        case "best-asc":
+          return minPrice(a) - minPrice(b)
+        case "best-desc":
+          return minPrice(b) - minPrice(a)
+        case "source-asc":
+        default:
+          return nameA.localeCompare(nameB)
+      }
+    })
+    return sorted
+  }, [search, sourceGroups, sourceSortMode])
+
+  const activeFilteredList =
+    viewMode === "part"
+      ? filteredSortedPartGroups
+      : viewMode === "vendor"
+        ? filteredSortedVendorGroups
+        : filteredSortedSourceGroups
 
   const sharedVendorMatrix = useMemo(() => {
     const vendors = filteredSortedVendorGroups.filter((vg) => {
@@ -584,13 +674,20 @@ export function PortfolioPage() {
           safePage * itemsPerPage,
         )
       : []
+  const paginatedSourceGroups =
+    viewMode === "source"
+      ? (activeFilteredList as SourceGroup[]).slice(
+          (safePage - 1) * itemsPerPage,
+          safePage * itemsPerPage,
+        )
+      : []
   const showingFrom =
     activeFilteredList.length > 0 ? (safePage - 1) * itemsPerPage + 1 : 0
   const showingTo = Math.min(safePage * itemsPerPage, activeFilteredList.length)
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, sortMode, vendorSortMode, itemsPerPage, viewMode])
+  }, [search, sortMode, vendorSortMode, sourceSortMode, itemsPerPage, viewMode])
 
   /* ---- Selection stats ---- */
 
@@ -676,6 +773,19 @@ export function PortfolioPage() {
     let best: PortfolioItem | null = null
     let bestN = Number.POSITIVE_INFINITY
     for (const e of vg.entries) {
+      const n = parsePrice(e.price)
+      if (n != null && n < bestN) {
+        bestN = n
+        best = e
+      }
+    }
+    return best
+  }, [])
+
+  const bestEntryForSourceGroup = useCallback((sg: SourceGroup): PortfolioItem | null => {
+    let best: PortfolioItem | null = null
+    let bestN = Number.POSITIVE_INFINITY
+    for (const e of sg.entries) {
       const n = parsePrice(e.price)
       if (n != null && n < bestN) {
         bestN = n
@@ -835,9 +945,15 @@ export function PortfolioPage() {
         const part = g.part_number ?? ""
         for (const e of g.entries) pushRow(part, e)
       }
-    } else {
+    } else if (viewMode === "vendor") {
       for (const vg of filteredSortedVendorGroups) {
         for (const e of vg.entries) {
+          pushRow(e.part_number ?? "", e)
+        }
+      }
+    } else {
+      for (const sg of filteredSortedSourceGroups) {
+        for (const e of sg.entries) {
           pushRow(e.part_number ?? "", e)
         }
       }
@@ -850,7 +966,7 @@ export function PortfolioPage() {
     a.click()
     URL.revokeObjectURL(url)
     showToast("Exported CSV")
-  }, [filteredSortedPartGroups, filteredSortedVendorGroups, showToast, viewMode])
+  }, [filteredSortedPartGroups, filteredSortedSourceGroups, filteredSortedVendorGroups, showToast, viewMode])
 
   const handleCompareSelected = useCallback(() => {
     const chosen = partGroups.filter((g) => selectedPartIds.has(g.rowId))
@@ -937,6 +1053,31 @@ export function PortfolioPage() {
     [clearComparison, navigate, openComparison, showToast],
   )
 
+  const openCompareForSourceGroup = useCallback(
+    (sg: SourceGroup) => {
+      if (sg.entries.length === 0) return
+      clearComparison()
+      const items = sg.entries.map((e, idx) => ({
+        id: `portfolio-${sg.rowId}-o${idx}`,
+        title: e.part_number ?? "Part",
+        imageUrl: portfolioOfferImageSrc(e.image_url),
+        specs: [
+          { label: "Source", value: sg.source_label ?? "—" },
+          { label: "Vendor", value: e.vendor_name ?? "—" },
+          { label: "Price", value: e.price ?? "—" },
+          { label: "Quantity", value: e.quantity != null ? String(e.quantity) : "—" },
+          ...(e.url ? [{ label: "URL", value: e.url }] : []),
+        ],
+        sourceName: sg.source_label,
+      }))
+      openComparison(items)
+      markCompareNavFromPortfolio()
+      showToast("Opened comparison")
+      navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
+    },
+    [clearComparison, navigate, openComparison, showToast],
+  )
+
   const addToBucket = useCallback(
     (g: PartGroup, e: PortfolioItem) => {
       const id = `portfolio-${g.part_number ?? "p"}-${e.vendor_name ?? "v"}-${e.price ?? ""}`
@@ -1002,7 +1143,7 @@ export function PortfolioPage() {
                 {activeFilteredList.length}
               </span>
               <span className="text-slate-500">
-                {viewMode === "part" ? "parts in view" : "vendors in view"}
+                {viewMode === "part" ? "parts in view" : viewMode === "vendor" ? "vendors in view" : "sources in view"}
               </span>
             </div>
           )}
@@ -1197,6 +1338,17 @@ export function PortfolioPage() {
                 >
                   By vendor
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("source")}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold transition-all ${
+                    viewMode === "source"
+                      ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  By source
+                </button>
               </div>
               <div className="relative">
                 {viewMode === "part" ? (
@@ -1212,7 +1364,7 @@ export function PortfolioPage() {
                     <option value="best-asc">Sort: Lowest price</option>
                     <option value="best-desc">Sort: Highest price</option>
                   </select>
-                ) : (
+                ) : viewMode === "vendor" ? (
                   <select
                     value={vendorSortMode}
                     onChange={(e) => setVendorSortMode(e.target.value as VendorSortMode)}
@@ -1222,6 +1374,19 @@ export function PortfolioPage() {
                     <option value="vendor-asc">Sort: Vendor A–Z</option>
                     <option value="vendor-desc">Sort: Vendor Z–A</option>
                     <option value="parts-desc">Sort: Most parts</option>
+                    <option value="best-asc">Sort: Lowest price</option>
+                    <option value="best-desc">Sort: Highest price</option>
+                  </select>
+                ) : (
+                  <select
+                    value={sourceSortMode}
+                    onChange={(e) => setSourceSortMode(e.target.value as SourceSortMode)}
+                    className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    aria-label="Sort sources"
+                  >
+                    <option value="source-asc">Sort: Source A–Z</option>
+                    <option value="source-desc">Sort: Source Z–A</option>
+                    <option value="offers-desc">Sort: Most offers</option>
                     <option value="best-asc">Sort: Lowest price</option>
                     <option value="best-desc">Sort: Highest price</option>
                   </select>
@@ -1268,7 +1433,7 @@ export function PortfolioPage() {
               <span className="font-semibold text-slate-800">
                 {activeFilteredList.length}
               </span>{" "}
-              {viewMode === "part" ? "parts" : "vendors"}
+              {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"}
             </span>
             <span className="text-slate-500">
               Page {safePage} of {totalPages}
@@ -1798,6 +1963,201 @@ export function PortfolioPage() {
           </div>
         )}
 
+        {/* ── Source cards ── */}
+        {token && !loading && !errorMessage && viewMode === "source" && paginatedSourceGroups.length > 0 && (
+          <div className="space-y-4">
+            {paginatedSourceGroups.map((sg) => {
+              const minForSource = (() => {
+                const nums = sg.entries
+                  .map((e) => parsePrice(e.price))
+                  .filter((n): n is number => n != null)
+                return nums.length ? Math.min(...nums) : null
+              })()
+              return (
+                <article
+                  key={sg.rowId}
+                  className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm transition hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <ExternalLink className="h-4 w-4" strokeWidth={1.75} />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-semibold text-slate-900">
+                          {sg.source_label ?? "Unknown source"}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {sg.entries.length} offer{sg.entries.length === 1 ? "" : "s"}
+                          {minForSource != null && (
+                            <>
+                              {" "}
+                              &middot; From{" "}
+                              <span className="font-semibold text-emerald-600">
+                                {formatUsd(minForSource)}
+                              </span>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openCompareForSourceGroup(sg)}
+                        disabled={sg.entries.length < 2}
+                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Compare offers from this source"
+                      >
+                        <Monitor className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const best = bestEntryForSourceGroup(sg) ?? sg.entries[0]
+                          if (best) addToBucketFromVendorRow(best)
+                        }}
+                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                        title="Add best price to bucket"
+                      >
+                        <ShoppingBag className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/30 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                          <th className="w-10 py-2.5 pl-5" aria-label="Select" />
+                          <th className="py-2.5 pr-3">Part number</th>
+                          <th className="px-3 py-2.5">Vendor</th>
+                          <th className="px-3 py-2.5">Price</th>
+                          <th className="px-3 py-2.5">Qty</th>
+                          <th className="px-3 py-2.5">Source</th>
+                          <th className="py-2.5 pl-3 pr-5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sg.entries.map((e, vi) => {
+                          const n = parsePrice(e.price)
+                          const isBest =
+                            n != null && minForSource != null && n === minForSource
+                          const safeUrl = portfolioOfferImageSrc(e.url)
+                          const partRowId = partRowIdForOffer(e)
+                          const offerKey = offerFingerprint(e)
+                          return (
+                            <tr
+                              key={`${sg.rowId}-o-${vi}`}
+                              className="border-b border-slate-50 transition last:border-0 hover:bg-slate-50/50"
+                            >
+                              <td className="py-3 pl-5 align-middle">
+                                {partRowId ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedVendorOfferKey === offerKey}
+                                    onChange={() => toggleVendorOfferRowSelected(e)}
+                                    className="h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+                                    aria-label={`Select part ${e.part_number ?? "—"}`}
+                                  />
+                                ) : null}
+                              </td>
+                              <td className="py-3 pr-3 align-middle">
+                                <div className="flex items-center gap-2.5">
+                                  <OfferThumb imageUrl={e.image_url} />
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium text-slate-800">
+                                      {e.part_number ?? "—"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 align-middle text-slate-700">
+                                {e.vendor_name ?? "—"}
+                              </td>
+                              <td className="px-3 py-3 align-middle font-medium tabular-nums text-slate-900">
+                                <span>{displayPrice(e.price, n)}</span>
+                                {isBest ? (
+                                  <span className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                    <DollarSign className="h-2.5 w-2.5" />
+                                    Best
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3 align-middle tabular-nums text-slate-600">
+                                {e.quantity != null ? e.quantity.toLocaleString() : "—"}
+                              </td>
+                              <td className="px-3 py-3 align-middle">
+                                {safeUrl ? (
+                                  <a
+                                    href={safeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline"
+                                  >
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                    <span className="max-w-32 truncate">
+                                      {vendorUrlLinkLabel(safeUrl)}
+                                    </span>
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 pl-3 pr-5 align-middle">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => addToBucketFromVendorRow(e)}
+                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    title="Add to bucket"
+                                  >
+                                    <ShoppingBag className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailEntry(e)}
+                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    title="View details"
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDeleteTarget({
+                                        partNumber: e.part_number,
+                                        excludeEntirePart: false,
+                                        vendorName: e.vendor_name ?? null,
+                                        url: e.url ?? null,
+                                        price: e.price ?? null,
+                                        quantity: e.quantity ?? null,
+                                      })
+                                    }
+                                    disabled={!e.part_number?.trim()}
+                                    className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title={
+                                      e.part_number?.trim()
+                                        ? "Remove this offer"
+                                        : "Part number required to remove"
+                                    }
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+
         {/* ── Pagination ── */}
         {token &&
           !loading &&
@@ -1816,7 +2176,7 @@ export function PortfolioPage() {
                 <span className="font-medium text-slate-800">
                   {activeFilteredList.length}
                 </span>{" "}
-                {viewMode === "part" ? "parts" : "vendors"}
+                {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"}
               </p>
               <div className="flex items-center gap-1">
                 <button

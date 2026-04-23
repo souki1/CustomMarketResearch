@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { primaryTextFromDataRow } from '@/components/compare/dataRow'
 import type { LoadedFile, CompareMode } from '@/components/compare/types'
 
 type Props = {
@@ -140,24 +141,24 @@ export function CompareWorkspaceSection({
           const filesToUse = compareMode === 'different-same-vendor' ? selectedFilesData.slice(0, 1) : selectedFilesData
           const fileData = filesToUse.find((f) => f.fileId === (activeFileId ?? filesToUse[0]?.fileId))
           if (!fileData) return null
+          const visibleRows = fileData.content
+            .slice(1)
+            .map((row, rowIdx) => ({ row, rowIdx, label: primaryTextFromDataRow(row) }))
+            .filter((e): e is { row: string[]; rowIdx: number; label: string } => e.label != null)
           return (
             <div key={fileData.fileId} className="mt-4">
               <p className="mb-1 text-[11px] font-semibold text-slate-500 truncate">{fileData.name}</p>
               {fileData.content.length > 1 ? (
                 <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-2.5 py-1.5">
-                    <span className="text-[11px] font-medium text-slate-600">
-                      {fileData.content.length - 1} parts
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      {(selectedFileRows[fileData.fileId]?.length ?? 0)} selected
-                    </span>
-                  </div>
-                  <div className="max-h-36 overflow-y-auto px-2 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {fileData.content.slice(1).map((row, idx) => {
-                        const rowIdx = idx
-                        const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
+                  <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
+                    Select parts · {visibleRows.length} row{visibleRows.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="max-h-52 overflow-y-auto px-2 py-2">
+                    {visibleRows.length === 0 ? (
+                      <p className="px-2 py-3 text-sm text-slate-500">No rows with text in this file.</p>
+                    ) : (
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                      {visibleRows.map(({ rowIdx, label }) => {
                         const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
                         const isSelectedForScraped =
                           selectedRowForScraped?.fileId === fileData.fileId &&
@@ -188,6 +189,7 @@ export function CompareWorkspaceSection({
                         )
                       })}
                     </div>
+                    )}
                   </div>
                 </div>
               ) : (

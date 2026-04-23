@@ -9,6 +9,7 @@ import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
 import { CompareVendorMindMap } from '@/components/compare/CompareVendorMindMap'
 import { CompareVendorOverview, collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
 import { CompareWorkspaceSection } from '@/components/compare/CompareWorkspaceSection'
+import { primaryTextFromDataRow } from '@/components/compare/dataRow'
 import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
 import {
   getCompareState,
@@ -1426,7 +1427,7 @@ export function ComparePage() {
         .map((rowIdx) => {
           const row = fileData.content[rowIdx + 1]
           if (!row) return null
-          const title = String(row[0] ?? '')
+          const title = primaryTextFromDataRow(row) ?? ''
           const specs = headers.map((label, i) => ({
             label: (label || `Column ${i + 1}`).trim(),
             value: String(row[i] ?? '—'),

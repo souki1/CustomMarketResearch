@@ -325,6 +325,9 @@ export type ResearchUrlItem = {
   id: number
   selection_id: number
   row_index: number
+  /** Sheet data row index (0 = first row under header); aligns with wishlist / research grid rows. */
+  table_row_index?: number | null
+  file_id?: number | null
   search_query: string
   urls: string[]
   results: ResearchUrlResult[]

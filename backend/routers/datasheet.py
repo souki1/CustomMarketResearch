@@ -431,6 +431,70 @@ async def list_research_urls(
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
     settings = get_settings()
 
+    # Batch list: all research rows for a workspace file or tab (deduped by table_row_index).
+    if table_row_index is None and selection_id is None:
+        query_filter: dict | None = None
+        if file_id is not None:
+            query_filter = {"owner_id": user.id, "file_id": file_id}
+        elif tab_id is not None:
+            query_filter = {"owner_id": user.id, "tab_id": tab_id}
+        if query_filter is not None:
+            raw_docs = await mongo_db["research_urls"].find(query_filter).to_list(
+                length=5000
+            )
+            by_table_row: dict[int, dict] = {}
+            for d in raw_docs:
+                tri = _table_row_index_as_int(d.get("table_row_index"))
+                if tri is None:
+                    continue
+                prev = by_table_row.get(tri)
+                if prev is None or _doc_recency_key(d) > _doc_recency_key(prev):
+                    by_table_row[tri] = d
+            sorted_docs = [by_table_row[k] for k in sorted(by_table_row.keys())]
+            ids = [d["id"] for d in sorted_docs]
+            scraped_cursor = mongo_db["research_scraped_data"].find(
+                {"research_url_id": {"$in": ids}, "owner_id": user.id}
+            ).sort([("research_url_id", 1), ("created_at", 1)])
+            scraped_list = await scraped_cursor.to_list(length=max(len(ids) * 20, 1))
+            scraped_by_url: dict[int, list] = {}
+            for s in scraped_list:
+                rid = s["research_url_id"]
+                if rid not in scraped_by_url:
+                    scraped_by_url[rid] = []
+                scraped_by_url[rid].append(s)
+            batch_result: list[dict] = []
+            for d in sorted_docs:
+                scraped_docs = scraped_by_url.get(d["id"])
+                if not scraped_docs and d.get("scraped_data"):
+                    scraped_docs = [{"id": None, "url": "", "data": d["scraped_data"]}]
+                scraped_data: list = []
+                if scraped_docs:
+                    scraped_data = await _get_or_create_cleaned_data(
+                        mongo_db,
+                        scraped_docs,
+                        d["id"],
+                        user.id,
+                        settings.groq_api_key,
+                        settings.groq_model,
+                    )
+                batch_result.append(
+                    {
+                        "id": d["id"],
+                        "selection_id": d["selection_id"],
+                        "row_index": d["row_index"],
+                        "table_row_index": d.get("table_row_index"),
+                        "file_id": d.get("file_id"),
+                        "search_query": d["search_query"],
+                        "urls": d.get("urls", []),
+                        "results": d.get("results", []),
+                        "scraped_data": scraped_data or [],
+                        "headers": d.get("headers", []),
+                        "row_data": d.get("row_data", []),
+                        "created_at": d["created_at"],
+                    }
+                )
+            return batch_result
+
     if table_row_index is not None and (file_id is not None or tab_id is not None):
         query: dict = {"owner_id": user.id, "table_row_index": table_row_index}
         if file_id is not None:
