@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Search, Table2, X } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Table2, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -19,7 +19,6 @@ import { useLayout } from '@/contexts/LayoutContext'
 import { ResearchRowAiChat } from '@/components/research/ResearchRowAiChat'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
-import { useOpenCommandPalette } from '@/layouts'
 
 type TabState = {
   id: string
@@ -342,60 +341,8 @@ const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
 const INSPECTOR_DEFAULT_WIDTH = 450
 
-/** Row/column checkboxes, filters, and inspector — scoped per research tab/sheet. */
-type SheetTabUiState = {
-  selectedRows: number[]
-  selectedColumns: number[]
-  selectedRowIndex: number | null
-  rowsPerPage: number
-  page: number
-  columnFilters: [number, string[]][]
-  filterOpen: boolean
-  filterDropdownCol: number | null
-  filterSearchText: string
-  isInspectorOpen: boolean
-  inspectorMaximized: boolean
-  inspectorWidth: number
-  inspectorMode: 'single' | 'multi'
-  inspectorMultiRowIndices: number[]
-  inspectorCompareSelection: number[]
-  inspectorDetailTab: 'details' | 'ai'
-}
-
-function defaultSheetTabUi(): SheetTabUiState {
-  return {
-    selectedRows: [],
-    selectedColumns: [],
-    selectedRowIndex: null,
-    rowsPerPage: 25,
-    page: 1,
-    columnFilters: [],
-    filterOpen: false,
-    filterDropdownCol: null,
-    filterSearchText: '',
-    isInspectorOpen: false,
-    inspectorMaximized: false,
-    inspectorWidth: INSPECTOR_DEFAULT_WIDTH,
-    inspectorMode: 'single',
-    inspectorMultiRowIndices: [],
-    inspectorCompareSelection: [],
-    inspectorDetailTab: 'details',
-  }
-}
-
-function serializeColumnFilters(m: Map<number, Set<string>>): [number, string[]][] {
-  return Array.from(m.entries()).map(([k, v]) => [k, Array.from(v)])
-}
-
-function deserializeColumnFilters(raw: [number, string[]][] | undefined): Map<number, Set<string>> {
-  if (!raw?.length) return new Map()
-  return new Map(raw.map(([k, vals]) => [k, new Set(vals)]))
-}
-
 type PersistedResearchState = {
   activeTabId: string | null
-  /** Per-tab UI; preferred over legacy flat fields below. */
-  sheetUiByTabId?: Record<string, SheetTabUiState>
   selectedRows: number[]
   selectedColumns: number[]
   rowsPerPage: number
@@ -408,48 +355,6 @@ type PersistedResearchState = {
   inspectorMultiRowIndices: number[]
   inspectorCompareSelection: number[]
   inspectorDetailTab: 'details' | 'ai'
-}
-
-function migrateSheetUiFromLegacy(data: Partial<PersistedResearchState>, fallbackTabId: string | null): Record<string, SheetTabUiState> {
-  const fromV2 = data.sheetUiByTabId
-  if (fromV2 && typeof fromV2 === 'object') {
-    return { ...fromV2 }
-  }
-  if (!fallbackTabId) return {}
-  const base = defaultSheetTabUi()
-  return {
-    [fallbackTabId]: {
-      ...base,
-      selectedRows: Array.isArray(data.selectedRows) ? data.selectedRows : base.selectedRows,
-      selectedColumns: Array.isArray(data.selectedColumns) ? data.selectedColumns : base.selectedColumns,
-      selectedRowIndex:
-        data.selectedRowIndex === undefined || data.selectedRowIndex === null
-          ? null
-          : data.selectedRowIndex,
-      rowsPerPage: typeof data.rowsPerPage === 'number' ? data.rowsPerPage : base.rowsPerPage,
-      page: typeof data.page === 'number' ? data.page : base.page,
-      isInspectorOpen: typeof data.isInspectorOpen === 'boolean' ? data.isInspectorOpen : base.isInspectorOpen,
-      inspectorMaximized:
-        typeof data.inspectorMaximized === 'boolean' ? data.inspectorMaximized : base.inspectorMaximized,
-      inspectorWidth:
-        typeof data.inspectorWidth === 'number' &&
-        data.inspectorWidth >= INSPECTOR_MIN_WIDTH &&
-        data.inspectorWidth <= INSPECTOR_MAX_WIDTH
-          ? data.inspectorWidth
-          : base.inspectorWidth,
-      inspectorMode: data.inspectorMode === 'multi' || data.inspectorMode === 'single' ? data.inspectorMode : base.inspectorMode,
-      inspectorMultiRowIndices: Array.isArray(data.inspectorMultiRowIndices)
-        ? data.inspectorMultiRowIndices
-        : base.inspectorMultiRowIndices,
-      inspectorCompareSelection: Array.isArray(data.inspectorCompareSelection)
-        ? data.inspectorCompareSelection
-        : base.inspectorCompareSelection,
-      inspectorDetailTab:
-        data.inspectorDetailTab === 'ai' || data.inspectorDetailTab === 'details'
-          ? data.inspectorDetailTab
-          : base.inspectorDetailTab,
-    },
-  }
 }
 
 export function ResearchPage() {
@@ -537,7 +442,6 @@ export function ResearchPage() {
     closeAndClear: clearComparison,
     items: comparisonItems,
   } = useComparison()
-  const openCommandPalette = useOpenCommandPalette()
   const [comparePreviewModalOpen, setComparePreviewModalOpen] = useState(false)
   const comparePreviewNavigateStateRef = useRef<unknown>(null)
   const [comparePreviewLayout, setComparePreviewLayout] = useState<'matrix' | 'cards'>('matrix')
@@ -585,18 +489,12 @@ export function ResearchPage() {
   }, [comparePreviewModalOpen])
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
-  /** Per-tab checkbox / filter / inspector snapshots (also persisted under `sheetUiByTabId`). */
-  const tabUiByTabRef = useRef<Record<string, SheetTabUiState>>({})
-  /** After a tab switch, one render can still carry the previous tab's selection — skip syncing that stale snapshot onto the new tab id. */
-  const skipNextTabUiSyncRef = useRef(false)
   const userHasEditedRef = useRef(false)
   const saveImmediatelyRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
-  const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
-  const skipSelectionResetRef = useRef(false)
 
   // Persist tabs in localStorage so they survive route changes and reloads
   useEffect(() => {
@@ -675,91 +573,57 @@ export function ResearchPage() {
       const raw = localStorage.getItem(RESEARCH_PAGE_STATE_KEY)
       if (!raw) return
       const data = JSON.parse(raw) as Partial<PersistedResearchState>
-      const legacyKey =
-        data.activeTabId && tabs.some((t) => t.id === data.activeTabId) ? data.activeTabId : (tabs[0]?.id ?? null)
-      tabUiByTabRef.current = migrateSheetUiFromLegacy(data, legacyKey)
       if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
         skipSelectionResetRef.current = true
         setActiveTabId(data.activeTabId)
       }
-      const applyTabId =
-        data.activeTabId && tabs.some((t) => t.id === data.activeTabId) ? data.activeTabId : (tabs[0]?.id ?? null)
-      if (!applyTabId) return
-      const snap = tabUiByTabRef.current[applyTabId] ?? defaultSheetTabUi()
-      setSelectedRows(new Set(snap.selectedRows))
-      setSelectedColumns(new Set(snap.selectedColumns))
-      setSelectedRowIndex(snap.selectedRowIndex)
-      setRowsPerPage(snap.rowsPerPage)
-      setPage(snap.page)
-      setColumnFilters(deserializeColumnFilters(snap.columnFilters))
-      setFilterOpen(snap.filterOpen)
-      setFilterDropdownCol(snap.filterDropdownCol)
-      setFilterSearchText(snap.filterSearchText)
-      setIsInspectorOpen(snap.isInspectorOpen)
-      if (snap.isInspectorOpen) setCollapseSidebarForInspector(true)
-      else setCollapseSidebarForInspector(false)
-      setInspectorMaximized(snap.inspectorMaximized)
-      setInspectorWidth(snap.inspectorWidth)
-      setInspectorMode(snap.inspectorMode)
-      setInspectorMultiRowIndices(snap.inspectorMultiRowIndices)
-      setInspectorCompareSelection(new Set(snap.inspectorCompareSelection))
-      setInspectorDetailTab(snap.inspectorDetailTab)
+      if (Array.isArray(data.selectedRows)) setSelectedRows(new Set(data.selectedRows))
+      if (Array.isArray(data.selectedColumns)) setSelectedColumns(new Set(data.selectedColumns))
+      if (typeof data.rowsPerPage === 'number') setRowsPerPage(data.rowsPerPage)
+      if (typeof data.page === 'number') setPage(data.page)
+      if (data.selectedRowIndex !== undefined) setSelectedRowIndex(data.selectedRowIndex)
+      if (typeof data.isInspectorOpen === 'boolean') {
+        setIsInspectorOpen(data.isInspectorOpen)
+        if (data.isInspectorOpen) setCollapseSidebarForInspector(true)
+      }
+      if (typeof data.inspectorMaximized === 'boolean') setInspectorMaximized(data.inspectorMaximized)
+      if (
+        typeof data.inspectorWidth === 'number' &&
+        data.inspectorWidth >= INSPECTOR_MIN_WIDTH &&
+        data.inspectorWidth <= INSPECTOR_MAX_WIDTH
+      ) {
+        setInspectorWidth(data.inspectorWidth)
+      }
+      if (data.inspectorMode === 'single' || data.inspectorMode === 'multi') setInspectorMode(data.inspectorMode)
+      if (Array.isArray(data.inspectorMultiRowIndices)) setInspectorMultiRowIndices(data.inspectorMultiRowIndices)
+      if (Array.isArray(data.inspectorCompareSelection)) {
+        setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
+      }
+      if (data.inspectorDetailTab === 'details' || data.inspectorDetailTab === 'ai') {
+        setInspectorDetailTab(data.inspectorDetailTab)
+      }
     } catch {
       // ignore parse errors
     }
-  }, [location.state, tabs, setCollapseSidebarForInspector])
+  }, [location.state, tabs])
 
   // Persist Research page state so it survives navigation to other pages
   useEffect(() => {
     try {
-      // Right after a tab switch, React state can still hold the previous sheet's selection for one commit; tab layout
-      // already wrote the correct snapshot to tabUiByTabRef and set skipNextTabUiSyncRef.
-      const snap: SheetTabUiState =
-        effectiveTabId &&
-        skipNextTabUiSyncRef.current &&
-        tabUiByTabRef.current[effectiveTabId]
-          ? { ...tabUiByTabRef.current[effectiveTabId] }
-          : {
-              selectedRows: Array.from(selectedRows),
-              selectedColumns: Array.from(selectedColumns),
-              selectedRowIndex,
-              rowsPerPage,
-              page,
-              columnFilters: serializeColumnFilters(columnFilters),
-              filterOpen,
-              filterDropdownCol,
-              filterSearchText,
-              isInspectorOpen,
-              inspectorMaximized,
-              inspectorWidth,
-              inspectorMode,
-              inspectorMultiRowIndices,
-              inspectorCompareSelection: Array.from(inspectorCompareSelection),
-              inspectorDetailTab,
-            }
-      const tabIds = new Set(tabs.map((t) => t.id))
-      const sheetUiByTabId: Record<string, SheetTabUiState> = {}
-      for (const [id, ui] of Object.entries(tabUiByTabRef.current)) {
-        if (tabIds.has(id)) sheetUiByTabId[id] = ui
-      }
-      if (effectiveTabId && tabIds.has(effectiveTabId)) {
-        sheetUiByTabId[effectiveTabId] = snap
-      }
       const data: PersistedResearchState = {
         activeTabId,
-        sheetUiByTabId,
-        selectedRows: snap.selectedRows,
-        selectedColumns: snap.selectedColumns,
-        rowsPerPage: snap.rowsPerPage,
-        page: snap.page,
-        selectedRowIndex: snap.selectedRowIndex,
-        isInspectorOpen: snap.isInspectorOpen,
-        inspectorMaximized: snap.inspectorMaximized,
-        inspectorWidth: snap.inspectorWidth,
-        inspectorMode: snap.inspectorMode,
-        inspectorMultiRowIndices: snap.inspectorMultiRowIndices,
-        inspectorCompareSelection: snap.inspectorCompareSelection,
-        inspectorDetailTab: snap.inspectorDetailTab,
+        selectedRows: Array.from(selectedRows),
+        selectedColumns: Array.from(selectedColumns),
+        rowsPerPage,
+        page,
+        selectedRowIndex,
+        isInspectorOpen,
+        inspectorMaximized,
+        inspectorWidth,
+        inspectorMode,
+        inspectorMultiRowIndices,
+        inspectorCompareSelection: Array.from(inspectorCompareSelection),
+        inspectorDetailTab,
       }
       localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
     } catch {
@@ -767,17 +631,11 @@ export function ResearchPage() {
     }
   }, [
     activeTabId,
-    tabs,
-    effectiveTabId,
     selectedRows,
     selectedColumns,
     rowsPerPage,
     page,
     selectedRowIndex,
-    columnFilters,
-    filterOpen,
-    filterDropdownCol,
-    filterSearchText,
     isInspectorOpen,
     inspectorMaximized,
     inspectorWidth,
@@ -793,83 +651,31 @@ export function ResearchPage() {
     }
   }, [tabs, activeTabId])
 
-  // When the active sheet tab changes, restore that tab's own selection / filters / inspector (see tabUiByTabRef sync).
-  useLayoutEffect(() => {
-    if (skipSelectionResetRef.current) {
-      skipSelectionResetRef.current = false
-      prevEffectiveTabIdRef.current = effectiveTabId
-      return
-    }
+  const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
+  const skipSelectionResetRef = useRef(false)
+  useEffect(() => {
     if (prevEffectiveTabIdRef.current === effectiveTabId) return
     prevEffectiveTabIdRef.current = effectiveTabId
-    if (!effectiveTabId) return
-    const snap = tabUiByTabRef.current[effectiveTabId] ?? defaultSheetTabUi()
-    tabUiByTabRef.current[effectiveTabId] = snap
-    skipNextTabUiSyncRef.current = true
-    setSelectedRows(new Set(snap.selectedRows))
-    setSelectedColumns(new Set(snap.selectedColumns))
-    setSelectedRowIndex(snap.selectedRowIndex)
-    setRowsPerPage(snap.rowsPerPage)
-    setPage(snap.page)
-    setColumnFilters(deserializeColumnFilters(snap.columnFilters))
-    setFilterOpen(snap.filterOpen)
-    setFilterDropdownCol(snap.filterDropdownCol)
-    setFilterSearchText(snap.filterSearchText)
-    setIsInspectorOpen(snap.isInspectorOpen)
-    if (snap.isInspectorOpen) setCollapseSidebarForInspector(true)
-    else setCollapseSidebarForInspector(false)
-    setInspectorMaximized(snap.inspectorMaximized)
-    setInspectorWidth(snap.inspectorWidth)
-    setInspectorMode(snap.inspectorMode)
-    setInspectorMultiRowIndices(snap.inspectorMultiRowIndices)
-    setInspectorCompareSelection(new Set(snap.inspectorCompareSelection))
-    setInspectorDetailTab(snap.inspectorDetailTab)
-  }, [effectiveTabId, setCollapseSidebarForInspector])
-
-  // Keep the in-memory map in sync with the visible tab so switching sheets restores the right checkboxes.
-  useEffect(() => {
-    if (!effectiveTabId) return
-    if (skipNextTabUiSyncRef.current) {
-      skipNextTabUiSyncRef.current = false
+    if (skipSelectionResetRef.current) {
+      skipSelectionResetRef.current = false
       return
     }
-    tabUiByTabRef.current[effectiveTabId] = {
-      selectedRows: Array.from(selectedRows),
-      selectedColumns: Array.from(selectedColumns),
-      selectedRowIndex,
-      rowsPerPage,
-      page,
-      columnFilters: serializeColumnFilters(columnFilters),
-      filterOpen,
-      filterDropdownCol,
-      filterSearchText,
-      isInspectorOpen,
-      inspectorMaximized,
-      inspectorWidth,
-      inspectorMode,
-      inspectorMultiRowIndices,
-      inspectorCompareSelection: Array.from(inspectorCompareSelection),
-      inspectorDetailTab,
-    }
-  }, [
-    effectiveTabId,
-    selectedRows,
-    selectedColumns,
-    selectedRowIndex,
-    rowsPerPage,
-    page,
-    columnFilters,
-    filterOpen,
-    filterDropdownCol,
-    filterSearchText,
-    isInspectorOpen,
-    inspectorMaximized,
-    inspectorWidth,
-    inspectorMode,
-    inspectorMultiRowIndices,
-    inspectorCompareSelection,
-    inspectorDetailTab,
-  ])
+    setSelectedRows(new Set())
+    setSelectedColumns(new Set())
+    setSelectedRowIndex(null)
+    setPage(1)
+    setColumnFilters(new Map())
+    setFilterOpen(false)
+    setFilterDropdownCol(null)
+    setFilterSearchText('')
+    setIsInspectorOpen(false)
+    setInspectorMaximized(false)
+    setInspectorMode('single')
+    setInspectorMultiRowIndices([])
+    setInspectorCompareSelection(new Set())
+    setInspectorDetailTab('details')
+    setCollapseSidebarForInspector(false)
+  }, [effectiveTabId, setCollapseSidebarForInspector])
 
   // Fetch all workspace files when file picker opens
   useEffect(() => {
@@ -1509,11 +1315,6 @@ export function ResearchPage() {
     ? `file:${activeTab.fileId}:row:${selectedRowIndex ?? 0}`
     : `tab:${effectiveTabId ?? 'sheet'}:row:${selectedRowIndex ?? 0}`
 
-  /** Unsaved "New sheet" tabs hide the Research column until a search/research run produces grid data (or one is in progress). */
-  const isUnsavedNewSheet = activeTab?.fileId == null
-  const showResearchColumn =
-    !isUnsavedNewSheet || storeSelectionLoading || researchRowSummaryByIndex.size > 0
-
   return (
     <div
       className={`bg-white ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
@@ -1999,23 +1800,7 @@ export function ResearchPage() {
         }
       >
       <div className="shrink-0">
-        <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
-          {openCommandPalette && (
-            <button
-              type="button"
-              onClick={() => openCommandPalette()}
-              className="flex w-full max-w-md items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-1.5 text-left text-sm text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-1 sm:w-auto sm:min-w-[240px]"
-              aria-label="Search workspace (Ctrl+K)"
-            >
-              <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Search files, folders, templates…</span>
-              <kbd className="hidden shrink-0 rounded border border-gray-200/80 bg-[#F3F4F6] px-1.5 py-0.5 text-xs font-medium text-gray-500 sm:inline">
-                Ctrl + K
-              </kbd>
-            </button>
-          )}
-        </div>
+        <h2 className="mb-1 text-lg font-semibold text-gray-900">Data Research</h2>
 
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
@@ -2405,14 +2190,12 @@ export function ResearchPage() {
                       className="rounded border-gray-300"
                     />
                   </th>
-                  {showResearchColumn && (
-                    <th
-                      scope="col"
-                      className="w-[92px] shrink-0 px-2 py-2 border-r border-gray-200 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
-                    >
-                      Research
-                    </th>
-                  )}
+                  <th
+                    scope="col"
+                    className="w-[92px] shrink-0 px-2 py-2 border-r border-gray-200 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+                  >
+                    Research
+                  </th>
                   {content[0].map((cell, i) => {
                     const columnHasData = content.some(
                       (row) => (row[i] ?? '').trim().length > 0
@@ -2465,7 +2248,7 @@ export function ResearchPage() {
                             : 'hover:bg-gray-50'
                       }`}
                     >
-                      <td className="w-10 px-2 py-2 border-r border-gray-200">
+                      <td className="w-10 h-12 px-2 align-middle border-r border-gray-200">
                         {isRowBeingResearched ? (
                           <LoaderIcon className="h-5 w-5 text-emerald-600" />
                         ) : (
@@ -2477,29 +2260,47 @@ export function ResearchPage() {
                           />
                         )}
                       </td>
-                      {showResearchColumn && (
-                        <td className="w-[92px] shrink-0 px-2 py-2 align-top border-r border-gray-200">
-                          {hasStructuredData && rowResearchSummary ? (
-                            <span className="text-[11px] font-medium leading-tight text-emerald-800 tabular-nums">
-                              {rowResearchSummary.structured_sources_count} result
-                              {rowResearchSummary.structured_sources_count !== 1 ? 's' : ''} found
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-gray-300">—</span>
-                          )}
-                        </td>
-                      )}
+                      <td
+                        className={`w-[92px] h-12 shrink-0 cursor-pointer px-2 align-middle border-r border-gray-200 transition-colors ${
+                          hasStructuredData ? 'hover:bg-emerald-100/60' : 'hover:bg-gray-100'
+                        }`}
+                        title="Open inspector for this row"
+                        onClick={() => handleCellClick(dataRowIndex)}
+                      >
+                        {hasStructuredData && rowResearchSummary ? (
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleCellClick(dataRowIndex)
+                              }}
+                              className="group inline-flex flex-col items-start rounded-md bg-emerald-600/10 px-2 py-1 text-[11px] font-semibold leading-[1.1] text-emerald-900 tabular-nums hover:bg-emerald-600/15 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                              aria-label="Open results in inspector"
+                              title="Click to open results"
+                            >
+                              <span>
+                                {rowResearchSummary.structured_sources_count} result
+                                {rowResearchSummary.structured_sources_count !== 1 ? 's' : ''}
+                              </span>
+                              <span className="font-medium text-emerald-900/80">found</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-300">—</span>
+                        )}
+                      </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
                         <td
                           key={colIndex}
-                          className="cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
+                          className="h-12 cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className="w-full min-w-[100px] border-0 bg-transparent px-4 py-3 text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className="h-12 w-full min-w-[100px] border-0 bg-transparent px-4 py-0 text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
                           />
                         </td>
                       ))}

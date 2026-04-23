@@ -220,11 +220,11 @@ function parseOneBlock(raw: unknown): ReportBlock | null {
       return { id, type: 'code', text: typeof r.text === 'string' ? r.text : '', align }
     case 'table': {
       const showHeader = r.showHeader !== false
-      let rows: string[][] = defaultTableRows()
+      let rows: TableCell[][] = defaultTableRows()
       if (Array.isArray(r.rows) && r.rows.length > 0) {
         rows = r.rows.map((row) => {
           if (!Array.isArray(row)) return ['']
-          const cells = row.filter((c): c is string => typeof c === 'string')
+          const cells = row.map((c) => parseTableCell(c))
           return cells.length ? cells : ['']
         })
       }
