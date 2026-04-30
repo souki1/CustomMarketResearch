@@ -1,4 +1,6 @@
-import type React from 'react'
+import { ChevronDown, Pencil, Plus, X } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 type TabState = {
   id: string
@@ -56,91 +58,243 @@ export function ResearchTabs(props: Props) {
     onFilePickerFileClick,
   } = props
 
+  const [tabMenuOpenId, setTabMenuOpenId] = useState<string | null>(null)
+  const tabMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const newTabBtnRef = useRef<HTMLButtonElement | null>(null)
+  const newTabMenuRef = useRef<HTMLDivElement | null>(null)
+  const [newTabMenuPos, setNewTabMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  useEffect(() => {
+    // Keep dropdown attached to currently active tab.
+    setTabMenuOpenId(null)
+  }, [activeTabId])
+
+  useEffect(() => {
+    if (!tabMenuOpenId) return
+
+    const onPointerDown = (e: PointerEvent) => {
+      const el = tabMenuRef.current
+      if (!el) return
+      if (e.target instanceof Node && el.contains(e.target)) return
+      setTabMenuOpenId(null)
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [tabMenuOpenId])
+
+  useEffect(() => {
+    if (!newTabMenuOpen) return
+
+    const updatePos = () => {
+      const btn = newTabBtnRef.current
+      if (!btn) return
+      const r = btn.getBoundingClientRect()
+      setNewTabMenuPos({
+        top: r.bottom + 4,
+        left: Math.min(r.left, window.innerWidth - 240),
+        width: Math.max(160, Math.round(r.width)),
+      })
+    }
+
+    updatePos()
+    window.addEventListener('resize', updatePos)
+    window.addEventListener('scroll', updatePos, true)
+    return () => {
+      window.removeEventListener('resize', updatePos)
+      window.removeEventListener('scroll', updatePos, true)
+    }
+  }, [newTabMenuOpen])
+
+  useEffect(() => {
+    if (!newTabMenuOpen) return
+
+    const onPointerDown = (e: PointerEvent) => {
+      const btn = newTabBtnRef.current
+      const menu = newTabMenuRef.current
+      if (!btn || !menu) return
+      if (!(e.target instanceof Node)) return
+      if (btn.contains(e.target) || menu.contains(e.target)) return
+      onToggleNewTabMenu()
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [newTabMenuOpen, onToggleNewTabMenu])
+
+  const newTabMenu = useMemo(() => {
+    if (!newTabMenuOpen || !newTabMenuPos) return null
+    return createPortal(
+      <div
+        ref={newTabMenuRef}
+        style={{
+          position: 'fixed',
+          zIndex: 9999,
+          top: newTabMenuPos.top,
+          left: newTabMenuPos.left,
+          minWidth: newTabMenuPos.width,
+        }}
+        className="rounded-md border border-slate-200 bg-white py-0.5 text-[13px] shadow-lg ring-1 ring-slate-950/5"
+        role="menu"
+      >
+        <button
+          type="button"
+          onClick={onNewSheet}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50"
+          role="menuitem"
+        >
+          <span className="text-slate-400">+</span>
+          New sheet
+        </button>
+        <button
+          type="button"
+          onClick={onOpenFilePicker}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50"
+          role="menuitem"
+        >
+          <span className="text-slate-400">↺</span>
+          Open file…
+        </button>
+      </div>,
+      document.body
+    )
+  }, [newTabMenuOpen, newTabMenuPos, onNewSheet, onOpenFilePicker])
+
   return (
     <>
       {/* Tab bar */}
-      <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
+      <div className="flex flex-nowrap items-center gap-0 overflow-x-auto overflow-y-visible border-b border-slate-200 bg-transparent pl-3 pt-1.5">
         {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tab"
-            aria-selected={tab.id === activeTabId}
-            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-              tab.id === activeTabId
-                ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
+          <div key={tab.id} className="shrink-0">
             {editingTabId === tab.id ? (
-              <input
-                type="text"
-                value={editingName}
-                onChange={(e) => onRenameChange(e.target.value)}
-                onBlur={() => onRenameCommit(tab.id, editingName)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onRenameCommit(tab.id, editingName)
-                  if (e.key === 'Escape') onRenameCancel()
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                autoFocus
-                aria-label="Rename tab"
-              />
+              <div
+                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+                  tab.id === activeTabId
+                    ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
+                    : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60'
+                }`}
+              >
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => onRenameChange(e.target.value)}
+                  onBlur={() => onRenameCommit(tab.id, editingName)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onRenameCommit(tab.id, editingName)
+                    if (e.key === 'Escape') onRenameCancel()
+                  }}
+                  className="min-w-[80px] rounded border border-gray-300 px-1.5 py-0.5 text-sm font-medium text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  autoFocus
+                  aria-label="Rename tab"
+                />
+              </div>
             ) : (
               <button
+                key={tab.id}
                 type="button"
+                role="tab"
+                aria-selected={tab.id === activeTabId}
                 onClick={() => onTabClick(tab.id)}
                 onDoubleClick={(e) => {
                   e.preventDefault()
-                  e.stopPropagation()
                   onStartRename(tab)
                 }}
-                className="font-medium"
+                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+                  tab.id === activeTabId
+                    ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
+                    : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60'
+                }`}
+                title={tab.name}
               >
-                {tab.name}
+                <span className="max-w-[150px] truncate font-medium sm:max-w-[180px]">{tab.name}</span>
+
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => onTabClose(tab.id, e)}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                    aria-label="Close tab"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+
+                  {/* Active-tab dropdown (Airtable-style) */}
+                  {tab.id === activeTabId && (
+                    <div className="relative" ref={tabMenuOpenId === tab.id ? tabMenuRef : undefined}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setTabMenuOpenId((prev) => (prev === tab.id ? null : tab.id))
+                        }}
+                        className="rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                        aria-label="Tab menu"
+                        aria-haspopup="menu"
+                        aria-expanded={tabMenuOpenId === tab.id}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+
+                      {tabMenuOpenId === tab.id && (
+                        <div
+                          role="menu"
+                          className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setTabMenuOpenId(null)
+                              onStartRename(tab)
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                          >
+                            <Pencil className="h-4 w-4 text-slate-400" aria-hidden />
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              setTabMenuOpenId(null)
+                              onTabClose(tab.id, e)
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+                          >
+                            <X className="h-4 w-4 text-rose-400" aria-hidden />
+                            Close tab
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={(e) => onTabClose(tab.id, e)}
-              className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
-              aria-label="Close tab"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
         ))}
         <div className="relative">
           <button
+            ref={newTabBtnRef}
             type="button"
             onClick={onToggleNewTabMenu}
-            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            className={`shrink-0 flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+              newTabMenuOpen
+                ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
+                : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60 hover:text-slate-800'
+            }`}
             title="New tab"
+            aria-haspopup="menu"
+            aria-expanded={newTabMenuOpen}
           >
-            + New tab
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            New tab
+            <ChevronDown className="h-3.5 w-3.5 opacity-80" aria-hidden />
           </button>
-          {newTabMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
-              <button
-                type="button"
-                onClick={onNewSheet}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">+</span>
-                New sheet
-              </button>
-              <button
-                type="button"
-                onClick={onOpenFilePicker}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">↺</span>
-                Open file…
-              </button>
-            </div>
-          )}
+          {newTabMenu}
         </div>
       </div>
 
