@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Table2, X } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Search, Table2, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -387,6 +387,8 @@ export function ResearchPage() {
   const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map())
   const [filterDropdownCol, setFilterDropdownCol] = useState<number | null>(null)
   const [filterSearchText, setFilterSearchText] = useState('')
+  const [rowSearchDraft, setRowSearchDraft] = useState('')
+  const [rowSearchQuery, setRowSearchQuery] = useState('')
   const filterBtnRef = useRef<HTMLButtonElement>(null)
   const filterDropRef = useRef<HTMLDivElement>(null)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
@@ -1060,12 +1062,23 @@ export function ResearchPage() {
     [columnFilters]
   )
   const hasActiveFilters = activeFilterCount > 0
+  const hasRowSearch = rowSearchQuery.trim().length > 0
   const unfilteredRowCount = content ? content.length - 1 : 0
+
+  // Debounce global row search so it stays snappy for large sheets.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setRowSearchQuery(rowSearchDraft)
+      setPage(1)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [rowSearchDraft])
 
   const filteredDataIndices = useMemo(() => {
     if (!content || content.length <= 1) return []
     const allIndices = Array.from({ length: content.length - 1 }, (_, i) => i)
-    if (!hasActiveFilters) return allIndices
+    const q = rowSearchQuery.trim().toLowerCase()
+    if (!hasActiveFilters && !q) return allIndices
     return allIndices.filter((dataIdx) => {
       const row = content[dataIdx + 1]
       for (const [colIdx, allowedValues] of columnFilters) {
@@ -1073,9 +1086,16 @@ export function ResearchPage() {
         const cellValue = (row[colIdx] ?? '').trim()
         if (!allowedValues.has(cellValue)) return false
       }
+      if (q) {
+        // Search across all cells in the row.
+        for (const cell of row) {
+          if (String(cell ?? '').toLowerCase().includes(q)) return true
+        }
+        return false
+      }
       return true
     })
-  }, [content, columnFilters, hasActiveFilters])
+  }, [content, columnFilters, hasActiveFilters, rowSearchQuery])
 
   const totalDataRows = filteredDataIndices.length
   const totalPages = Math.max(1, Math.ceil(totalDataRows / rowsPerPage))
@@ -1293,10 +1313,6 @@ export function ResearchPage() {
     return null
   }
 
-  const activePathLabel =
-    activeTab && activeTab.name
-      ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
-      : ''
   const selectedRowData =
     selectedRowIndex != null && content
       ? content[1 + selectedRowIndex] ?? null
@@ -1317,7 +1333,7 @@ export function ResearchPage() {
 
   return (
     <div
-      className={`bg-white ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`bg-white text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
       {deleteConfirmOpen && (
         <div
@@ -1795,13 +1811,16 @@ export function ResearchPage() {
       <div
         className={
           isInspectorOpen
-            ? 'flex-1 min-w-0 overflow-hidden px-4 py-3 flex flex-col h-[calc(100vh-3.5rem)]'
-            : 'px-4 py-3 overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]'
+            ? 'flex h-[calc(100vh-3.5rem)] min-w-0 flex-1 flex-col overflow-hidden'
+            : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
         }
       >
-      <div className="shrink-0">
-        <h2 className="mb-1 text-lg font-semibold text-gray-900">Data Research</h2>
+      <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-2.5">
+        <h1 className="text-[15px] font-semibold text-slate-900">Data Research</h1>
+      </div>
 
+      {/* Unified header: tabs + toolbar in one container, flush full-width */}
+      <div className="shrink-0 border-b border-slate-200 bg-white">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -1841,33 +1860,32 @@ export function ResearchPage() {
           }}
         />
 
-      {activePathLabel && (
-        <p className="mb-1 text-xs font-medium text-gray-500 truncate">
-          {activePathLabel}
-        </p>
-      )}
-
       {loading && (
-        <p className="mb-2 text-sm text-gray-500">Loading file…</p>
+        <p className="px-4 pb-1 text-sm text-slate-500">Loading file…</p>
       )}
       {error && (
-        <p className="mb-2 text-sm text-red-600">{error}</p>
+        <p className="px-4 pb-1 text-sm text-rose-600">{error}</p>
       )}
 
-      {/* Toolbar */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {/* Toolbar — flush inside same container as tabs */}
+      <div className="flex flex-nowrap items-center gap-0.5 overflow-x-auto border-t border-slate-200 bg-white px-3 py-1">
         <button
           type="button"
           onClick={() => setToolbarActive('all')}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
+            toolbarActive === 'all'
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
           }`}
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           Research All
         </button>
+
+        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+
         <button
           type="button"
           onClick={() => {
@@ -1882,34 +1900,38 @@ export function ResearchPage() {
             setResearchFieldsPopupOpen(true)
           }}
           disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
-          title={
-            selectedColumns.size === 0
-              ? 'Select column(s) first'
-              : 'Research selected headers and rows'
-          }
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'selected' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          } disabled:cursor-not-allowed disabled:opacity-50`}
+          title={selectedColumns.size === 0 ? 'Select column(s) first' : 'Research selected headers and rows'}
+          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            toolbarActive === 'selected'
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          }`}
         >
           {storeSelectionLoading ? (
-            <LoaderIcon className="h-4 w-4 shrink-0" />
+            <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
           ) : (
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           )}
           {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
         </button>
+
+        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+
         <button
           type="button"
           onClick={() => setToolbarActive('deep')}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           Deep Search Selected
         </button>
+
+        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+
         <button
           type="button"
           onClick={() => {
@@ -1920,20 +1942,22 @@ export function ResearchPage() {
             setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
             const all = Array.from(selectedRows).sort((a, b) => a - b)
             setInspectorMultiRowIndices(all)
-            // Start unchecked so user explicitly chooses what to compare
             setInspectorCompareSelection(new Set())
             setCollapseSidebarForInspector(true)
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
           Preview Selected
         </button>
+
+        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+
         <button
           type="button"
           onClick={() => {
@@ -1968,15 +1992,39 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
           </svg>
           Compare Selected
         </button>
         {/* Other options removed */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="relative w-[200px] max-w-[60vw] sm:w-[240px]">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={rowSearchDraft}
+              onChange={(e) => setRowSearchDraft(e.target.value)}
+              placeholder="Search rows…"
+              className="w-full rounded-md border border-slate-300 bg-white py-1 pl-8 pr-8 text-xs text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+            />
+            {rowSearchDraft.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRowSearchDraft('')
+                  setRowSearchQuery('')
+                  setPage(1)
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <button
             ref={filterBtnRef}
             type="button"
@@ -1986,13 +2034,13 @@ export function ResearchPage() {
                 return !f
               })
             }}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium shadow-sm ${
+            className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
               hasActiveFilters
-                ? 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17m0 0h2m-2 0h-5m-9 0H3" />
             </svg>
             Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
@@ -2163,9 +2211,9 @@ export function ResearchPage() {
           )}
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Download Selected
@@ -2173,26 +2221,28 @@ export function ResearchPage() {
         </div>
       </div>
 
-      </div>
+      </div>{/* end unified header */}
 
       {content && content.length > 0 && (
         <>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="h-full overflow-auto rounded-lg border border-gray-200 shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50">
+          <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
+            <div className="h-full w-full overflow-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-[#f9fafb]">
                 <tr>
-                  <th className="w-10 px-2 py-3 border-r border-gray-200">
+                  {/* Row-number gutter */}
+                  <th className="w-8 border-r border-slate-200 px-1 py-1.5 text-center text-[10px] text-slate-400" aria-label="Row number" />
+                  <th className="w-8 border-r border-slate-200 px-2 py-1.5">
                     <input
                       type="checkbox"
                       checked={filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))}
                       onChange={toggleSelectAll}
-                      className="rounded border-gray-300"
+                      className="rounded border-slate-300"
                     />
                   </th>
                   <th
                     scope="col"
-                    className="w-[92px] shrink-0 px-2 py-2 border-r border-gray-200 text-left text-xs font-medium uppercase tracking-wide text-gray-500"
+                    className="w-[80px] shrink-0 border-r border-slate-200 px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500"
                   >
                     Research
                   </th>
@@ -2201,8 +2251,8 @@ export function ResearchPage() {
                       (row) => (row[i] ?? '').trim().length > 0
                     )
                     return (
-                      <th key={i} scope="col" className="px-2 py-2 border-r border-gray-200 last:border-r-0">
-                        <div className="flex items-center gap-2">
+                      <th key={i} scope="col" className="border-r border-slate-200 px-1.5 py-1.5 last:border-r-0">
+                        <div className="flex items-center gap-1.5">
                           {columnHasData && (
                             <input
                               type="checkbox"
@@ -2215,13 +2265,13 @@ export function ResearchPage() {
                                   return next
                                 })
                               }
-                              className="mt-0.5 rounded border-gray-300"
+                              className="mt-0.5 rounded border-slate-300"
                             />
                           )}
                           <input
                             value={cell}
                             onChange={(e) => updateCell(0, i, e.target.value)}
-                            className="w-full min-w-[100px] border-0 bg-transparent px-2 py-1.5 font-medium text-gray-900 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className="w-full min-w-[80px] border-0 bg-transparent px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500"
                           />
                         </div>
                       </th>
@@ -2229,7 +2279,7 @@ export function ResearchPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
+              <tbody className="divide-y divide-slate-200 bg-white">
                 {pageRows.map((row, idx) => {
                   const dataRowIndex = rowIndices[idx]
                   const isSelectedRow = selectedRowIndex === dataRowIndex
@@ -2244,25 +2294,29 @@ export function ResearchPage() {
                         isSelectedRow
                           ? 'bg-sky-50'
                           : hasStructuredData
-                            ? 'bg-emerald-50 hover:bg-emerald-100/80'
-                            : 'hover:bg-gray-50'
+                            ? 'bg-blue-50 hover:bg-blue-100/80'
+                            : 'hover:bg-[#f9fafb]'
                       }`}
                     >
-                      <td className="w-10 h-12 px-2 align-middle border-r border-gray-200">
+                      {/* Row number */}
+                      <td className="h-8 w-8 select-none border-r border-slate-200 px-1 text-center align-middle text-[10px] text-slate-400">
+                        {dataRowIndex + 1}
+                      </td>
+                      <td className="h-8 w-8 border-r border-slate-200 px-2 align-middle">
                         {isRowBeingResearched ? (
-                          <LoaderIcon className="h-5 w-5 text-emerald-600" />
+                          <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
                         ) : (
                           <input
                             type="checkbox"
                             checked={selectedRows.has(dataRowIndex)}
                             onChange={() => toggleRowSelection(dataRowIndex)}
-                            className="rounded border-gray-300"
+                            className="rounded border-slate-300"
                           />
                         )}
                       </td>
                       <td
-                        className={`w-[92px] h-12 shrink-0 cursor-pointer px-2 align-middle border-r border-gray-200 transition-colors ${
-                          hasStructuredData ? 'hover:bg-emerald-100/60' : 'hover:bg-gray-100'
+                        className={`h-8 w-[80px] shrink-0 cursor-pointer border-r border-slate-200 px-1.5 align-middle transition-colors ${
+                          hasStructuredData ? 'hover:bg-blue-100/80' : 'hover:bg-slate-100'
                         }`}
                         title="Open inspector for this row"
                         onClick={() => handleCellClick(dataRowIndex)}
@@ -2275,32 +2329,29 @@ export function ResearchPage() {
                                 e.stopPropagation()
                                 handleCellClick(dataRowIndex)
                               }}
-                              className="group inline-flex flex-col items-start rounded-md bg-emerald-600/10 px-2 py-1 text-[11px] font-semibold leading-[1.1] text-emerald-900 tabular-nums hover:bg-emerald-600/15 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                              className="inline-flex items-center gap-0.5 rounded bg-blue-600/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-900 hover:bg-blue-600/15 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
                               aria-label="Open results in inspector"
                               title="Click to open results"
                             >
-                              <span>
-                                {rowResearchSummary.structured_sources_count} result
-                                {rowResearchSummary.structured_sources_count !== 1 ? 's' : ''}
-                              </span>
-                              <span className="font-medium text-emerald-900/80">found</span>
+                              {rowResearchSummary.structured_sources_count}
+                              <span className="font-normal text-blue-900/70">found</span>
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-gray-300">—</span>
+                          <span className="text-[10px] text-slate-300">—</span>
                         )}
                       </td>
                       {Array.from({ length: numCols }, (_, colIndex) => (
                         <td
                           key={colIndex}
-                          className="h-12 cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
+                          className="h-8 cursor-pointer border-r border-slate-200 p-0 last:border-r-0"
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className="h-12 w-full min-w-[100px] border-0 bg-transparent px-4 py-0 text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className="h-8 w-full min-w-[80px] border-0 bg-transparent px-2 py-0 text-xs text-slate-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
                           />
                         </td>
                       ))}
@@ -2313,13 +2364,13 @@ export function ResearchPage() {
           </div>
 
           {/* Footer: Add row + pagination */}
-          <div className="shrink-0 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-2">
+          <div className="mt-2 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-2">
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={(e) => openAddRowPopover(e.currentTarget)}
                 data-add-row-footer-btn
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
               >
                 + Add row
               </button>
@@ -2328,19 +2379,20 @@ export function ResearchPage() {
                 onClick={removeSelectedRows}
                 disabled={selectedRows.size === 0}
                 title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete row
               </button>
-              <span className="text-sm text-gray-600">
-                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}{hasActiveFilters ? ` (filtered from ${unfilteredRowCount})` : ''} entries
+              <span className="text-sm text-slate-600">
+                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}
+                {hasActiveFilters || hasRowSearch ? ` (filtered from ${unfilteredRowCount})` : ''} entries
               </span>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
                 Rows per page
                 <select
                   value={rowsPerPage}
                   onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
-                  className="rounded border border-gray-300 py-1 pl-2 pr-6 text-sm"
+                  className="rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
                 >
                   {ROWS_PER_PAGE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n}</option>
@@ -2353,7 +2405,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(1)}
                 disabled={currentPage <= 1}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
               >
                 &laquo;
               </button>
@@ -2361,18 +2413,18 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
               >
                 &lsaquo;
               </button>
-              <span className="px-3 py-1.5 text-sm text-gray-600">
+              <span className="px-3 py-1.5 text-sm text-slate-600">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
               >
                 &rsaquo;
               </button>
@@ -2380,7 +2432,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(totalPages)}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
               >
                 &raquo;
               </button>
@@ -2410,7 +2462,7 @@ export function ResearchPage() {
               aria-orientation="vertical"
               aria-label="Resize preview panel"
               title="Drag to resize"
-              className="shrink-0 w-1.5 cursor-col-resize border-l border-gray-200 bg-gray-100 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+              className="shrink-0 w-1.5 cursor-col-resize border-l border-slate-200 bg-slate-100 transition-colors hover:bg-blue-100 active:bg-blue-200"
               onMouseDown={(e) => {
                 e.preventDefault()
                 document.body.style.cursor = 'col-resize'
@@ -2423,7 +2475,7 @@ export function ResearchPage() {
             className={
               inspectorMaximized
                 ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-white shadow-xl'
-                : 'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+                : 'flex h-full min-h-0 shrink-0 animate-[slideInRight_0.2s_ease-out] flex-col overflow-hidden border-l border-slate-200 bg-white'
             }
             style={
               inspectorMaximized
@@ -2443,12 +2495,12 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 flex-col gap-3 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
+          <header className="flex shrink-0 flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
             <div className="flex min-w-0 items-center gap-3">
               {inspectorMode === 'single' && selectedRowData ? (
-                <div className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                  <h3 className="mb-0.5 text-xs font-medium uppercase tracking-wide text-gray-500">Item</h3>
-                  <p className="truncate text-base font-semibold text-gray-900">
+                <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <h3 className="mb-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">Item</h3>
+                  <p className="truncate text-base font-semibold text-slate-900">
                     {headers[0]
                       ? `${headers[0]}: ${selectedRowData[0] ?? '—'}`
                       : selectedRowData[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
@@ -2464,7 +2516,7 @@ export function ResearchPage() {
                     e.stopPropagation()
                     setInspectorMaximized((m) => !m)
                   }}
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
                   title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                   aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                 >
@@ -2481,7 +2533,7 @@ export function ResearchPage() {
                 <button
                   type="button"
                   onClick={closeInspector}
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
                   title="Close panel"
                   aria-label="Close panel"
                 >
@@ -2542,7 +2594,7 @@ export function ResearchPage() {
                       )
                     }
                   }}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
                   Compare
                 </button>
@@ -2565,13 +2617,13 @@ export function ResearchPage() {
                     if (result.added) showToast('Item added to Bucket')
                     else showToast('Item already in Bucket')
                   }}
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                 >
                   Add to Bucket
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                 >
                   Copy row
                 </button>
@@ -2591,14 +2643,14 @@ export function ResearchPage() {
           </header>
           <div className="flex flex-1 min-h-0 flex-col p-4">
             {inspectorMode === 'single' && selectedRowData && (
-              <div className="mb-3 flex shrink-0 gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+              <div className="mb-3 flex shrink-0 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <button
                   type="button"
                   onClick={() => setInspectorDetailTab('details')}
                   className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     inspectorDetailTab === 'details'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:bg-white/70'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:bg-white/70'
                   }`}
                 >
                   Details
@@ -2609,7 +2661,7 @@ export function ResearchPage() {
                   className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     inspectorDetailTab === 'ai'
                       ? 'bg-sky-100 text-sky-900 shadow-sm'
-                      : 'text-gray-600 hover:bg-white/70'
+                      : 'text-slate-600 hover:bg-white/70'
                   }`}
                 >
                   AI
@@ -2633,11 +2685,11 @@ export function ResearchPage() {
               ) : (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900">Selected rows</h3>
-                        <p className="mt-0.5 text-xs text-gray-500">
+                        <h3 className="text-sm font-semibold text-slate-900">Selected rows</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
                           Pick which items to compare, then click Compare.
                         </p>
                       </div>
@@ -2681,7 +2733,7 @@ export function ResearchPage() {
                             },
                           })
                         }}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >
                         Compare ({inspectorCompareSelection.size})
                       </button>
@@ -2696,8 +2748,8 @@ export function ResearchPage() {
                         return (
                           <label
                             key={rowIndex}
-                            className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer ${
-                              checked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 ${
+                              checked ? 'border-blue-200 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
                             }`}
                           >
                             <input
@@ -2714,12 +2766,12 @@ export function ResearchPage() {
                               }}
                             />
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">{title || '—'}</p>
-                              {sub && <p className="text-xs text-gray-600 truncate">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
+                              <p className="truncate text-sm font-semibold text-slate-900">{title || '—'}</p>
+                              {sub && <p className="truncate text-xs text-slate-600">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
                             </div>
                             <button
                               type="button"
-                              className="ml-auto text-xs font-medium text-gray-600 hover:text-gray-900"
+                              className="ml-auto text-xs font-medium text-slate-600 hover:text-slate-900"
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -2736,20 +2788,20 @@ export function ResearchPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
                           Structured data
                         </h3>
                         {previewScrapedData && previewScrapedData.length > 0 && (
-                          <div className="flex rounded-lg border border-gray-200 p-0.5">
+                          <div className="flex rounded-lg border border-slate-200 p-0.5">
                             <button
                               type="button"
                               onClick={() => setStructuredDataViewType('row')}
                               className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                                 structuredDataViewType === 'row'
-                                  ? 'bg-gray-200 text-gray-900'
-                                  : 'text-gray-600 hover:bg-gray-100'
+                                  ? 'bg-slate-200 text-slate-900'
+                                  : 'text-slate-600 hover:bg-slate-100'
                               }`}
                             >
                               Row
@@ -2759,8 +2811,8 @@ export function ResearchPage() {
                               onClick={() => setStructuredDataViewType('column')}
                               className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                                 structuredDataViewType === 'column'
-                                  ? 'bg-gray-200 text-gray-900'
-                                  : 'text-gray-600 hover:bg-gray-100'
+                                  ? 'bg-slate-200 text-slate-900'
+                                  : 'text-slate-600 hover:bg-slate-100'
                               }`}
                             >
                               Column
@@ -2769,16 +2821,16 @@ export function ResearchPage() {
                         )}
                       </div>
                       {previewResultsLoading ? (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
                           <LoaderIcon className="h-4 w-4 shrink-0" />
                           <span>Loading…</span>
                         </div>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
                         <div className="space-y-4">
                           {previewScrapedData.map((item, idx) => (
-                            <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                            <div key={idx} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                               {item.url && (
-                                <div className="mb-2 flex items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
+                                <div className="mb-2 flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
                                   <input
                                     type="checkbox"
                                     checked={inspectorScrapedSourceSelection.has(idx)}
@@ -2790,19 +2842,19 @@ export function ResearchPage() {
                                         return next
                                       })
                                     }}
-                                    className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                     aria-label={`Include source ${idx + 1} in comparison`}
                                   />
                                   <a
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-gray-600 transition-colors hover:text-blue-600"
+                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-600 transition-colors hover:text-blue-600"
                                     title={item.url}
                                   >
-                                    <span className="shrink-0 font-medium text-gray-400">Source {idx + 1}</span>
+                                    <span className="shrink-0 font-medium text-slate-400">Source {idx + 1}</span>
                                     <span className="min-w-0 truncate">{item.url}</span>
-                                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                     </svg>
                                   </a>
