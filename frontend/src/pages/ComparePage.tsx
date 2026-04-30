@@ -353,9 +353,15 @@ type ResearchCompareRequestState = {
   sourceIndices: number[]
 }
 
+type StructuredScrapedRow = ScrapedDataItem & {
+  sourceKey: string
+  partId: string
+  partLabel: string
+}
+
 export function ComparePage() {
   const location = useLocation()
-  const { items, addItems, closeAndClear, openWithItems } = useComparison()
+  const { items, closeAndClear, openWithItems } = useComparison()
   const { addItem: addBucketItem, showToast: showBucketToast } = useBucket()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
@@ -409,7 +415,6 @@ export function ComparePage() {
       return 'map'
     }
   })
-  const [compareMode] = useState<CompareMode>('same-part')
   const hasHydratedCompareStateRef = useRef(false)
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [externalItemsByTab, setExternalItemsByTab] = useState<Record<string, ComparisonItem[]>>({})
@@ -443,6 +448,12 @@ export function ComparePage() {
   const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
   const activeFileId = activeTab?.data.activeFileId ?? null
   const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
+  const fileBackedItems = useMemo(
+    () => items.filter((item) => parseFileItemId(item.id) != null),
+    [items]
+  )
+  const compareMode: CompareMode = fileBackedItems.length > 1 ? 'different-same-vendor' : 'same-part'
+  const [structuredPartView, setStructuredPartView] = useState<'all' | string>('all')
 
   useEffect(() => {
     if (consumedRouteItemsRef.current) return
@@ -881,7 +892,7 @@ export function ComparePage() {
       setCommonVendorsLoading(false)
       return
     }
-    if (selectedFilesData.length === 0) {
+    if (fileBackedItems.length === 0) {
       setScrapedDataByPart({})
       setCommonVendorsLoading(false)
       return
@@ -892,7 +903,7 @@ export function ComparePage() {
       setCommonVendorsLoading(false)
       return
     }
-    const partRefs = items
+    const partRefs = fileBackedItems
       .map((item) => ({ itemId: item.id, parsed: parseFileItemId(item.id) }))
       .filter((x): x is { itemId: string; parsed: { fileId: number; rowIdx: number } } => x.parsed != null)
     if (partRefs.length === 0) {
@@ -929,7 +940,7 @@ export function ComparePage() {
     return () => {
       cancelled = true
     }
-  }, [compareMode, items, selectedFilesData.length])
+  }, [compareMode, fileBackedItems])
 
   /**
    * Vendor-driven part filtering for "different-same-vendor".
@@ -937,19 +948,70 @@ export function ComparePage() {
    * downstream shared-vendor computations.
    */
   const effectiveVendorFilteredParts = useMemo(() => {
-    if (compareMode !== 'different-same-vendor') return items
-    if (scrapedVendorFilter === 'all') return items
+    if (compareMode !== 'different-same-vendor') return fileBackedItems
+    if (scrapedVendorFilter === 'all') return fileBackedItems
 
     // Avoid aggressive filtering while scraped-by-part data is still loading.
     const hasScrapedByPart = Object.keys(scrapedDataByPart).length > 0
-    if (!hasScrapedByPart) return items
+    if (!hasScrapedByPart) return fileBackedItems
 
     const wantedDomain = scrapedVendorFilter
-    const filtered = items.filter((part) =>
+    const filtered = fileBackedItems.filter((part) =>
       (scrapedDataByPart[part.id] ?? []).some((d) => extractDomain(d.url) === wantedDomain),
     )
-    return filtered.length > 0 ? filtered : items
-  }, [compareMode, scrapedVendorFilter, items, scrapedDataByPart])
+    return filtered.length > 0 ? filtered : fileBackedItems
+  }, [compareMode, scrapedVendorFilter, fileBackedItems, scrapedDataByPart])
+  const selectedPartItemId = selectedRowForScraped
+    ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
+    : null
+  const structuredPartSelectValue =
+    compareMode === 'different-same-vendor'
+      ? structuredPartView === 'all'
+        ? 'all'
+        : structuredPartView
+      : (selectedPartItemId ?? '')
+  const showingAllStructuredParts =
+    compareMode === 'different-same-vendor' &&
+    structuredPartSelectValue === 'all' &&
+    effectiveVendorFilteredParts.length > 1
+  const currentComparedPartLabel = showingAllStructuredParts
+    ? `All selected parts (${effectiveVendorFilteredParts.length})`
+    : (selectedRowForScraped?.partLabel ?? effectiveVendorFilteredParts[0]?.title ?? 'Selected part')
+
+  const handleStructuredPartViewChange = useCallback((id: string) => {
+    if (compareMode === 'different-same-vendor' && id === 'all') {
+      setStructuredPartView('all')
+      return
+    }
+    const parsed = parseFileItemId(id)
+    const item = effectiveVendorFilteredParts.find((i) => i.id === id)
+    if (parsed && item) {
+      setStructuredPartView(id)
+      updateActiveTabData((d) => ({
+        ...d,
+        selectedRowForScraped: {
+          fileId: parsed.fileId,
+          tabId: null,
+          rowIdx: parsed.rowIdx,
+          partLabel: item.title || '—',
+        },
+      }))
+    }
+  }, [compareMode, effectiveVendorFilteredParts, updateActiveTabData])
+
+  useEffect(() => {
+    if (compareMode !== 'different-same-vendor') {
+      setStructuredPartView(selectedPartItemId ?? 'all')
+      return
+    }
+    if (effectiveVendorFilteredParts.length <= 1) {
+      setStructuredPartView(selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? 'all')
+      return
+    }
+    if (structuredPartView === 'all') return
+    const exists = effectiveVendorFilteredParts.some((item) => item.id === structuredPartView)
+    if (!exists) setStructuredPartView('all')
+  }, [compareMode, effectiveVendorFilteredParts, selectedPartItemId, structuredPartView])
 
   /** Domains that count as "common": on ≥2 parts when comparing multiple parts; all domains when only one part. */
   const commonVendorDomains = useMemo(() => {
@@ -1195,21 +1257,56 @@ export function ComparePage() {
   ])
 
   /** Rows shown in the scraped comparison table (same filter as before, lifted for column reorder state). */
-  const scrapedTableRows = useMemo(() => {
-    if (!scrapedData?.length) return []
-    const commonSet = new Set(commonVendorDomains)
-    const baseRows =
-      compareMode === 'different-same-vendor'
-        ? scrapedData.filter((d) => commonSet.has(extractDomain(d.url)))
-        : scrapedData
+  const scrapedTableRows = useMemo<StructuredScrapedRow[]>(() => {
     const effectiveFilter = scrapedVendorFilter === 'all' ? null : scrapedVendorFilter
+
+    if (compareMode === 'different-same-vendor') {
+      const commonSet = new Set(commonVendorDomains)
+      const sourceParts = showingAllStructuredParts
+        ? effectiveVendorFilteredParts
+        : effectiveVendorFilteredParts.filter((item) => item.id === structuredPartSelectValue)
+
+      const rows = sourceParts.flatMap((part) =>
+        (scrapedDataByPart[part.id] ?? []).map((item, idx) => ({
+          ...item,
+          sourceKey: `${part.id}::${item.url}::${idx}`,
+          partId: part.id,
+          partLabel: (part.title || '—').trim() || '—',
+        }))
+      )
+
+      const baseRows = rows.filter((row) => commonSet.has(extractDomain(row.url)))
+      return effectiveFilter
+        ? baseRows.filter((row) => extractDomain(row.url) === effectiveFilter)
+        : baseRows
+    }
+
+    if (!scrapedData?.length) return []
+    const partLabel = (selectedRowForScraped?.partLabel || 'Selected part').trim() || 'Selected part'
+    const baseRows = scrapedData.map((item, idx) => ({
+      ...item,
+      sourceKey: `single::${item.url}::${idx}`,
+      partId: selectedPartItemId ?? 'selected-part',
+      partLabel,
+    }))
     return effectiveFilter
-      ? baseRows.filter((d) => extractDomain(d.url) === effectiveFilter)
+      ? baseRows.filter((row) => extractDomain(row.url) === effectiveFilter)
       : baseRows
-  }, [scrapedData, compareMode, commonVendorDomains, scrapedVendorFilter])
+  }, [
+    scrapedVendorFilter,
+    compareMode,
+    commonVendorDomains,
+    showingAllStructuredParts,
+    effectiveVendorFilteredParts,
+    structuredPartSelectValue,
+    scrapedDataByPart,
+    scrapedData,
+    selectedRowForScraped,
+    selectedPartItemId,
+  ])
 
   const scrapedTableSignature = useMemo(
-    () => scrapedTableRows.map((d) => d.url).join('\n'),
+    () => scrapedTableRows.map((d) => d.sourceKey).join('\n'),
     [scrapedTableRows]
   )
 
@@ -1400,7 +1497,6 @@ export function ComparePage() {
   useEffect(() => {
     if (
       (compareMode === 'same-part' || compareMode === 'different-same-vendor') &&
-      selectedFilesData.length > 0 &&
       effectiveVendorFilteredParts.length > 0 &&
       !selectedRowForScraped
     ) {
@@ -1418,7 +1514,7 @@ export function ComparePage() {
         }))
       }
     }
-  }, [compareMode, selectedFilesData.length, effectiveVendorFilteredParts, selectedRowForScraped, updateActiveTabData])
+  }, [compareMode, effectiveVendorFilteredParts, selectedRowForScraped, updateActiveTabData])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -1473,27 +1569,6 @@ export function ComparePage() {
     (sum: number, f: LoadedFile) => sum + (selectedFileRows[f.fileId]?.length ?? 0),
     0
   )
-  const filesWithSelection = selectedFilesData.filter(
-    (f: LoadedFile) => (selectedFileRows[f.fileId]?.length ?? 0) > 0
-  ).length
-
-  const handleAddAllSelectedFromAllFiles = useCallback(() => {
-    const allItems: ComparisonItem[] = []
-    for (const fileData of selectedFilesData) {
-      const rows = selectedFileRows[fileData.fileId] ?? []
-      if (rows.length === 0) continue
-      const items = buildItemsFromFileRows(
-        fileData,
-        [...rows].sort((a, b) => a - b)
-      )
-      allItems.push(...items)
-    }
-    if (allItems.length > 0) {
-      addItems(allItems)
-      comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [selectedFilesData, selectedFileRows, buildItemsFromFileRows, addItems])
-
   const toggleFileRow = useCallback((fileId: number, rowIdx: number, checked: boolean) => {
     updateActiveTabData((d) => {
       const arr = d.selectedFileRows[fileId] ?? []
@@ -1503,6 +1578,12 @@ export function ComparePage() {
       return {
         ...d,
         selectedFileRows: { ...d.selectedFileRows, [fileId]: nextArr },
+        selectedRowForScraped:
+          !checked &&
+          d.selectedRowForScraped?.fileId === fileId &&
+          d.selectedRowForScraped?.rowIdx === rowIdx
+            ? null
+            : d.selectedRowForScraped,
       }
     })
   }, [updateActiveTabData])
@@ -1586,7 +1667,6 @@ export function ComparePage() {
           <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 lg:px-5">
 
       <CompareWorkspaceSection
-        compareMode={compareMode}
         selectedFilesData={selectedFilesData}
         selectedFileRows={selectedFileRows}
         activeFileId={activeFileId}
@@ -1594,16 +1674,10 @@ export function ComparePage() {
         fileContentLoadingSize={fileContentLoading.size}
         portfolioPartNumbers={portfolioPartNumbers}
         totalSelectedAcrossFiles={totalSelectedAcrossFiles}
-        filesWithSelection={filesWithSelection}
         onOpenFilePicker={() => setFilePickerOpen(true)}
         onSetActiveFile={(fileId) => updateActiveTabData((d) => ({ ...d, activeFileId: fileId }))}
         onRemoveFile={handleRemoveFile}
         onToggleFileRow={toggleFileRow}
-        onAddAllSelectedFromAllFiles={handleAddAllSelectedFromAllFiles}
-        onCancelAllSelected={() => {
-          closeAndClear()
-          updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
-        }}
       />
 
       {/* Comparison matrix */}
@@ -1619,8 +1693,28 @@ export function ComparePage() {
 
         {(compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
           <div className={items.length > 0 ? 'mt-5' : 'mt-4'}>
+            {compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1 && (
+              <div className="mb-3 flex justify-end">
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="font-medium">View</span>
+                  <select
+                    value={structuredPartSelectValue}
+                    onChange={(e) => handleStructuredPartViewChange(e.target.value)}
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                  >
+                    <option value="all">All selected parts</option>
+                    {effectiveVendorFilteredParts.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.title || '—'}
+                        {item.sourceName ? ` (${item.sourceName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
             <CompareDecisionWorkspace
-              partLabel={selectedRowForScraped?.partLabel ?? effectiveVendorFilteredParts[0]?.title ?? 'Selected part'}
+              partLabel={currentComparedPartLabel}
               rows={decisionRows}
               filteredRows={decisionFilteredRows}
               vendorFilter={decisionVendorFilter}
@@ -1645,6 +1739,8 @@ export function ComparePage() {
               }}
               onAddSingleToBucket={handleAddDecisionRowToBucket}
               availableFields={scrapedFieldKeys}
+              selectedFields={scrapedSelectedFields}
+              onSelectedFieldsChange={setScrapedSelectedFields}
               view={decisionView}
               onViewChange={setDecisionView}
               mindMapModel={vendorOverviewPayload?.mindMap ?? null}
@@ -1681,31 +1777,17 @@ export function ComparePage() {
                   <label className="flex items-center gap-1.5 text-xs text-slate-600">
                     <span className="font-medium">Part</span>
                     <select
-                      value={(() => {
-                        const currentId = selectedRowForScraped
-                          ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
-                          : null
-                        const inItems = currentId && effectiveVendorFilteredParts.some((i) => i.id === currentId)
-                        return inItems ? currentId : (effectiveVendorFilteredParts[0]?.id ?? '')
-                      })()}
-                      onChange={(e) => {
-                        const id = e.target.value
-                        const parsed = parseFileItemId(id)
-                        const item = effectiveVendorFilteredParts.find((i) => i.id === id)
-                        if (parsed && item) {
-                          updateActiveTabData((d) => ({
-                            ...d,
-                            selectedRowForScraped: {
-                              fileId: parsed.fileId,
-                              tabId: null,
-                              rowIdx: parsed.rowIdx,
-                              partLabel: item.title || '—',
-                            },
-                          }))
-                        }
-                      }}
+                      value={
+                        compareMode === 'different-same-vendor'
+                          ? structuredPartSelectValue
+                          : (selectedPartItemId ?? '')
+                      }
+                      onChange={(e) => handleStructuredPartViewChange(e.target.value)}
                       className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     >
+                      {compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1 && (
+                        <option value="all">All selected parts</option>
+                      )}
                       {effectiveVendorFilteredParts.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.title || '—'}
@@ -1715,11 +1797,11 @@ export function ComparePage() {
                     </select>
                   </label>
                 )}
-                {scrapedData && scrapedData.length > 0 && (() => {
+                {scrapedTableRows.length > 0 && (() => {
                   const domains =
                     compareMode === 'different-same-vendor'
                       ? commonVendorDomains
-                      : [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
+                      : [...new Set(scrapedTableRows.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
                   if (domains.length === 0) return null
                   return (
                     <label className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -1739,7 +1821,7 @@ export function ComparePage() {
                     </label>
                   )
                 })()}
-                {scrapedData && scrapedData.length > 0 && (
+                {scrapedTableRows.length > 0 && (
                   <>
                     <button
                       ref={fieldPickerBtnRef}
@@ -1921,7 +2003,7 @@ export function ComparePage() {
                   ? 'No vendor domain appears on more than one selected part yet. Add overlapping research sources or pick parts that share suppliers.'
                   : 'No scraped vendors for this part yet. Run Research to collect sources.'}
               </p>
-            ) : scrapedData && scrapedData.length > 0 ? (
+            ) : scrapedTableRows.length > 0 ? (
               (() => {
                 const colOrder =
                   scrapedColumnOrder.length === scrapedTableRows.length
@@ -1952,7 +2034,7 @@ export function ComparePage() {
                   })
                   return hasMatch
                 })
-                const sourceWidth = (url: string) => scrapedSourceColWidths[url] ?? 188
+                const sourceWidth = (sourceKey: string) => scrapedSourceColWidths[sourceKey] ?? 188
                 const fieldWidth = (key: string) => scrapedFieldColWidths[key] ?? 160
                 const highlightNeedle = (text: string): React.ReactNode => {
                   if (!valueNeedle || !text) return text
@@ -2080,13 +2162,13 @@ export function ComparePage() {
                               </th>
                               {displayScrapedRows.map((item, displayIdx) => (
                                 <th
-                                  key={item.url}
+                                  key={item.sourceKey}
                                   draggable
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
                                   onDragOver={handleScrapedDragOver}
                                   onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
                                   className="relative cursor-move select-none border-b border-l border-slate-100 px-3 py-2.5 text-left"
-                                  style={{ width: sourceWidth(item.url), minWidth: sourceWidth(item.url) }}
+                                  style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
                                   title="Drag to reorder sources"
                                 >
                                   <div className="flex min-w-0 items-start gap-2">
@@ -2100,9 +2182,9 @@ export function ComparePage() {
                                         <input
                                           type="checkbox"
                                           className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                                          checked={selectedBucketSourceUrls.has(item.url)}
+                                          checked={selectedBucketSourceUrls.has(item.sourceKey)}
                                           onChange={(e) =>
-                                            toggleBucketSourceSelection(item.url, e.target.checked)
+                                            toggleBucketSourceSelection(item.sourceKey, e.target.checked)
                                           }
                                           aria-label={`Select Source ${displayIdx + 1} for Bucket`}
                                         />
@@ -2110,6 +2192,10 @@ export function ComparePage() {
                                           Source {displayIdx + 1}
                                         </p>
                                       </div>
+                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                        <span className="font-medium text-slate-500">Part:</span>{' '}
+                                        <span className="font-medium">{item.partLabel}</span>
+                                      </p>
                                       <p className="mt-0.5 truncate text-[11px] text-slate-700">
                                         <span className="font-medium text-slate-500">Vendor:</span>{' '}
                                         <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
@@ -2128,7 +2214,7 @@ export function ComparePage() {
                                           {compactSourceUrlLabel(item.url)}
                                         </a>
                                       </p>
-                                      {bucketSourceUrlsInSession.has(item.url) && (
+                                      {bucketSourceUrlsInSession.has(item.sourceKey) && (
                                         <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
                                           In Bucket
                                         </p>
@@ -2137,7 +2223,7 @@ export function ComparePage() {
                                   </div>
                                   <span
                                     onMouseDown={(e) =>
-                                      startColumnResize(e, 'row-source', item.url, sourceWidth(item.url))
+                                      startColumnResize(e, 'row-source', item.sourceKey, sourceWidth(item.sourceKey))
                                     }
                                     className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
                                     title="Resize column"
@@ -2165,9 +2251,9 @@ export function ComparePage() {
                                 </td>
                                 {displayScrapedRows.map((item) => (
                                   <td
-                                    key={`${item.url}-${key}`}
+                                    key={`${item.sourceKey}-${key}`}
                                     className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
-                                    style={{ width: sourceWidth(item.url), minWidth: sourceWidth(item.url) }}
+                                    style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
                                   >
                                     {renderScrapedCell(item, key)}
                                   </td>
@@ -2227,7 +2313,7 @@ export function ComparePage() {
                           <tbody className="divide-y divide-slate-100">
                             {displayScrapedRows.map((item, displayIdx) => (
                               <tr
-                                key={item.url}
+                                key={item.sourceKey}
                                 onDragOver={handleScrapedDragOver}
                                 onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
                                 className="group transition-colors hover:bg-slate-50/60"
@@ -2246,9 +2332,9 @@ export function ComparePage() {
                                     <input
                                       type="checkbox"
                                       className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                                      checked={selectedBucketSourceUrls.has(item.url)}
+                                      checked={selectedBucketSourceUrls.has(item.sourceKey)}
                                       onChange={(e) =>
-                                        toggleBucketSourceSelection(item.url, e.target.checked)
+                                        toggleBucketSourceSelection(item.sourceKey, e.target.checked)
                                       }
                                       aria-label={`Select Source ${displayIdx + 1} for Bucket`}
                                     />
@@ -2256,6 +2342,10 @@ export function ComparePage() {
                                       Source {displayIdx + 1}
                                     </p>
                                   </div>
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                    <span className="font-medium text-slate-500">Part:</span>{' '}
+                                    <span className="font-medium">{item.partLabel}</span>
+                                  </p>
                                   <p className="mt-0.5 truncate text-[11px] text-slate-700">
                                     <span className="font-medium text-slate-500">Vendor:</span>{' '}
                                     <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
@@ -2272,7 +2362,7 @@ export function ComparePage() {
                                       {compactSourceUrlLabel(item.url)}
                                     </a>
                                   </p>
-                                  {bucketSourceUrlsInSession.has(item.url) && (
+                                  {bucketSourceUrlsInSession.has(item.sourceKey) && (
                                     <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
                                       In Bucket
                                     </p>
@@ -2280,7 +2370,7 @@ export function ComparePage() {
                                 </td>
                                 {visibleFieldKeys.map((key) => (
                                   <td
-                                    key={`${item.url}-${key}`}
+                                    key={`${item.sourceKey}-${key}`}
                                     className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
                                     style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   >
@@ -2293,38 +2383,36 @@ export function ComparePage() {
                         </table>
                       )}
                     </div>
-                    {scrapedData.length > 0 && (
+                    {scrapedTableRows.length > 0 && (
                       <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/95 px-4 py-3">
                         <p className="text-[11px] text-slate-500">
                           {bucketSourceUrlsInSession.size > 0
                             ? `${bucketSourceUrlsInSession.size} source${
                                 bucketSourceUrlsInSession.size === 1 ? '' : 's'
-                              } already in Bucket from this part`
-                            : 'No sources from this part in Bucket yet'}
+                              } already in Bucket from this view`
+                            : 'No sources from this view in Bucket yet'}
                         </p>
                         <button
                           type="button"
                           onClick={() => {
-                            if (!selectedRowForScraped || !scrapedData?.length) return
-                            const urls = [...selectedBucketSourceUrls].filter(Boolean)
-                            if (urls.length === 0) {
+                            const selectedKeys = [...selectedBucketSourceUrls].filter(Boolean)
+                            if (selectedKeys.length === 0) {
                               showBucketToast('Select at least one source')
                               return
                             }
+                            const selectedRows = scrapedTableRows.filter((row) => selectedKeys.includes(row.sourceKey))
+                            if (selectedRows.length === 0) return
                             let added = 0
                             const newlyAdded: string[] = []
-                            for (const url of urls) {
-                              const src = scrapedData.find((s) => s.url === url)
-                              if (!src) continue
-                              const data = (src.data ?? {}) as Record<string, unknown>
-                              const id =
-                                selectedRowForScraped.fileId != null
-                                  ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}-s-${url}`
-                                  : `tab-${String(selectedRowForScraped.tabId ?? '')}-${selectedRowForScraped.rowIdx}-s-${url}`
+                            for (const row of selectedRows) {
+                              const parsedPart = parseFileItemId(row.partId)
+                              if (!parsedPart) continue
+                              const data = (row.data ?? {}) as Record<string, unknown>
+                              const id = `file-${parsedPart.fileId}-${parsedPart.rowIdx}-s-${row.url}-${row.sourceKey}`
                               const title =
                                 getFirstPartNumber(data) ??
-                                (selectedRowForScraped.partLabel || 'Selected part')
-                              const domain = extractDomain(url)
+                                row.partLabel
+                              const domain = extractDomain(row.url)
                               const priceSpecs = collectScalarSpecs(data).filter((s) =>
                                 /price|cost|amount|msrp|usd|\$/i.test(s.label)
                               )
@@ -2334,12 +2422,12 @@ export function ComparePage() {
                                 title: String(title),
                                 manufacturer: domain || '',
                                 price: String(price),
-                                rowIndex: selectedRowForScraped.rowIdx,
-                                tabId: selectedRowForScraped.tabId ?? undefined,
+                                rowIndex: parsedPart.rowIdx,
+                                tabId: undefined,
                               })
                               if (result.added) {
                                 added += 1
-                                newlyAdded.push(url)
+                                newlyAdded.push(row.sourceKey)
                               }
                             }
                             if (newlyAdded.length > 0) {

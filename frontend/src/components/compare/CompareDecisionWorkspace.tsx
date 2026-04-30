@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CompareVendorMindMap, type CompareVendorMindMapModel } from '@/components/compare/CompareVendorMindMap'
 
 export type CompareDecisionRow = {
@@ -36,6 +37,8 @@ type Props = {
   onCompareSelected: () => void
   onAddSingleToBucket: (id: string) => void
   availableFields: string[]
+  selectedFields: string[]
+  onSelectedFieldsChange: (fields: string[]) => void
   view: 'table' | 'insights' | 'mindmap'
   onViewChange: (next: 'table' | 'insights' | 'mindmap') => void
   mindMapModel: CompareVendorMindMapModel | null
@@ -76,6 +79,8 @@ export function CompareDecisionWorkspace({
   onCompareSelected,
   onAddSingleToBucket,
   availableFields,
+  selectedFields,
+  onSelectedFieldsChange,
   view,
   onViewChange,
   mindMapModel,
@@ -97,7 +102,39 @@ export function CompareDecisionWorkspace({
   }, null)
 
   const isEmpty = rows.length === 0
-  const activeFields = availableFields
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false)
+  const [fieldSearch, setFieldSearch] = useState('')
+  const fieldPickerRef = useRef<HTMLDivElement | null>(null)
+
+  const allFields = useMemo(
+    () =>
+      availableFields
+        .map((field) => field.trim())
+        .filter(Boolean)
+        .filter((field, index, arr) => arr.indexOf(field) === index),
+    [availableFields]
+  )
+  const activeFields =
+    selectedFields.length > 0 ? allFields.filter((field) => selectedFields.includes(field)) : allFields
+
+  useEffect(() => {
+    const trimmedAll = new Set(allFields.map((field) => field.trim()).filter(Boolean))
+    const cleanedSelection = selectedFields.filter((field) => trimmedAll.has(field.trim()))
+    if (cleanedSelection.length !== selectedFields.length) {
+      onSelectedFieldsChange(cleanedSelection)
+    }
+  }, [allFields, selectedFields, onSelectedFieldsChange])
+
+  useEffect(() => {
+    function onDocumentClick(event: MouseEvent) {
+      if (!fieldPickerOpen) return
+      if (!fieldPickerRef.current?.contains(event.target as Node)) {
+        setFieldPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocumentClick)
+    return () => document.removeEventListener('mousedown', onDocumentClick)
+  }, [fieldPickerOpen])
 
   const previewFields = activeFields.length > 0 ? activeFields.slice(0, 4) : ['price', 'contact', 'delivery', 'location']
 
@@ -266,8 +303,69 @@ export function CompareDecisionWorkspace({
                   </button>
                 ))}
               </div>
-              <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
-                Fields (All: {availableFields.length})
+              <div className="relative" ref={fieldPickerRef}>
+                <button
+                  type="button"
+                  onClick={() => setFieldPickerOpen((v) => !v)}
+                  className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  Fields {selectedFields.length > 0 ? `(Selected: ${selectedFields.length} / ${allFields.length})` : `(All: ${allFields.length})`}
+                </button>
+                {fieldPickerOpen && (
+                  <div className="absolute right-0 top-[calc(100%+6px)] z-30 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5">
+                    <input
+                      type="search"
+                      value={fieldSearch}
+                      onChange={(e) => setFieldSearch(e.target.value)}
+                      placeholder="Search fields..."
+                      className="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                    />
+                    <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                      <button
+                        type="button"
+                        onClick={() => onSelectedFieldsChange(allFields)}
+                        className="hover:text-slate-700"
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSelectedFieldsChange([])}
+                        className="hover:text-slate-700"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                      {allFields
+                        .filter((field) =>
+                          fieldSearch.trim() ? field.toLowerCase().includes(fieldSearch.trim().toLowerCase()) : true
+                        )
+                        .map((field) => {
+                          const checked = selectedFields.includes(field)
+                          return (
+                            <label key={field} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) =>
+                                  onSelectedFieldsChange(
+                                    e.target.checked
+                                      ? [...selectedFields, field]
+                                      : selectedFields.filter((value) => value !== field)
+                                  )
+                                }
+                                className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                              />
+                              <span className="truncate text-slate-700" title={field}>
+                                {formatFieldLabel(field)}
+                              </span>
+                            </label>
+                          )
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             {view === 'mindmap' && mindMapModel ? (

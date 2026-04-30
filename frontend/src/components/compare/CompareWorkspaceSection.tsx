@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { primaryTextFromDataRow } from '@/components/compare/dataRow'
-import type { LoadedFile, CompareMode } from '@/components/compare/types'
+import type { LoadedFile } from '@/components/compare/types'
 
 type Props = {
-  compareMode: CompareMode
   selectedFilesData: LoadedFile[]
   selectedFileRows: Record<number, number[]>
   activeFileId: number | null
@@ -11,17 +10,13 @@ type Props = {
   fileContentLoadingSize: number
   portfolioPartNumbers: Set<string>
   totalSelectedAcrossFiles: number
-  filesWithSelection: number
   onOpenFilePicker: () => void
   onSetActiveFile: (fileId: number) => void
   onRemoveFile: (fileId: number) => void
   onToggleFileRow: (fileId: number, rowIdx: number, checked: boolean) => void
-  onAddAllSelectedFromAllFiles: () => void
-  onCancelAllSelected: () => void
 }
 
 export function CompareWorkspaceSection({
-  compareMode,
   selectedFilesData,
   selectedFileRows,
   activeFileId,
@@ -29,13 +24,10 @@ export function CompareWorkspaceSection({
   fileContentLoadingSize,
   portfolioPartNumbers,
   totalSelectedAcrossFiles,
-  filesWithSelection,
   onOpenFilePicker,
   onSetActiveFile,
   onRemoveFile,
   onToggleFileRow,
-  onAddAllSelectedFromAllFiles,
-  onCancelAllSelected,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -102,7 +94,7 @@ export function CompareWorkspaceSection({
         {fileContentLoadingSize > 0 && <span className="text-sm text-slate-500">Loading file…</span>}
         {selectedFilesData.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            {(compareMode === 'different-same-vendor' ? selectedFilesData.slice(0, 1) : selectedFilesData).map((file) => {
+            {selectedFilesData.map((file) => {
               const isActive = file.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
               return (
                 <span
@@ -138,9 +130,9 @@ export function CompareWorkspaceSection({
       </div>
       {selectedFilesData.length > 0 &&
         (() => {
-          const filesToUse = compareMode === 'different-same-vendor' ? selectedFilesData.slice(0, 1) : selectedFilesData
-          const fileData = filesToUse.find((f) => f.fileId === (activeFileId ?? filesToUse[0]?.fileId))
+          const fileData = selectedFilesData.find((f) => f.fileId === (activeFileId ?? selectedFilesData[0]?.fileId))
           if (!fileData) return null
+          const selectedCount = selectedFileRows[fileData.fileId]?.length ?? 0
           const visibleRows = fileData.content
             .slice(1)
             .map((row, rowIdx) => ({ row, rowIdx, label: primaryTextFromDataRow(row) }))
@@ -149,10 +141,28 @@ export function CompareWorkspaceSection({
             <div key={fileData.fileId} className="mt-4">
               <p className="mb-1 text-[11px] font-semibold text-slate-500 truncate">{fileData.name}</p>
               {fileData.content.length > 1 ? (
-                <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5">
-                  <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-600">
-                    Select parts · {visibleRows.length} row{visibleRows.length !== 1 ? 's' : ''}
-                  </p>
+                <div
+                  className={`rounded-xl border bg-white shadow-sm ring-1 transition-colors ${
+                    selectedCount > 0
+                      ? 'border-blue-300 ring-blue-200'
+                      : 'border-slate-200 ring-slate-950/5'
+                  }`}
+                >
+                  <div
+                    className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2 text-xs font-medium ${
+                      selectedCount > 0
+                        ? 'border-blue-100 bg-blue-50/70 text-blue-900'
+                        : 'border-slate-100 bg-slate-50/80 text-slate-600'
+                    }`}
+                  >
+                    <span>
+                      Select parts · {visibleRows.length} row{visibleRows.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="text-slate-400">•</span>
+                    <span className={selectedCount > 0 ? 'rounded-full bg-blue-100 px-2 py-0.5 text-blue-900' : ''}>
+                      Selected: {selectedCount} part{selectedCount !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                   <div className="max-h-52 overflow-y-auto px-2 py-2">
                     {visibleRows.length === 0 ? (
                       <p className="px-2 py-3 text-sm text-slate-500">No rows with text in this file.</p>
@@ -173,14 +183,14 @@ export function CompareWorkspaceSection({
                             className={`inline-flex max-w-[220px] items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-colors ${
                               inPortfolio
                                 ? isSelectedForScraped
-                                  ? 'border-emerald-500 bg-emerald-200 text-emerald-950'
+                                  ? 'border-emerald-600 bg-emerald-300 text-emerald-950 ring-1 ring-emerald-300'
                                   : isChecked
-                                    ? 'border-emerald-400 bg-emerald-200 text-emerald-950'
+                                    ? 'border-emerald-600 bg-emerald-300 text-emerald-950 ring-1 ring-emerald-300'
                                     : 'border-emerald-300 bg-emerald-100 text-slate-900 hover:border-emerald-400 hover:bg-emerald-200'
                                 : isSelectedForScraped
-                                  ? 'border-blue-300 bg-blue-50 text-blue-900'
+                                  ? 'border-blue-500 bg-blue-200 text-blue-950 ring-1 ring-blue-300'
                                   : isChecked
-                                    ? 'border-blue-200 bg-blue-50 text-blue-900'
+                                    ? 'border-blue-500 bg-blue-200 text-blue-950 ring-1 ring-blue-300'
                                     : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                             }`}
                           >
@@ -198,35 +208,6 @@ export function CompareWorkspaceSection({
             </div>
           )
         })()}
-
-      {compareMode !== 'different-same-vendor' && selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 ring-1 ring-slate-950/5">
-          <h4 className="text-xs font-semibold text-slate-900">Cross-vendor selection</h4>
-          <p className="mt-1 text-xs text-slate-600">
-            {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected across {filesWithSelection}{' '}
-            file{filesWithSelection !== 1 ? 's' : ''}. Add everything to the comparison table.
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onAddAllSelectedFromAllFiles}
-              className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-              Add all selected to comparison
-            </button>
-            <button
-              type="button"
-              onClick={onCancelAllSelected}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
         </>
       )}
     </section>
