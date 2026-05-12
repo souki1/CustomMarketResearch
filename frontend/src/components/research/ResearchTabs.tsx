@@ -164,15 +164,15 @@ export function ResearchTabs(props: Props) {
   return (
     <>
       {/* Tab bar */}
-      <div className="flex flex-nowrap items-center gap-0 overflow-x-auto overflow-y-visible border-b border-slate-200 bg-transparent pl-3 pt-1.5">
+      <div className="flex flex-nowrap items-center gap-0 overflow-x-auto overflow-y-visible border-b border-[#bfbfbf] bg-transparent pl-3 pt-1">
         {tabs.map((tab) => (
           <div key={tab.id} className="shrink-0">
             {editingTabId === tab.id ? (
               <div
-                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[13px] font-medium ${
                   tab.id === activeTabId
                     ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
-                    : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60'
+                    : 'border-transparent bg-transparent text-slate-700 hover:bg-white/50'
                 }`}
               >
                 <input
@@ -200,10 +200,10 @@ export function ResearchTabs(props: Props) {
                   e.preventDefault()
                   onStartRename(tab)
                 }}
-                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+                className={`flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[13px] font-medium ${
                   tab.id === activeTabId
                     ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
-                    : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60'
+                    : 'border-transparent bg-transparent text-slate-700 hover:bg-white/50'
                 }`}
                 title={tab.name}
               >
@@ -281,10 +281,10 @@ export function ResearchTabs(props: Props) {
             ref={newTabBtnRef}
             type="button"
             onClick={onToggleNewTabMenu}
-            className={`shrink-0 flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1.5 text-[13px] font-medium ${
+            className={`shrink-0 flex items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[13px] font-medium ${
               newTabMenuOpen
                 ? 'border-slate-200 bg-white text-slate-900 shadow-[0_-1px_0_rgba(15,23,42,0.03)]'
-                : 'border-transparent bg-transparent text-slate-600 hover:bg-white/60 hover:text-slate-800'
+                : 'border-transparent bg-transparent text-slate-700 hover:bg-white/50 hover:text-slate-800'
             }`}
             title="New tab"
             aria-haspopup="menu"
