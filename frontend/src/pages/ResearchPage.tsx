@@ -528,13 +528,13 @@ function ResearchSortableDataRow({
         setHoveredRowIndex((cur) => (cur === dataRowIndex ? null : cur))
       }}
     >
-      <td className="box-border h-9 w-16 min-w-16 max-w-16 shrink-0 select-none border-r border-slate-200 bg-transparent py-0 pl-2 pr-1 text-left align-middle font-normal shadow-none outline-none ring-0">
+      <td className="box-border h-9 w-[5.75rem] min-w-[5.75rem] max-w-[5.75rem] shrink-0 overflow-hidden select-none border-r border-slate-200 bg-transparent py-0 pl-2 pr-1.5 text-left align-middle font-normal shadow-none outline-none ring-0">
         {isRowBeingResearched ? (
-          <div className="flex h-8 items-center justify-start gap-1">
-            <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
+          <div className="flex h-8 max-w-full flex-nowrap items-center justify-start gap-1">
+            <LoaderIcon className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
           </div>
         ) : (
-          <div className="flex h-8 items-center justify-start gap-1">
+          <div className="flex h-8 max-w-full flex-nowrap items-center justify-start gap-1">
             <button
               type="button"
               ref={setActivatorNodeRef}
@@ -546,18 +546,18 @@ function ResearchSortableDataRow({
             >
               <GripVertical className="h-3.5 w-3.5" aria-hidden />
             </button>
-            <div className="flex min-w-0 flex-1 items-center justify-start gap-1.5">
-              <div className="flex h-8 min-w-[1rem] shrink-0 items-center justify-start">
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex h-8 shrink-0 items-center justify-start">
                 {hoveredRowIndex === dataRowIndex || isRowChecked ? (
                   <input
                     type="checkbox"
                     checked={isRowChecked}
                     onChange={() => toggleRowSelection(dataRowIndex)}
-                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600 shadow-none"
+                    className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-blue-600 shadow-none"
                     aria-label={`Select row ${dataRowIndex + 1}`}
                   />
                 ) : (
-                  <span className="text-[11px] tabular-nums leading-none text-slate-500">{dataRowIndex + 1}</span>
+                  <span className="shrink-0 text-[11px] tabular-nums leading-none text-slate-500">{dataRowIndex + 1}</span>
                 )}
               </div>
               {hoveredRowIndex === dataRowIndex ? (
@@ -571,7 +571,7 @@ function ResearchSortableDataRow({
                   aria-label="Open row in inspector"
                   title="Open in inspector"
                 >
-                  <Maximize2 className="h-3 w-3" aria-hidden strokeWidth={2} />
+                  <Maximize2 className="h-3.5 w-3.5" aria-hidden strokeWidth={2} />
                 </button>
               ) : null}
             </div>
@@ -2584,7 +2584,7 @@ export function ResearchPage() {
                 <tr>
                   <th
                     scope="col"
-                    className="box-border w-16 min-w-16 max-w-16 shrink-0 border-r border-slate-200 bg-transparent py-2.5 pl-2.5 pr-1 text-left align-middle font-normal shadow-none"
+                    className="box-border w-[5.75rem] min-w-[5.75rem] max-w-[5.75rem] shrink-0 overflow-hidden border-r border-slate-200 bg-transparent py-2.5 pl-2.5 pr-1.5 text-left align-middle font-normal shadow-none"
                   >
                     <span className="inline-flex items-center justify-start">
                       <input
