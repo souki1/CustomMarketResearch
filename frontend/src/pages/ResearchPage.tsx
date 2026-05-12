@@ -1,6 +1,23 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type ReactElement, type ReactNode, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Search, Table2, X } from 'lucide-react'
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Bot, ChevronDown, ChevronRight, FlaskConical, GitCompare, GripVertical, LayoutGrid, Maximize2, Search, Table2, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -341,6 +358,271 @@ const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
 const INSPECTOR_DEFAULT_WIDTH = 450
 
+/** After moving one index to another, map an index that referred to a row/column before the move. */
+function remapIndexAfterMove(i: number, from: number, to: number): number {
+  if (i === from) return to
+  if (from < to) {
+    if (i > from && i <= to) return i - 1
+  } else if (from > to) {
+    if (i >= to && i < from) return i + 1
+  }
+  return i
+}
+
+function moveDataRowInSheet(data: string[][], from: number, to: number): string[][] | null {
+  const n = data.length - 1
+  if (from < 0 || to < 0 || from >= n || to >= n || from === to) return null
+  const header = [...(data[0] ?? [])]
+  const rows = data.slice(1).map((r) => [...r])
+  const [row] = rows.splice(from, 1)
+  rows.splice(to, 0, row)
+  return [header, ...rows]
+}
+
+function moveColumnInSheet(data: string[][], from: number, to: number): string[][] | null {
+  const w = data[0]?.length ?? 0
+  if (from < 0 || to < 0 || from >= w || to >= w || from === to) return null
+  return data.map((row) => {
+    const r = [...row]
+    const [c] = r.splice(from, 1)
+    r.splice(to, 0, c)
+    return r
+  })
+}
+
+type ResearchSortableColHeaderProps = {
+  id: string
+  colIdx: number
+  cell: string
+  columnHasData: boolean
+  selectedColumns: Set<number>
+  setSelectedColumns: Dispatch<SetStateAction<Set<number>>>
+  updateCell: (rowIndex: number, colIndex: number, value: string) => void
+}
+
+function ResearchSortableColHeader({
+  id,
+  colIdx,
+  cell,
+  columnHasData,
+  selectedColumns,
+  setSelectedColumns,
+  updateCell,
+}: ResearchSortableColHeaderProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { opacity: 0.88, zIndex: 2, position: 'relative' } : {}),
+  }
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      scope="col"
+      className="border-r border-slate-200 px-2 py-2.5 shadow-none last:border-r-0"
+    >
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...listeners}
+          className="-ml-0.5 shrink-0 cursor-grab rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing"
+          aria-label="Drag to reorder column"
+          title="Reorder column"
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {columnHasData && (
+            <input
+              type="checkbox"
+              checked={selectedColumns.has(colIdx)}
+              onChange={() =>
+                setSelectedColumns((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(colIdx)) next.delete(colIdx)
+                  else next.add(colIdx)
+                  return next
+                })
+              }
+              className="mt-0.5 shrink-0 rounded border-slate-300"
+            />
+          )}
+          <input
+            value={cell}
+            onChange={(e) => updateCell(0, colIdx, e.target.value)}
+            className="w-full min-w-[80px] border-0 bg-transparent px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          />
+        </div>
+      </div>
+    </th>
+  )
+}
+
+type ResearchSortableDataRowProps = {
+  id: string
+  dataRowIndex: number
+  row: string[]
+  numCols: number
+  hoveredRowIndex: number | null
+  setHoveredRowIndex: Dispatch<SetStateAction<number | null>>
+  isSelectedRow: boolean
+  isRowChecked: boolean
+  isRowBeingResearched: boolean
+  hasStructuredData: boolean
+  rowResearchSummary?: ResearchGridSummaryRow
+  toggleRowSelection: (rowIndex: number) => void
+  handleCellClick: (dataRowIndex: number) => void
+  handleCellSelect: (dataRowIndex: number) => void
+  updateCell: (rowIndex: number, colIndex: number, value: string) => void
+  LoaderIcon: (props: { className?: string }) => ReactElement
+}
+
+function ResearchSortableDataRow({
+  id,
+  dataRowIndex,
+  row,
+  numCols,
+  hoveredRowIndex,
+  setHoveredRowIndex,
+  isSelectedRow,
+  isRowChecked,
+  isRowBeingResearched,
+  hasStructuredData,
+  rowResearchSummary,
+  toggleRowSelection,
+  handleCellClick,
+  handleCellSelect,
+  updateCell,
+  LoaderIcon,
+}: ResearchSortableDataRowProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { opacity: 0.88, zIndex: 1, position: 'relative' } : {}),
+  }
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      data-row-index={dataRowIndex}
+      className={`transition-colors ${
+        isRowChecked || isSelectedRow
+          ? 'bg-[#e7f0fe]'
+          : hasStructuredData
+            ? 'bg-blue-50 hover:bg-blue-100/80'
+            : 'hover:bg-[#f9fafb]'
+      }`}
+      onMouseEnter={() => setHoveredRowIndex(dataRowIndex)}
+      onMouseLeave={(e) => {
+        const rel = e.relatedTarget as Node | null
+        if (rel && e.currentTarget.contains(rel)) return
+        setHoveredRowIndex((cur) => (cur === dataRowIndex ? null : cur))
+      }}
+    >
+      <td className="box-border h-9 w-16 min-w-16 max-w-16 shrink-0 select-none border-r border-slate-200 bg-transparent py-0 pl-2 pr-1 text-left align-middle font-normal shadow-none outline-none ring-0">
+        {isRowBeingResearched ? (
+          <div className="flex h-8 items-center justify-start gap-1">
+            <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
+          </div>
+        ) : (
+          <div className="flex h-8 items-center justify-start gap-1">
+            <button
+              type="button"
+              ref={setActivatorNodeRef}
+              {...listeners}
+              className="-ml-0.5 shrink-0 cursor-grab rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing"
+              aria-label="Drag to reorder row"
+              title="Reorder row"
+              onClick={(e) => e.preventDefault()}
+            >
+              <GripVertical className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <div className="flex min-w-0 flex-1 items-center justify-start gap-1.5">
+              <div className="flex h-8 min-w-[1rem] shrink-0 items-center justify-start">
+                {hoveredRowIndex === dataRowIndex || isRowChecked ? (
+                  <input
+                    type="checkbox"
+                    checked={isRowChecked}
+                    onChange={() => toggleRowSelection(dataRowIndex)}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600 shadow-none"
+                    aria-label={`Select row ${dataRowIndex + 1}`}
+                  />
+                ) : (
+                  <span className="text-[11px] tabular-nums leading-none text-slate-500">{dataRowIndex + 1}</span>
+                )}
+              </div>
+              {hoveredRowIndex === dataRowIndex ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCellClick(dataRowIndex)
+                  }}
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  aria-label="Open row in inspector"
+                  title="Open in inspector"
+                >
+                  <Maximize2 className="h-3 w-3" aria-hidden strokeWidth={2} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </td>
+      <td
+        className={`h-9 w-[80px] shrink-0 cursor-pointer border-r border-slate-200 px-2 py-0 align-middle transition-colors ${
+          hasStructuredData ? 'hover:bg-blue-100/80' : 'hover:bg-slate-100'
+        }`}
+        title="Open inspector for this row"
+        onClick={() => handleCellClick(dataRowIndex)}
+      >
+        {hasStructuredData && rowResearchSummary ? (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleCellClick(dataRowIndex)
+              }}
+              className="inline-flex items-center gap-0.5 rounded bg-blue-600/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-900 hover:bg-blue-600/15 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+              aria-label="Open results in inspector"
+              title="Click to open results"
+            >
+              {rowResearchSummary.structured_sources_count}
+              <span className="font-normal text-blue-900/70">found</span>
+            </button>
+          </div>
+        ) : (
+          <span className="text-[10px] text-slate-300">—</span>
+        )}
+      </td>
+      {Array.from({ length: numCols }, (_, colIndex) => (
+        <td
+          key={colIndex}
+          className="h-9 cursor-pointer border-r border-slate-200 p-0 last:border-r-0"
+          onClick={() => handleCellSelect(dataRowIndex)}
+          onDoubleClick={() => handleCellClick(dataRowIndex)}
+        >
+          <input
+            value={row[colIndex] ?? ''}
+            onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
+            className="h-9 w-full min-w-[80px] border-0 bg-transparent px-2 py-0 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          />
+        </td>
+      ))}
+    </tr>
+  )
+}
+
 type PersistedResearchState = {
   activeTabId: string | null
   selectedRows: number[]
@@ -377,6 +659,7 @@ export function ResearchPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set())
+  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null)
   const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set())
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
@@ -1105,6 +1388,63 @@ export function ResearchPage() {
   const rowIndices = filteredDataIndices.slice(startRow, endRow)
   const pageRows = content ? rowIndices.map((i) => content[i + 1]) : []
 
+  const rowSortableIds = useMemo(() => rowIndices.map((i) => `row-${i}`), [rowIndices])
+  const colSortableIds = useMemo(() => (content?.[0] ?? []).map((_, i) => `col-${i}`), [content])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const handleSheetDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const a = String(active.id)
+      const o = String(over.id)
+      if (a.startsWith('row-') && o.startsWith('row-')) {
+        const from = Number.parseInt(a.slice(4), 10)
+        const to = Number.parseInt(o.slice(4), 10)
+        if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) return
+        if (!rowIndices.includes(from) || !rowIndices.includes(to)) return
+        setActiveTabData((prev) => moveDataRowInSheet(prev, from, to) ?? prev)
+        userHasEditedRef.current = true
+        setSelectedRows((sr) => new Set([...sr].map((i) => remapIndexAfterMove(i, from, to))))
+        setSelectedRowIndex((si) => (si == null ? null : remapIndexAfterMove(si, from, to)))
+        setInspectorMultiRowIndices((arr) => arr.map((i) => remapIndexAfterMove(i, from, to)))
+        setInspectorCompareSelection((sel) => new Set([...sel].map((i) => remapIndexAfterMove(i, from, to))))
+        setResearchRowSummaryByIndex((m) => {
+          const next = new Map<number, ResearchGridSummaryRow>()
+          for (const [k, v] of m) {
+            next.set(remapIndexAfterMove(k, from, to), v)
+          }
+          return next
+        })
+        setHoveredRowIndex((h) => (h == null ? null : remapIndexAfterMove(h, from, to)))
+        setResearchVersion((v) => v + 1)
+        return
+      }
+      if (a.startsWith('col-') && o.startsWith('col-')) {
+        const from = Number.parseInt(a.slice(4), 10)
+        const to = Number.parseInt(o.slice(4), 10)
+        if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) return
+        setActiveTabData((prev) => moveColumnInSheet(prev, from, to) ?? prev)
+        userHasEditedRef.current = true
+        setSelectedColumns((sc) => new Set([...sc].map((i) => remapIndexAfterMove(i, from, to))))
+        setColumnFilters((cf) => {
+          const next = new Map<number, Set<string>>()
+          for (const [k, v] of cf) {
+            next.set(remapIndexAfterMove(k, from, to), v)
+          }
+          return next
+        })
+        setFilterDropdownCol((c) => (c == null ? null : remapIndexAfterMove(c, from, to)))
+        setResearchVersion((v) => v + 1)
+      }
+    },
+    [rowIndices, setActiveTabData]
+  )
+
   const toggleSelectAll = () => {
     if (!content || content.length <= 1) return
     const allFilteredSelected = filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))
@@ -1815,12 +2155,18 @@ export function ResearchPage() {
             : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
         }
       >
-      <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-2.5">
-        <h1 className="text-[15px] font-semibold text-slate-900">Data Research</h1>
+      <div className="shrink-0 border-b border-slate-200/80 bg-[#f2f5f7] px-4 py-2.5 sm:px-5">
+        <div className="flex items-center gap-2.5">
+          <FlaskConical className="h-5 w-5 shrink-0 text-slate-600" aria-hidden />
+          <h1 className="text-[18px] font-semibold leading-6 tracking-tight text-slate-900 sm:text-[20px]">
+            Data Research
+          </h1>
+        </div>
       </div>
 
-      {/* Unified header: tabs + toolbar in one container, flush full-width */}
-      <div className="shrink-0 border-b border-slate-200 bg-white">
+      {/* Tab strip (gray) + toolbar (white), Airtable-style */}
+      <div className="shrink-0 border-b border-slate-300/70 bg-white shadow-[inset_0_-1px_0_rgba(15,23,42,0.06)]">
+        <div className="bg-[#e0e0e0]">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -1859,20 +2205,24 @@ export function ResearchPage() {
             setFilePickerOpen(false)
           }}
         />
+        </div>
 
-      {loading && (
-        <p className="px-4 pb-1 text-sm text-slate-500">Loading file…</p>
-      )}
-      {error && (
-        <p className="px-4 pb-1 text-sm text-rose-600">{error}</p>
-      )}
+        <div className="border-t border-slate-200 bg-white">
+          {loading && <p className="px-4 pb-1 pt-2 text-sm text-slate-500">Loading file…</p>}
+          {error && (
+            <p className={`px-4 pb-1 text-sm text-rose-600 ${loading ? 'pt-1' : 'pt-2'}`}>{error}</p>
+          )}
 
-      {/* Toolbar — flush inside same container as tabs */}
-      <div className="flex flex-nowrap items-center gap-0.5 overflow-x-auto border-t border-slate-200 bg-white px-3 py-1">
+          {/* Toolbar */}
+          <div
+            className={`flex flex-nowrap items-center gap-0.5 overflow-x-auto px-3 py-2 ${
+              loading || error ? 'border-t border-slate-100' : ''
+            }`}
+          >
         <button
           type="button"
           onClick={() => setToolbarActive('all')}
-          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
+          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
             toolbarActive === 'all'
               ? 'bg-blue-600 text-white'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
@@ -1901,7 +2251,7 @@ export function ResearchPage() {
           }}
           disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
           title={selectedColumns.size === 0 ? 'Select column(s) first' : 'Research selected headers and rows'}
-          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
             toolbarActive === 'selected'
               ? 'bg-blue-600 text-white'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
@@ -1922,7 +2272,7 @@ export function ResearchPage() {
         <button
           type="button"
           onClick={() => setToolbarActive('deep')}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
         >
           <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1947,7 +2297,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1992,7 +2342,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -2034,7 +2384,7 @@ export function ResearchPage() {
                 return !f
               })
             }}
-            className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
               hasActiveFilters
                 ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
@@ -2211,13 +2561,14 @@ export function ResearchPage() {
           )}
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Download Selected
           </button>
+        </div>
         </div>
       </div>
 
@@ -2227,139 +2578,85 @@ export function ResearchPage() {
         <>
           <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
             <div className="h-full w-full overflow-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-[#f9fafb]">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSheetDragEnd}>
+            <table className="min-w-full border-collapse divide-y divide-slate-200 text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-[0_1px_0_rgba(15,23,42,0.04)]">
                 <tr>
-                  {/* Row-number gutter */}
-                  <th className="w-8 border-r border-slate-200 px-1 py-1.5 text-center text-[10px] text-slate-400" aria-label="Row number" />
-                  <th className="w-8 border-r border-slate-200 px-2 py-1.5">
-                    <input
-                      type="checkbox"
-                      checked={filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-300"
-                    />
+                  <th
+                    scope="col"
+                    className="box-border w-16 min-w-16 max-w-16 shrink-0 border-r border-slate-200 bg-transparent py-2.5 pl-2.5 pr-1 text-left align-middle font-normal shadow-none"
+                  >
+                    <span className="inline-flex items-center justify-start">
+                      <input
+                        type="checkbox"
+                        checked={filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600 shadow-none"
+                        title="Select all rows"
+                        aria-label="Select all rows"
+                      />
+                    </span>
                   </th>
                   <th
                     scope="col"
-                    className="w-[80px] shrink-0 border-r border-slate-200 px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500"
+                    className="w-[80px] shrink-0 border-r border-slate-200 bg-transparent py-2.5 pl-2 pr-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-800 shadow-none"
                   >
                     Research
                   </th>
-                  {content[0].map((cell, i) => {
-                    const columnHasData = content.some(
-                      (row) => (row[i] ?? '').trim().length > 0
-                    )
-                    return (
-                      <th key={i} scope="col" className="border-r border-slate-200 px-1.5 py-1.5 last:border-r-0">
-                        <div className="flex items-center gap-1.5">
-                          {columnHasData && (
-                            <input
-                              type="checkbox"
-                              checked={selectedColumns.has(i)}
-                              onChange={() =>
-                                setSelectedColumns((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(i)) next.delete(i)
-                                  else next.add(i)
-                                  return next
-                                })
-                              }
-                              className="mt-0.5 rounded border-slate-300"
-                            />
-                          )}
-                          <input
-                            value={cell}
-                            onChange={(e) => updateCell(0, i, e.target.value)}
-                            className="w-full min-w-[80px] border-0 bg-transparent px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500"
-                          />
-                        </div>
-                      </th>
-                    )
-                  })}
+                  <SortableContext items={colSortableIds} strategy={horizontalListSortingStrategy}>
+                    {content[0].map((cell, i) => {
+                      const columnHasData = content.some((row) => (row[i] ?? '').trim().length > 0)
+                      return (
+                        <ResearchSortableColHeader
+                          key={`col-${i}`}
+                          id={`col-${i}`}
+                          colIdx={i}
+                          cell={cell}
+                          columnHasData={columnHasData}
+                          selectedColumns={selectedColumns}
+                          setSelectedColumns={setSelectedColumns}
+                          updateCell={updateCell}
+                        />
+                      )
+                    })}
+                  </SortableContext>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {pageRows.map((row, idx) => {
-                  const dataRowIndex = rowIndices[idx]
-                  const isSelectedRow = selectedRowIndex === dataRowIndex
-                  const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
-                  const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
-                  const hasStructuredData = rowResearchSummary?.has_structured_data === true
-                  return (
-                    <tr
-                      key={dataRowIndex}
-                      data-row-index={dataRowIndex}
-                      className={`transition-colors ${
-                        isSelectedRow
-                          ? 'bg-sky-50'
-                          : hasStructuredData
-                            ? 'bg-blue-50 hover:bg-blue-100/80'
-                            : 'hover:bg-[#f9fafb]'
-                      }`}
-                    >
-                      {/* Row number */}
-                      <td className="h-8 w-8 select-none border-r border-slate-200 px-1 text-center align-middle text-[10px] text-slate-400">
-                        {dataRowIndex + 1}
-                      </td>
-                      <td className="h-8 w-8 border-r border-slate-200 px-2 align-middle">
-                        {isRowBeingResearched ? (
-                          <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
-                        ) : (
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(dataRowIndex)}
-                            onChange={() => toggleRowSelection(dataRowIndex)}
-                            className="rounded border-slate-300"
-                          />
-                        )}
-                      </td>
-                      <td
-                        className={`h-8 w-[80px] shrink-0 cursor-pointer border-r border-slate-200 px-1.5 align-middle transition-colors ${
-                          hasStructuredData ? 'hover:bg-blue-100/80' : 'hover:bg-slate-100'
-                        }`}
-                        title="Open inspector for this row"
-                        onClick={() => handleCellClick(dataRowIndex)}
-                      >
-                        {hasStructuredData && rowResearchSummary ? (
-                          <div className="flex items-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleCellClick(dataRowIndex)
-                              }}
-                              className="inline-flex items-center gap-0.5 rounded bg-blue-600/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-900 hover:bg-blue-600/15 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-                              aria-label="Open results in inspector"
-                              title="Click to open results"
-                            >
-                              {rowResearchSummary.structured_sources_count}
-                              <span className="font-normal text-blue-900/70">found</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-300">—</span>
-                        )}
-                      </td>
-                      {Array.from({ length: numCols }, (_, colIndex) => (
-                        <td
-                          key={colIndex}
-                          className="h-8 cursor-pointer border-r border-slate-200 p-0 last:border-r-0"
-                          onClick={() => handleCellSelect(dataRowIndex)}
-                          onDoubleClick={() => handleCellClick(dataRowIndex)}
-                        >
-                          <input
-                            value={row[colIndex] ?? ''}
-                            onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className="h-8 w-full min-w-[80px] border-0 bg-transparent px-2 py-0 text-xs text-slate-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  )
-                })}
+                <SortableContext items={rowSortableIds} strategy={verticalListSortingStrategy}>
+                  {pageRows.map((row, idx) => {
+                    const dataRowIndex = rowIndices[idx]!
+                    const isSelectedRow = selectedRowIndex === dataRowIndex
+                    const isRowChecked = selectedRows.has(dataRowIndex)
+                    const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
+                    const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
+                    const hasStructuredData = rowResearchSummary?.has_structured_data === true
+                    return (
+                      <ResearchSortableDataRow
+                        key={`row-${dataRowIndex}`}
+                        id={`row-${dataRowIndex}`}
+                        dataRowIndex={dataRowIndex}
+                        row={row}
+                        numCols={numCols}
+                        hoveredRowIndex={hoveredRowIndex}
+                        setHoveredRowIndex={setHoveredRowIndex}
+                        isSelectedRow={isSelectedRow}
+                        isRowChecked={isRowChecked}
+                        isRowBeingResearched={isRowBeingResearched}
+                        hasStructuredData={hasStructuredData}
+                        rowResearchSummary={rowResearchSummary}
+                        toggleRowSelection={toggleRowSelection}
+                        handleCellClick={handleCellClick}
+                        handleCellSelect={handleCellSelect}
+                        updateCell={updateCell}
+                        LoaderIcon={LoaderIcon}
+                      />
+                    )
+                  })}
+                </SortableContext>
               </tbody>
             </table>
+            </DndContext>
           </div>
           </div>
 
