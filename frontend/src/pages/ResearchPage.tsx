@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Bot, ChevronDown, ChevronRight, GitCompare, LayoutGrid, Search, Table2, X } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
+  Filter,
+  GitCompare,
+  LayoutGrid,
+  Search,
+  Table2,
+  X,
+} from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import {
@@ -17,7 +29,15 @@ import { useBucket } from '@/contexts/BucketContext'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
 import { ResearchRowAiChat } from '@/components/research/ResearchRowAiChat'
+import { ResearchSheetFilterBuilder } from '@/components/research/ResearchSheetFilterBuilder'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
+import {
+  defaultFilterBuilderItems,
+  evalFilterBuilder,
+  filterBuilderIsActive,
+  filterBuilderSummaryLabels,
+  type FilterBuilderTopItem,
+} from '@/lib/researchSheetFilter'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 type TabState = {
@@ -341,6 +361,56 @@ const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
 const INSPECTOR_DEFAULT_WIDTH = 450
 
+type RowDensity = 'compact' | 'default' | 'comfortable'
+
+function researchRowDensityClasses(density: RowDensity) {
+  switch (density) {
+    case 'compact':
+      return {
+        th: 'px-1 py-0.5',
+        thLabel: 'text-[10px]',
+        tdNum: 'h-7 min-h-[1.75rem] px-1 text-[10px]',
+        tdCb: 'h-7 min-h-[1.75rem] px-2',
+        tdResearch: 'h-7 min-h-[1.75rem] px-1.5',
+        tdCell: 'h-7 min-h-[1.75rem] p-0',
+        cellInput: 'h-7 min-h-[1.75rem] px-2 text-[11px]',
+        headInput: 'px-1 py-0 text-[10px]',
+      }
+    case 'comfortable':
+      return {
+        th: 'px-2 py-2',
+        thLabel: 'text-xs',
+        tdNum: 'min-h-[2.75rem] py-2 px-1 text-[11px]',
+        tdCb: 'min-h-[2.75rem] py-2 px-2',
+        tdResearch: 'min-h-[2.75rem] py-2 px-1.5',
+        tdCell: 'min-h-[2.75rem] py-2 p-0',
+        cellInput: 'min-h-[2.75rem] px-2 py-1.5 text-xs',
+        headInput: 'px-1 py-1 text-xs',
+      }
+    default:
+      return {
+        th: 'px-1.5 py-1.5',
+        thLabel: 'text-[11px]',
+        tdNum: 'h-8 px-1 text-[10px]',
+        tdCb: 'h-8 px-2',
+        tdResearch: 'h-8 px-1.5',
+        tdCell: 'h-8 p-0',
+        cellInput: 'h-8 px-2 text-xs',
+        headInput: 'px-1 py-0.5 text-[11px]',
+      }
+  }
+}
+
+/** Airtable-style row height control icon */
+function RowHeightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.5v7M19 10.5l2-2 2 2M19 13.5l2 2 2-2" />
+    </svg>
+  )
+}
+
 type PersistedResearchState = {
   activeTabId: string | null
   selectedRows: number[]
@@ -380,17 +450,36 @@ export function ResearchPage() {
   const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set())
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
-  const [toolbarActive, setToolbarActive] = useState<'all' | 'selected' | 'deep' | null>('all')
+  const [toolbarActive, setToolbarActive] = useState<'selected' | null>(null)
   // Removed "Other options" menu
   // const [otherMenuOpen, setOtherMenuOpen] = useState(false)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map())
-  const [filterDropdownCol, setFilterDropdownCol] = useState<number | null>(null)
-  const [filterSearchText, setFilterSearchText] = useState('')
   const [rowSearchDraft, setRowSearchDraft] = useState('')
   const [rowSearchQuery, setRowSearchQuery] = useState('')
+  const [hiddenColumns, setHiddenColumns] = useState<Set<number>>(new Set())
+  const [filterBuilderItems, setFilterBuilderItems] = useState<FilterBuilderTopItem[]>(() =>
+    defaultFilterBuilderItems()
+  )
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [groupByCol, setGroupByCol] = useState<number | null>(null)
+  const [sortCol, setSortCol] = useState<number | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [rowDensity, setRowDensity] = useState<RowDensity>('default')
+  const [hideFieldsOpen, setHideFieldsOpen] = useState(false)
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [densityMenuOpen, setDensityMenuOpen] = useState(false)
+  const hideFieldsBtnRef = useRef<HTMLButtonElement>(null)
+  const hideFieldsDropRef = useRef<HTMLDivElement>(null)
+  const groupMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const groupMenuDropRef = useRef<HTMLDivElement>(null)
+  const sortMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const sortMenuDropRef = useRef<HTMLDivElement>(null)
+  const densityMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const densityMenuDropRef = useRef<HTMLDivElement>(null)
   const filterBtnRef = useRef<HTMLButtonElement>(null)
   const filterDropRef = useRef<HTMLDivElement>(null)
+  /** Bumps when scroll/resize so portaled menus re-read anchor getBoundingClientRect. */
+  const [, setToolbarMenuLayoutTick] = useState(0)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
@@ -666,10 +755,17 @@ export function ResearchPage() {
     setSelectedColumns(new Set())
     setSelectedRowIndex(null)
     setPage(1)
-    setColumnFilters(new Map())
+    setHiddenColumns(new Set())
+    setFilterBuilderItems(defaultFilterBuilderItems())
     setFilterOpen(false)
-    setFilterDropdownCol(null)
-    setFilterSearchText('')
+    setGroupByCol(null)
+    setSortCol(null)
+    setSortDir('asc')
+    setRowDensity('default')
+    setHideFieldsOpen(false)
+    setGroupMenuOpen(false)
+    setSortMenuOpen(false)
+    setDensityMenuOpen(false)
     setIsInspectorOpen(false)
     setInspectorMaximized(false)
     setInspectorMode('single')
@@ -1055,15 +1151,34 @@ export function ResearchPage() {
     [setCollapseSidebarForInspector]
   )
 
-  const numCols = content?.[0]?.length ?? 0
   const headers = content?.[0] ?? []
-  const activeFilterCount = useMemo(
-    () => Array.from(columnFilters.values()).filter((s) => s.size > 0).length,
-    [columnFilters]
-  )
-  const hasActiveFilters = activeFilterCount > 0
   const hasRowSearch = rowSearchQuery.trim().length > 0
   const unfilteredRowCount = content ? content.length - 1 : 0
+  const rd = researchRowDensityClasses(rowDensity)
+
+  const visibleColIndices = useMemo(() => {
+    if (!content?.[0]) return []
+    return Array.from({ length: content[0].length }, (_, i) => i).filter((i) => !hiddenColumns.has(i))
+  }, [content, hiddenColumns])
+
+  const hasActiveColumnFilters = useMemo(
+    () => filterBuilderIsActive(filterBuilderItems),
+    [filterBuilderItems]
+  )
+  const filterSummaryLabels = useMemo(
+    () => filterBuilderSummaryLabels(filterBuilderItems, headers),
+    [filterBuilderItems, headers]
+  )
+
+  const getDistinctColumnValues = useCallback(
+    (colIdx: number) => {
+      if (!content || content.length <= 1) return []
+      return Array.from(
+        new Set(content.slice(1).map((row) => String(row[colIdx] ?? '').trim()).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b))
+    },
+    [content]
+  )
 
   // Debounce global row search so it stays snappy for large sheets.
   useEffect(() => {
@@ -1074,50 +1189,93 @@ export function ResearchPage() {
     return () => clearTimeout(t)
   }, [rowSearchDraft])
 
-  const filteredDataIndices = useMemo(() => {
+  const searchFilteredIndices = useMemo(() => {
     if (!content || content.length <= 1) return []
     const allIndices = Array.from({ length: content.length - 1 }, (_, i) => i)
     const q = rowSearchQuery.trim().toLowerCase()
-    if (!hasActiveFilters && !q) return allIndices
+    if (!q) return allIndices
     return allIndices.filter((dataIdx) => {
       const row = content[dataIdx + 1]
-      for (const [colIdx, allowedValues] of columnFilters) {
-        if (allowedValues.size === 0) continue
-        const cellValue = (row[colIdx] ?? '').trim()
-        if (!allowedValues.has(cellValue)) return false
+      for (const cell of row) {
+        if (String(cell ?? '').toLowerCase().includes(q)) return true
       }
-      if (q) {
-        // Search across all cells in the row.
-        for (const cell of row) {
-          if (String(cell ?? '').toLowerCase().includes(q)) return true
-        }
-        return false
-      }
-      return true
+      return false
     })
-  }, [content, columnFilters, hasActiveFilters, rowSearchQuery])
+  }, [content, rowSearchQuery])
 
-  const totalDataRows = filteredDataIndices.length
+  const columnFilteredIndices = useMemo(() => {
+    if (!content) return []
+    if (!hasActiveColumnFilters) return searchFilteredIndices
+    return searchFilteredIndices.filter((dataIdx) => {
+      const row = content[dataIdx + 1]
+      return evalFilterBuilder(filterBuilderItems, row)
+    })
+  }, [content, searchFilteredIndices, filterBuilderItems, hasActiveColumnFilters])
+
+  const viewRowIndices = useMemo(() => {
+    if (!content || sortCol === null) return columnFilteredIndices
+    const copy = [...columnFilteredIndices]
+    copy.sort((a, b) => {
+      const ra = content[a + 1]!
+      const rb = content[b + 1]!
+      const va = String(ra[sortCol] ?? '').toLowerCase()
+      const vb = String(rb[sortCol] ?? '').toLowerCase()
+      const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' })
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return copy
+  }, [content, columnFilteredIndices, sortCol, sortDir])
+
+  const totalDataRows = viewRowIndices.length
   const totalPages = Math.max(1, Math.ceil(totalDataRows / rowsPerPage))
   const currentPage = Math.min(page, totalPages)
   const startRow = (currentPage - 1) * rowsPerPage
   const endRow = Math.min(startRow + rowsPerPage, totalDataRows)
-  const rowIndices = filteredDataIndices.slice(startRow, endRow)
-  const pageRows = content ? rowIndices.map((i) => content[i + 1]) : []
+  const rowIndices = viewRowIndices.slice(startRow, endRow)
+  const sheetBodyItems = useMemo(() => {
+    if (!content) return []
+    type BodyItem =
+      | { kind: 'group'; key: string; label: string }
+      | { kind: 'row'; dataRowIndex: number; row: string[] }
+    const groupLabel = (dataIdx: number) => {
+      if (groupByCol == null) return ''
+      return String(content[dataIdx + 1]?.[groupByCol] ?? '').trim() || '(Empty)'
+    }
+    const items: BodyItem[] = []
+    for (let idx = 0; idx < rowIndices.length; idx++) {
+      const dataRowIndex = rowIndices[idx]!
+      const row = content[dataRowIndex + 1]
+      if (!row) continue
+      if (groupByCol != null) {
+        const prevDataIdx =
+          idx === 0 ? (startRow > 0 ? viewRowIndices[startRow - 1] : undefined) : rowIndices[idx - 1]
+        const needsHeader = prevDataIdx === undefined || groupLabel(dataRowIndex) !== groupLabel(prevDataIdx)
+        if (needsHeader) {
+          items.push({
+            kind: 'group',
+            key: `g-${dataRowIndex}-${groupLabel(dataRowIndex)}`,
+            label: groupLabel(dataRowIndex),
+          })
+        }
+      }
+      items.push({ kind: 'row', dataRowIndex, row })
+    }
+    return items
+  }, [content, rowIndices, groupByCol, startRow, viewRowIndices])
 
   const toggleSelectAll = () => {
     if (!content || content.length <= 1) return
-    const allFilteredSelected = filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))
+    const allFilteredSelected = viewRowIndices.length > 0 && viewRowIndices.every((i) => selectedRows.has(i))
     if (allFilteredSelected) {
       setSelectedRows((prev) => {
         const next = new Set(prev)
-        for (const i of filteredDataIndices) next.delete(i)
+        for (const i of viewRowIndices) next.delete(i)
         return next
       })
     } else {
       setSelectedRows((prev) => {
         const next = new Set(prev)
-        for (const i of filteredDataIndices) next.add(i)
+        for (const i of viewRowIndices) next.add(i)
         return next
       })
     }
@@ -1148,22 +1306,58 @@ export function ResearchPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isInspectorOpen, comparePreviewModalOpen, closeInspector])
 
+  const closeAllGridMenus = useCallback(() => {
+    setHideFieldsOpen(false)
+    setFilterOpen(false)
+    setGroupMenuOpen(false)
+    setSortMenuOpen(false)
+    setDensityMenuOpen(false)
+  }, [])
+
+  const anyToolbarMenuOpen =
+    hideFieldsOpen || filterOpen || groupMenuOpen || sortMenuOpen || densityMenuOpen
+
+  useLayoutEffect(() => {
+    if (!anyToolbarMenuOpen) return
+    const bump = () => setToolbarMenuLayoutTick((n) => n + 1)
+    window.addEventListener('scroll', bump, true)
+    window.addEventListener('resize', bump)
+    return () => {
+      window.removeEventListener('scroll', bump, true)
+      window.removeEventListener('resize', bump)
+    }
+  }, [anyToolbarMenuOpen])
+
   useEffect(() => {
-    if (!filterOpen) return
+    if (!hideFieldsOpen && !filterOpen && !groupMenuOpen && !sortMenuOpen && !densityMenuOpen) return
     function onPointerDown(e: PointerEvent) {
-      const target = e.target as Node
-      if (filterDropRef.current?.contains(target)) return
-      if (filterBtnRef.current?.contains(target)) return
-      setFilterOpen(false)
-      setFilterDropdownCol(null)
-      setFilterSearchText('')
+      const t = e.target as Node
+      if (
+        hideFieldsOpen &&
+        (hideFieldsBtnRef.current?.contains(t) || hideFieldsDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (
+        groupMenuOpen &&
+        (groupMenuBtnRef.current?.contains(t) || groupMenuDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (sortMenuOpen && (sortMenuBtnRef.current?.contains(t) || sortMenuDropRef.current?.contains(t))) {
+        return
+      }
+      if (
+        densityMenuOpen &&
+        (densityMenuBtnRef.current?.contains(t) || densityMenuDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (filterOpen && (filterBtnRef.current?.contains(t) || filterDropRef.current?.contains(t))) return
+      closeAllGridMenus()
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setFilterOpen(false)
-        setFilterDropdownCol(null)
-        setFilterSearchText('')
-      }
+      if (e.key === 'Escape') closeAllGridMenus()
     }
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('keydown', onKeyDown)
@@ -1171,7 +1365,7 @@ export function ResearchPage() {
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [filterOpen])
+  }, [hideFieldsOpen, filterOpen, groupMenuOpen, sortMenuOpen, densityMenuOpen, closeAllGridMenus])
 
   // Capture element details for selected row (for Add details)
   useEffect(() => {
@@ -1819,8 +2013,9 @@ export function ResearchPage() {
         <h1 className="text-[15px] font-semibold text-slate-900">Data Research</h1>
       </div>
 
-      {/* Unified header: tabs + toolbar in one container, flush full-width */}
-      <div className="shrink-0 border-b border-slate-200 bg-white">
+      {/* Unified header: tabs + toolbar in one container, flush full-width.
+          z-30 keeps toolbar dropdowns above the sheet (sticky thead is z-10). */}
+      <div className="relative z-30 shrink-0 border-b border-slate-200 bg-white">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -1867,24 +2062,359 @@ export function ResearchPage() {
         <p className="px-4 pb-1 text-sm text-rose-600">{error}</p>
       )}
 
-      {/* Toolbar — flush inside same container as tabs */}
-      <div className="flex flex-nowrap items-center gap-0.5 overflow-x-auto border-t border-slate-200 bg-white px-3 py-1">
-        <button
-          type="button"
-          onClick={() => setToolbarActive('all')}
-          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
-            toolbarActive === 'all'
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-          }`}
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          Research All
-        </button>
+      {/* Toolbar */}
+      <div className="flex max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto border-t border-slate-200 bg-white px-3 py-1">
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            ref={hideFieldsBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setHideFieldsOpen((o) => !o)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+            Hide fields
+          </button>
+          {hideFieldsOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={hideFieldsDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (hideFieldsBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, hideFieldsBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined'
+                      ? window.innerWidth - Math.min(320, window.innerWidth - 16) - 8
+                      : 8
+                  ),
+                  width: typeof window !== 'undefined' ? Math.min(320, window.innerWidth - 16) : 320,
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  Visible columns
+                </p>
+                <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
+                  {headers.map((h, colIdx) => {
+                    const name = (h || `Column ${colIdx + 1}`).trim()
+                    const visible = !hiddenColumns.has(colIdx)
+                    return (
+                      <label
+                        key={colIdx}
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visible}
+                          onChange={() => {
+                            setHiddenColumns((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(colIdx)) next.delete(colIdx)
+                              else next.add(colIdx)
+                              return next
+                            })
+                          }}
+                          className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                        />
+                        <span className="truncate text-slate-700" title={name}>
+                          {name}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>,
+              document.body
+            )}
 
-        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+          <button
+            ref={filterBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setFilterOpen((f) => !f)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+            }}
+            className={`inline-flex max-w-[min(20rem,55vw)] items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              hasActiveColumnFilters
+                ? 'border-emerald-200/90 bg-emerald-50 text-emerald-900 hover:bg-emerald-100/90'
+                : 'border-transparent text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Filter className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            <span className="truncate">
+              {hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'}
+            </span>
+          </button>
+          {filterOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={filterDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (filterBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    filterBtnRef.current?.getBoundingClientRect().left ?? 0,
+                    window.innerWidth - 420
+                  ),
+                }}
+                className="min-w-[min(26rem,calc(100vw-1rem))] max-w-[32rem] rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <ResearchSheetFilterBuilder
+                  headers={headers}
+                  items={filterBuilderItems}
+                  onChange={(next) => {
+                    setFilterBuilderItems(next)
+                    setPage(1)
+                  }}
+                  getDistinctColumnValues={getDistinctColumnValues}
+                />
+                {hasActiveColumnFilters && (
+                  <div className="mt-2 flex justify-end border-t border-slate-100 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterBuilderItems(defaultFilterBuilderItems())
+                        setPage(1)
+                      }}
+                      className="text-[11px] font-medium text-red-600 hover:text-red-700"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={groupMenuBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setGroupMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
+              groupByCol != null ? 'bg-slate-200/80 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Group
+          </button>
+          {groupMenuOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={groupMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (groupMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, groupMenuBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 240 - 8 : 8
+                  ),
+                  width: 240,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGroupByCol(null)
+                    setGroupMenuOpen(false)
+                  }}
+                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Don&apos;t group
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                {headers.map((h, colIdx) => {
+                  const label = (h || `Column ${colIdx + 1}`).trim()
+                  return (
+                    <button
+                      key={colIdx}
+                      type="button"
+                      onClick={() => {
+                        setGroupByCol(colIdx)
+                        setGroupMenuOpen(false)
+                      }}
+                      className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                        groupByCol === colIdx ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={sortMenuBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setSortMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
+              sortCol != null ? 'bg-slate-200/80 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <ArrowUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Sort
+          </button>
+          {sortMenuOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={sortMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (sortMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, sortMenuBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 240 - 8 : 8
+                  ),
+                  width: 240,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortCol(null)
+                    setSortDir('asc')
+                    setSortMenuOpen(false)
+                  }}
+                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Clear sort
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                {headers.map((h, colIdx) => {
+                  const label = (h || `Column ${colIdx + 1}`).trim()
+                  const active = sortCol === colIdx
+                  return (
+                    <button
+                      key={colIdx}
+                      type="button"
+                      onClick={() => {
+                        if (sortCol === colIdx) {
+                          setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                        } else {
+                          setSortCol(colIdx)
+                          setSortDir('asc')
+                        }
+                        setSortMenuOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                        active ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      }`}
+                    >
+                      <span className="truncate">{label}</span>
+                      {active && (
+                        <span className="shrink-0 text-[10px] text-slate-500">
+                          {sortDir === 'asc' ? 'A→Z' : 'Z→A'}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={densityMenuBtnRef}
+            type="button"
+            onClick={() => {
+              setDensityMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className="inline-flex items-center rounded-md px-1.5 py-1 text-slate-600 hover:bg-slate-100"
+            title="Row height"
+            aria-label="Row height"
+          >
+            <RowHeightIcon className="h-4 w-4" />
+          </button>
+          {densityMenuOpen &&
+            createPortal(
+              <div
+                ref={densityMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (densityMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (() => {
+                    const w = typeof window !== 'undefined' ? window.innerWidth : 800
+                    const panel = 192
+                    const r = densityMenuBtnRef.current?.getBoundingClientRect()
+                    const alignRight = Math.max(8, (r?.right ?? panel) - panel)
+                    return Math.min(alignRight, w - panel - 8)
+                  })(),
+                  width: 192,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                {(
+                  [
+                    { id: 'compact' as const, label: 'Compact' },
+                    { id: 'default' as const, label: 'Default' },
+                    { id: 'comfortable' as const, label: 'Comfortable' },
+                  ] as const
+                ).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setRowDensity(id)
+                      setDensityMenuOpen(false)
+                    }}
+                    className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                      rowDensity === id ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+        </div>
+
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
 
         <button
           type="button"
@@ -1915,19 +2445,6 @@ export function ResearchPage() {
             </svg>
           )}
           {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
-        </button>
-
-        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
-
-        <button
-          type="button"
-          onClick={() => setToolbarActive('deep')}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          Deep Search Selected
         </button>
 
         <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
@@ -2025,199 +2542,6 @@ export function ResearchPage() {
               </button>
             )}
           </div>
-          <button
-            ref={filterBtnRef}
-            type="button"
-            onClick={() => {
-              setFilterOpen((f) => {
-                if (f) { setFilterDropdownCol(null); setFilterSearchText('') }
-                return !f
-              })
-            }}
-            className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors ${
-              hasActiveFilters
-                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-            }`}
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17m0 0h2m-2 0h-5m-9 0H3" />
-            </svg>
-            Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-          </button>
-          {filterOpen && createPortal(
-            <div
-              ref={filterDropRef}
-              style={{
-                position: 'fixed',
-                zIndex: 9999,
-                top: (filterBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                left: Math.min(
-                  filterBtnRef.current?.getBoundingClientRect().left ?? 0,
-                  window.innerWidth - 272
-                ),
-              }}
-              className="w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
-            >
-              {filterDropdownCol === null ? (
-                <>
-                  <input
-                    type="search"
-                    value={filterSearchText}
-                    onChange={(e) => setFilterSearchText(e.target.value)}
-                    placeholder="Search columns…"
-                    autoFocus
-                    className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
-                  />
-                  {hasActiveFilters && (
-                    <div className="mb-2 flex items-center justify-end px-1">
-                      <button
-                        type="button"
-                        onClick={() => { setColumnFilters(new Map()); setPage(1) }}
-                        className="text-[11px] text-red-600 hover:text-red-700"
-                      >
-                        Clear all filters
-                      </button>
-                    </div>
-                  )}
-                  <div className="max-h-56 space-y-0.5 overflow-y-auto pr-1">
-                    {headers.map((header, colIdx) => {
-                      const name = header || `Column ${colIdx + 1}`
-                      if (filterSearchText.trim() && !name.toLowerCase().includes(filterSearchText.trim().toLowerCase())) return null
-                      const colFilter = columnFilters.get(colIdx)
-                      const isActive = colFilter != null && colFilter.size > 0
-                      return (
-                        <button
-                          key={colIdx}
-                          type="button"
-                          onClick={() => { setFilterDropdownCol(colIdx); setFilterSearchText('') }}
-                          className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-50"
-                        >
-                          <span className="truncate text-slate-700">{name}</span>
-                          {isActive && (
-                            <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
-                              {colFilter.size}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              ) : (() => {
-                const colIdx = filterDropdownCol
-                const colName = headers[colIdx] || `Column ${colIdx + 1}`
-                const uniqueValues = Array.from(
-                  new Set(
-                    (content ?? []).slice(1).map((row) => (row[colIdx] ?? '').trim()).filter(Boolean)
-                  )
-                ).sort((a, b) => a.localeCompare(b))
-                const currentFilter = columnFilters.get(colIdx)
-                const visibleValues = filterSearchText.trim()
-                  ? uniqueValues.filter((v) => v.toLowerCase().includes(filterSearchText.trim().toLowerCase()))
-                  : uniqueValues
-                return (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => { setFilterDropdownCol(null); setFilterSearchText('') }}
-                      className="mb-1.5 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
-                    >
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                      </svg>
-                      {colName}
-                    </button>
-                    <input
-                      type="search"
-                      value={filterSearchText}
-                      onChange={(e) => setFilterSearchText(e.target.value)}
-                      placeholder="Search values…"
-                      autoFocus
-                      className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
-                    />
-                    <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setColumnFilters((prev) => {
-                            const next = new Map(prev)
-                            next.set(colIdx, new Set(visibleValues))
-                            return next
-                          })
-                          setPage(1)
-                        }}
-                        className="hover:text-slate-700"
-                      >
-                        Select all
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setColumnFilters((prev) => {
-                            const next = new Map(prev)
-                            if (filterSearchText.trim()) {
-                              const existing = new Set(prev.get(colIdx) ?? [])
-                              for (const v of visibleValues) existing.delete(v)
-                              if (existing.size > 0) next.set(colIdx, existing)
-                              else next.delete(colIdx)
-                            } else {
-                              next.delete(colIdx)
-                            }
-                            return next
-                          })
-                          setPage(1)
-                        }}
-                        className="hover:text-slate-700"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-                      {visibleValues.map((val) => {
-                        const checked = currentFilter?.has(val) ?? false
-                        return (
-                          <label key={val} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => {
-                                setColumnFilters((prev) => {
-                                  const next = new Map(prev)
-                                  const s = new Set(prev.get(colIdx) ?? [])
-                                  if (e.target.checked) s.add(val)
-                                  else s.delete(val)
-                                  if (s.size > 0) next.set(colIdx, s)
-                                  else next.delete(colIdx)
-                                  return next
-                                })
-                                setPage(1)
-                              }}
-                              className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                            />
-                            <span className="truncate text-slate-700" title={val}>{val}</span>
-                          </label>
-                        )
-                      })}
-                      {visibleValues.length === 0 && (
-                        <p className="px-1.5 py-2 text-[11px] text-slate-400">No values found</p>
-                      )}
-                    </div>
-                  </>
-                )
-              })()}
-            </div>,
-            document.body
-          )}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download Selected
-          </button>
         </div>
       </div>
 
@@ -2225,33 +2549,35 @@ export function ResearchPage() {
 
       {content && content.length > 0 && (
         <>
-          <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
+          <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden bg-white">
             <div className="h-full w-full overflow-auto">
             <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
               <thead className="sticky top-0 z-10 bg-[#f9fafb]">
                 <tr>
                   {/* Row-number gutter */}
-                  <th className="w-8 border-r border-slate-200 px-1 py-1.5 text-center text-[10px] text-slate-400" aria-label="Row number" />
-                  <th className="w-8 border-r border-slate-200 px-2 py-1.5">
+                  <th
+                    className={`w-8 border-r border-slate-200 text-center ${rd.th} ${rd.thLabel} text-slate-400`}
+                    aria-label="Row number"
+                  />
+                  <th className={`w-8 border-r border-slate-200 ${rd.th}`}>
                     <input
                       type="checkbox"
-                      checked={filteredDataIndices.length > 0 && filteredDataIndices.every((i) => selectedRows.has(i))}
+                      checked={viewRowIndices.length > 0 && viewRowIndices.every((i) => selectedRows.has(i))}
                       onChange={toggleSelectAll}
                       className="rounded border-slate-300"
                     />
                   </th>
                   <th
                     scope="col"
-                    className="w-[80px] shrink-0 border-r border-slate-200 px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500"
+                    className={`w-[80px] shrink-0 border-r border-slate-200 text-left font-medium uppercase tracking-wide text-slate-500 ${rd.th} ${rd.thLabel}`}
                   >
                     Research
                   </th>
-                  {content[0].map((cell, i) => {
-                    const columnHasData = content.some(
-                      (row) => (row[i] ?? '').trim().length > 0
-                    )
+                  {visibleColIndices.map((i) => {
+                    const cell = content[0][i] ?? ''
+                    const columnHasData = content.some((row) => (row[i] ?? '').trim().length > 0)
                     return (
-                      <th key={i} scope="col" className="border-r border-slate-200 px-1.5 py-1.5 last:border-r-0">
+                      <th key={i} scope="col" className={`border-r border-slate-200 last:border-r-0 ${rd.th}`}>
                         <div className="flex items-center gap-1.5">
                           {columnHasData && (
                             <input
@@ -2271,7 +2597,7 @@ export function ResearchPage() {
                           <input
                             value={cell}
                             onChange={(e) => updateCell(0, i, e.target.value)}
-                            className="w-full min-w-[80px] border-0 bg-transparent px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className={`w-full min-w-[80px] border-0 bg-transparent font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.headInput}`}
                           />
                         </div>
                       </th>
@@ -2280,8 +2606,20 @@ export function ResearchPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {pageRows.map((row, idx) => {
-                  const dataRowIndex = rowIndices[idx]
+                {sheetBodyItems.map((item) => {
+                  if (item.kind === 'group') {
+                    return (
+                      <tr key={item.key} className="bg-emerald-50/50">
+                        <td
+                          colSpan={3 + visibleColIndices.length}
+                          className="border-b border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                        >
+                          {item.label}
+                        </td>
+                      </tr>
+                    )
+                  }
+                  const { dataRowIndex, row } = item
                   const isSelectedRow = selectedRowIndex === dataRowIndex
                   const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
                   const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
@@ -2298,11 +2636,12 @@ export function ResearchPage() {
                             : 'hover:bg-[#f9fafb]'
                       }`}
                     >
-                      {/* Row number */}
-                      <td className="h-8 w-8 select-none border-r border-slate-200 px-1 text-center align-middle text-[10px] text-slate-400">
+                      <td
+                        className={`w-8 select-none border-r border-slate-200 text-center align-middle text-slate-400 ${rd.tdNum}`}
+                      >
                         {dataRowIndex + 1}
                       </td>
-                      <td className="h-8 w-8 border-r border-slate-200 px-2 align-middle">
+                      <td className={`w-8 border-r border-slate-200 align-middle ${rd.tdCb}`}>
                         {isRowBeingResearched ? (
                           <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
                         ) : (
@@ -2315,7 +2654,7 @@ export function ResearchPage() {
                         )}
                       </td>
                       <td
-                        className={`h-8 w-[80px] shrink-0 cursor-pointer border-r border-slate-200 px-1.5 align-middle transition-colors ${
+                        className={`w-[80px] shrink-0 cursor-pointer border-r border-slate-200 align-middle transition-colors ${rd.tdResearch} ${
                           hasStructuredData ? 'hover:bg-blue-100/80' : 'hover:bg-slate-100'
                         }`}
                         title="Open inspector for this row"
@@ -2341,17 +2680,17 @@ export function ResearchPage() {
                           <span className="text-[10px] text-slate-300">—</span>
                         )}
                       </td>
-                      {Array.from({ length: numCols }, (_, colIndex) => (
+                      {visibleColIndices.map((colIndex, vi) => (
                         <td
                           key={colIndex}
-                          className="h-8 cursor-pointer border-r border-slate-200 p-0 last:border-r-0"
+                          className={`cursor-pointer border-r border-slate-200 p-0 ${vi === visibleColIndices.length - 1 ? 'last:border-r-0' : ''} ${rd.tdCell}`}
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className="h-8 w-full min-w-[80px] border-0 bg-transparent px-2 py-0 text-xs text-slate-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className={`w-full min-w-[80px] border-0 bg-transparent text-slate-700 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput}`}
                           />
                         </td>
                       ))}
@@ -2385,7 +2724,7 @@ export function ResearchPage() {
               </button>
               <span className="text-sm text-slate-600">
                 Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}
-                {hasActiveFilters || hasRowSearch ? ` (filtered from ${unfilteredRowCount})` : ''} entries
+                {hasRowSearch || hasActiveColumnFilters ? ` (filtered from ${unfilteredRowCount})` : ''} entries
               </span>
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 Rows per page

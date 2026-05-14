@@ -29,6 +29,7 @@ import {
   type ScrapedDataItem,
 } from '@/lib/api'
 import { collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
+import { WishlistBoard } from '@/components/wishlist/WishlistBoard'
 
 type PickerFile = { id: number; name: string; pathLabel: string }
 
@@ -815,6 +816,7 @@ export function WishlistPage() {
   const [classicScrapedDetailKey, setClassicScrapedDetailKey] = useState<string | null>(null)
   /** Full-width expanded row in vendor matrix: all vendors for one part in a card grid */
   const [matrixExpandedRowKey, setMatrixExpandedRowKey] = useState<string | null>(null)
+  const [pageLayout, setPageLayout] = useState<'lists' | 'workspace'>('lists')
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId) ?? null, [tabs, activeId])
 
@@ -1197,6 +1199,33 @@ export function WishlistPage() {
   const dialogTitleId = 'wishlist-picker-dialog-title'
 
   return (
+    <div className="flex min-h-full w-full flex-col">
+      <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setPageLayout('lists')}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+            pageLayout === 'lists' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Lists
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageLayout('workspace')}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+            pageLayout === 'workspace' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Workspace sheets
+        </button>
+      </div>
+
+      {pageLayout === 'lists' ? (
+        <div className="min-h-0 flex-1">
+          <WishlistBoard />
+        </div>
+      ) : (
     <div className="flex min-h-full w-full flex-col p-4">
       <div
         className="flex flex-wrap items-end gap-1 border-b border-gray-200"
@@ -2955,6 +2984,8 @@ export function WishlistPage() {
             </div>
           </div>
         </div>
+      )}
+    </div>
       )}
     </div>
   )
