@@ -4,11 +4,13 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { getToken } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
-import { CompareDecisionWorkspace, type CompareDecisionRow } from '@/components/compare/CompareDecisionWorkspace'
-import { CompareSheetsSidebar } from '@/components/compare/CompareSheetsSidebar'
+import {
+  CompareDecisionWorkspace,
+  type CompareDecisionRow,
+  type ComparePartChip,
+} from '@/components/compare/CompareDecisionWorkspace'
 import { CompareVendorMindMap } from '@/components/compare/CompareVendorMindMap'
 import { CompareVendorOverview, collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
-import { CompareWorkspaceSection } from '@/components/compare/CompareWorkspaceSection'
 import { primaryTextFromDataRow } from '@/components/compare/dataRow'
 import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
 import {
@@ -219,7 +221,6 @@ function newBlankCompareTab(): CompareTab {
   }
 }
 
-const COMPARE_SHEETS_SIDEBAR_KEY = 'ir-compare-sheets-open'
 const COMPARE_PAGE_STATE_KEY = 'ir-compare-page-state-v1'
 
 /** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
@@ -361,7 +362,7 @@ type StructuredScrapedRow = ScrapedDataItem & {
 
 export function ComparePage() {
   const location = useLocation()
-  const { items, closeAndClear, openWithItems } = useComparison()
+  const { items, openWithItems } = useComparison()
   const { addItem: addBucketItem, showToast: showBucketToast } = useBucket()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
     const persisted = readPersistedCompareState()
@@ -373,14 +374,6 @@ export function ComparePage() {
   const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(() => {
     const persisted = readPersistedCompareState()
     return typeof persisted?.activeCompareTabId === 'string' ? persisted.activeCompareTabId : null
-  })
-  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
-  const [sheetsSidebarOpen, setSheetsSidebarOpen] = useState(() => {
-    try {
-      return localStorage.getItem(COMPARE_SHEETS_SIDEBAR_KEY) !== 'false'
-    } catch {
-      return true
-    }
   })
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<FileEntry[]>([])
@@ -403,9 +396,6 @@ export function ComparePage() {
   const [scrapedNonEmptyOnly, setScrapedNonEmptyOnly] = useState(false)
   const [scrapedDataByPart, setScrapedDataByPart] = useState<Record<string, ScrapedDataItem[]>>({})
   const [commonVendorsLoading, setCommonVendorsLoading] = useState(false)
-  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const renameInputRef = useRef<HTMLInputElement>(null)
   const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
   const [vendorCoverageView, setVendorCoverageView] = useState<'map' | 'overview'>(() => {
     try {
@@ -567,71 +557,6 @@ export function ComparePage() {
     )
   }, [activeTab?.id])
 
-  const addNewCompareTab = useCallback(() => {
-    const tab = newBlankCompareTab()
-    setCompareTabs((prev) => [...prev, tab])
-    setActiveCompareTabId(tab.id)
-    setNewTabMenuOpen(false)
-    // "New sheet" should start completely clean.
-    closeAndClear()
-    setScrapedData(null)
-    setScrapedDataByPart({})
-    setScrapedDataLoading(false)
-    setCommonVendorsLoading(false)
-    setScrapedVendorFilter('all')
-    setScrapedViewMode('row')
-    setScrapedSelectedFields([])
-    setScrapedFieldPickerSearch('')
-    setScrapedValueSearch('')
-    setScrapedNonEmptyOnly(false)
-    setScrapedColumnOrder([])
-    setScrapedFieldOrder([])
-    setScrapedSourceColWidths({})
-    setScrapedFieldColWidths({})
-    setScrapedRowFieldColWidth(188)
-    setScrapedColumnViewSourceColWidth(220)
-  }, [closeAndClear])
-
-  const closeCompareTab = useCallback((e: ReactMouseEvent, id: string) => {
-    e.stopPropagation()
-    const idx = compareTabs.findIndex((t) => t.id === id)
-    if (idx < 0) return
-    const next = compareTabs.filter((t) => t.id !== id)
-    setCompareTabs(next)
-    const closedWasActive = activeCompareTabId === id
-    if (closedWasActive) {
-      const newIdx = Math.min(idx, next.length - 1)
-      setActiveCompareTabId(next[newIdx]?.id ?? null)
-    } else if (next.length > 0 && compareTabs.findIndex((t) => t.id === activeCompareTabId) >= next.length) {
-      setActiveCompareTabId(next[next.length - 1].id)
-    }
-  }, [compareTabs, activeCompareTabId])
-
-  const startRenaming = useCallback((tabId: string) => {
-    const tab = compareTabs.find((t) => t.id === tabId)
-    if (!tab) return
-    setRenamingTabId(tabId)
-    setRenameValue(tab.name)
-    requestAnimationFrame(() => renameInputRef.current?.select())
-  }, [compareTabs])
-
-  const commitRename = useCallback(() => {
-    if (!renamingTabId) return
-    const trimmed = renameValue.trim()
-    if (trimmed) {
-      setCompareTabs((prev) =>
-        prev.map((t) => (t.id === renamingTabId ? { ...t, name: trimmed } : t))
-      )
-    }
-    setRenamingTabId(null)
-    setRenameValue('')
-  }, [renamingTabId, renameValue])
-
-  const cancelRename = useCallback(() => {
-    setRenamingTabId(null)
-    setRenameValue('')
-  }, [])
-
   useEffect(() => {
     if (compareTabs.length > 0 && (!activeCompareTabId || !compareTabs.some((t) => t.id === activeCompareTabId))) {
       setActiveCompareTabId(compareTabs[0].id)
@@ -665,15 +590,6 @@ export function ComparePage() {
     })()
     return () => { cancelled = true }
   }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(COMPARE_SHEETS_SIDEBAR_KEY, sheetsSidebarOpen ? 'true' : 'false')
-    } catch {
-      // ignore
-    }
-    if (!sheetsSidebarOpen) setNewTabMenuOpen(false)
-  }, [sheetsSidebarOpen])
 
   useEffect(() => {
     try {
@@ -1051,6 +967,45 @@ export function ComparePage() {
       )
     )
   }, [compareMode, effectiveVendorFilteredParts])
+
+  const comparePartChips = useMemo<ComparePartChip[]>(() => {
+    const fileData = selectedFilesData.find((f) => f.fileId === (activeFileId ?? selectedFilesData[0]?.fileId))
+    if (fileData && fileData.content.length > 1) {
+      const selectedIds = new Set(fileBackedItems.map((i) => i.id))
+      const chips: ComparePartChip[] = []
+      for (let rowIdx = 0; rowIdx < fileData.content.length - 1; rowIdx++) {
+        const row = fileData.content[rowIdx + 1]
+        if (!row) continue
+        const label = primaryTextFromDataRow(row)
+        if (!label) continue
+        const id = `file-${fileData.fileId}-${rowIdx}`
+        chips.push({
+          id,
+          label,
+          vendorCount: (scrapedDataByPart[id] ?? []).length,
+          selected: selectedIds.has(id),
+          inPortfolio: portfolioPartNumbers.has(label.trim().toLowerCase()),
+        })
+      }
+      return chips
+    }
+    return effectiveVendorFilteredParts.map((item) => {
+      const label = (item.title ?? item.id).trim() || item.id
+      return {
+        id: item.id,
+        label,
+        vendorCount: (scrapedDataByPart[item.id] ?? []).length,
+        selected: fileBackedItems.some((i) => i.id === item.id),
+      }
+    })
+  }, [
+    selectedFilesData,
+    activeFileId,
+    fileBackedItems,
+    scrapedDataByPart,
+    effectiveVendorFilteredParts,
+    portfolioPartNumbers,
+  ])
 
   /** Bar + table summary + mind map: vendors per part, overlap, prices from scraped numeric/price fields */
   const vendorOverviewPayload = useMemo(() => {
@@ -1588,6 +1543,48 @@ export function ComparePage() {
     })
   }, [updateActiveTabData])
 
+  const handlePartChipToggle = useCallback(
+    (id: string) => {
+      const parsed = parseFileItemId(id)
+      if (!parsed) {
+        handleStructuredPartViewChange(id)
+        return
+      }
+      const isSelected = fileBackedItems.some((i) => i.id === id)
+      if (isSelected) {
+        toggleFileRow(parsed.fileId, parsed.rowIdx, false)
+        if (selectedPartItemId === id) {
+          const next = fileBackedItems.find((i) => i.id !== id)
+          if (next) handleStructuredPartViewChange(next.id)
+          else {
+            updateActiveTabData((d) => ({ ...d, selectedRowForScraped: null }))
+          }
+        }
+      } else {
+        toggleFileRow(parsed.fileId, parsed.rowIdx, true)
+        handleStructuredPartViewChange(id)
+      }
+    },
+    [
+      comparePartChips,
+      fileBackedItems,
+      toggleFileRow,
+      selectedPartItemId,
+      handleStructuredPartViewChange,
+      updateActiveTabData,
+    ]
+  )
+
+  const handleClearPartSelection = useCallback(() => {
+    updateActiveTabData((d) => {
+      const clearedRows: Record<number, number[]> = {}
+      for (const key of Object.keys(d.selectedFileRows)) {
+        clearedRows[Number(key)] = []
+      }
+      return { ...d, selectedFileRows: clearedRows, selectedRowForScraped: null }
+    })
+  }, [updateActiveTabData])
+
   /** Parse file-{fileId}-{rowIdx} to get fileId and rowIdx for scraped data lookup */
   function parseFileItemId(itemId: string): { fileId: number; rowIdx: number } | null {
     const match = itemId.match(/^file-(\d+)-(\d+)$/)
@@ -1641,80 +1638,18 @@ export function ComparePage() {
   }, [decisionFilteredRows, decisionSelectedIds, addBucketItem, showBucketToast])
 
   return (
-    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-[#eef3fb] text-slate-900`}>
-        <CompareSheetsSidebar
-          open={sheetsSidebarOpen}
-          compareTabs={compareTabs}
-          activeCompareTabId={activeCompareTabId}
-          newTabMenuOpen={newTabMenuOpen}
-          setNewTabMenuOpen={setNewTabMenuOpen}
-          onOpenSidebar={() => setSheetsSidebarOpen(true)}
-          onCloseSidebar={() => setSheetsSidebarOpen(false)}
-          onAddNewTab={addNewCompareTab}
-          onOpenFilePicker={() => setFilePickerOpen(true)}
-          onSetActiveTab={setActiveCompareTabId}
-          onCloseTab={closeCompareTab}
-          renamingTabId={renamingTabId}
-          renameValue={renameValue}
-          setRenameValue={setRenameValue}
-          onStartRenaming={startRenaming}
-          onCommitRename={commitRename}
-          onCancelRename={cancelRename}
-          renameInputRef={renameInputRef}
-        />
-
+    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-slate-50 text-slate-900`}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 lg:px-5">
+          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 sm:px-6">
 
-      <CompareWorkspaceSection
-        selectedFilesData={selectedFilesData}
-        selectedFileRows={selectedFileRows}
-        activeFileId={activeFileId}
-        selectedRowForScraped={selectedRowForScraped}
-        fileContentLoadingSize={fileContentLoading.size}
-        portfolioPartNumbers={portfolioPartNumbers}
-        totalSelectedAcrossFiles={totalSelectedAcrossFiles}
-        onOpenFilePicker={() => setFilePickerOpen(true)}
-        onSetActiveFile={(fileId) => updateActiveTabData((d) => ({ ...d, activeFileId: fileId }))}
-        onRemoveFile={handleRemoveFile}
-        onToggleFileRow={toggleFileRow}
-      />
-
-      {/* Comparison matrix */}
-      <div ref={comparisonSectionRef} className="mt-4">
-        {items.length === 0 && (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 py-8 text-center ring-1 ring-slate-950/[0.03]">
-            <p className="text-sm font-semibold text-slate-800">No items in comparison</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Add rows from workspace files above or send parts from Research to populate this table.
-            </p>
-          </div>
-        )}
-
-        {(compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
-          <div className={items.length > 0 ? 'mt-5' : 'mt-4'}>
-            {compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1 && (
-              <div className="mb-3 flex justify-end">
-                <label className="flex items-center gap-1.5 text-xs text-slate-600">
-                  <span className="font-medium">View</span>
-                  <select
-                    value={structuredPartSelectValue}
-                    onChange={(e) => handleStructuredPartViewChange(e.target.value)}
-                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
-                  >
-                    <option value="all">All selected parts</option>
-                    {effectiveVendorFilteredParts.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.title || '—'}
-                        {item.sourceName ? ` (${item.sourceName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
+      <div ref={comparisonSectionRef}>
             <CompareDecisionWorkspace
               partLabel={currentComparedPartLabel}
+              partCategory={
+                compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1
+                  ? 'Multi-part'
+                  : undefined
+              }
               rows={decisionRows}
               filteredRows={decisionFilteredRows}
               vendorFilter={decisionVendorFilter}
@@ -1748,12 +1683,31 @@ export function ComparePage() {
                 setDecisionVendorFilter(domain)
                 setScrapedVendorFilter(domain)
               }}
+              partChips={comparePartChips}
+              activePartId={selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? null}
+              onActivePartChange={handleStructuredPartViewChange}
+              onPartChipToggle={handlePartChipToggle}
+              onClearPartSelection={handleClearPartSelection}
+              selectedPartCount={totalSelectedAcrossFiles}
+              fileName={selectedFilesData[0]?.name}
+              onChangeFile={() => setFilePickerOpen(true)}
+              loadedFiles={selectedFilesData.map((f) => ({ fileId: f.fileId, name: f.name }))}
+              activeFileId={activeFileId}
+              onSelectFile={(fileId) => updateActiveTabData((d) => ({ ...d, activeFileId: fileId }))}
+              onRemoveFile={handleRemoveFile}
             />
+
+        {items.length === 0 && selectedFilesData.length === 0 && (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-slate-800">No comparison loaded</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Use Change file to load a parts list, or send parts from Research.
+            </p>
           </div>
         )}
 
-        {/* Scraped vendor data */}
-        {(compareMode === 'same-part' || compareMode === 'different-same-vendor') && decisionRows.length === 0 && (
+        {/* Scraped vendor data (field matrix when no vendor rows yet) */}
+        {decisionRows.length === 0 && (compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
           <div className={items.length > 0 ? 'mt-6' : 'mt-5'}>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
               <div>

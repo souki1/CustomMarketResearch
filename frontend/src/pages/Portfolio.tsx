@@ -19,7 +19,13 @@ import {
   ShoppingBag,
   Trash2,
 } from "lucide-react"
-import { getToken } from "@/lib/auth"
+import { getCurrentUserName, getToken } from "@/lib/auth"
+import {
+  PortfolioDashboard,
+  type PortfolioCoverageRow,
+  type PortfolioInsight,
+  type PortfolioTopVendor,
+} from "@/components/portfolio/PortfolioDashboard"
 import {
   excludePortfolioItem,
   getPortfolioSummary,
@@ -394,7 +400,8 @@ export function PortfolioPage() {
   const [detailEntry, setDetailEntry] = useState<PortfolioItem | null>(null)
 
   const navigate = useNavigate()
-  const { addItem, showToast } = useBucket()
+  const { items: bucketItems, addItem, showToast } = useBucket()
+  const userName = useMemo(() => getCurrentUserName(), [])
   const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
   const token = useMemo(() => getToken(), [])
 
@@ -689,27 +696,111 @@ export function PortfolioPage() {
     setCurrentPage(1)
   }, [search, sortMode, vendorSortMode, sourceSortMode, itemsPerPage, viewMode])
 
-  /* ---- Selection stats ---- */
+  const dashboardSavings = useMemo(() => {
+    let total = 0
+    for (const g of partGroups) {
+      const prices = g.entries
+        .map((e) => parsePrice(e.price))
+        .filter((n): n is number => n != null && n > 0)
+      if (prices.length < 2) continue
+      const best = Math.min(...prices)
+      const avg = prices.reduce((s, p) => s + p, 0) / prices.length
+      total += Math.max(0, avg - best)
+    }
+    return total
+  }, [partGroups])
 
-  const selectionStats = useMemo(() => {
-    const hasSelection = selectedPartIds.size > 0
-    const nums: number[] = []
-    if (hasSelection) {
-      for (const g of partGroups) {
-        if (!selectedPartIds.has(g.rowId)) continue
-        for (const e of g.entries) {
-          const n = parsePrice(e.price)
-          if (n != null && n > 0) nums.push(n)
+  const dashboardTopVendors = useMemo((): PortfolioTopVendor[] => {
+    return [...vendorGroups]
+      .map((vg) => {
+        const parts = new Set(
+          vg.entries.map((e) => (e.part_number ?? "").trim()).filter(Boolean),
+        ).size
+        const score = Math.min(94, Math.max(22, 35 + parts * 8 + Math.min(vg.entries.length, 20)))
+        return {
+          name: vg.vendor_name?.trim() || "Unknown vendor",
+          score,
+          parts,
         }
+      })
+      .sort((a, b) => b.parts - a.parts || b.score - a.score)
+      .slice(0, 5)
+  }, [vendorGroups])
+
+  const dashboardInsights = useMemo((): PortfolioInsight[] => {
+    const out: PortfolioInsight[] = []
+    if (dashboardSavings > 0) {
+      const bestPart = [...partGroups]
+        .map((g) => {
+          const prices = g.entries
+            .map((e) => parsePrice(e.price))
+            .filter((n): n is number => n != null && n > 0)
+          if (prices.length < 2) return null
+          const best = Math.min(...prices)
+          const avg = prices.reduce((s, p) => s + p, 0) / prices.length
+          return { part: g.part_number, save: avg - best }
+        })
+        .filter((x): x is { part: string | null; save: number } => x != null)
+        .sort((a, b) => b.save - a.save)[0]
+      if (bestPart && bestPart.save > 0) {
+        out.push({
+          title: `${formatUsd(bestPart.save)} savings on ${bestPart.part ?? "a part"}`,
+          body: "Switch to the lowest-priced vendor in your portfolio for this part.",
+          accent: "green",
+        })
       }
     }
-    return {
-      best: nums.length ? Math.min(...nums) : 0,
-      avg: nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0,
-      usesSelection: hasSelection,
-      offerCount: nums.length,
+    if (vendorGroups.length >= 2) {
+      out.push({
+        title: `${vendorGroups.length} vendors tracked`,
+        body: "Compare pricing across vendors to find the best total cost.",
+        accent: "blue",
+      })
     }
-  }, [partGroups, selectedPartIds])
+    const multiVendorParts = partGroups.filter((g) => g.entries.length >= 2).length
+    if (multiVendorParts > 0) {
+      out.push({
+        title: `${multiVendorParts} parts with multiple offers`,
+        body: "Use Compare to rank vendors and add winners to your bucket.",
+        accent: "yellow",
+      })
+    }
+    return out.slice(0, 3)
+  }, [dashboardSavings, partGroups, vendorGroups.length])
+
+  const dashboardCoverageRows = useMemo((): PortfolioCoverageRow[] => {
+    const single = partGroups.filter((g) => g.entries.length === 1).length
+    const multi = partGroups.filter((g) => g.entries.length >= 2 && g.entries.length <= 5).length
+    const dense = partGroups.filter((g) => g.entries.length > 5).length
+    const total = Math.max(partGroups.length, 1)
+    return [
+      { label: "Single vendor", found: single, total },
+      { label: "2–5 vendors", found: multi, total },
+      { label: "6+ vendors", found: dense, total },
+    ]
+  }, [partGroups])
+
+  const partsWithPricing = useMemo(() => {
+    return partGroups.filter((g) =>
+      g.entries.some((e) => {
+        const n = parsePrice(e.price)
+        return n != null && n > 0
+      }),
+    ).length
+  }, [partGroups])
+
+  const bucketTotal = useMemo(() => {
+    return bucketItems.reduce((sum, item) => {
+      const n = parsePrice(item.price)
+      const qty = item.qty ?? 1
+      return sum + (n != null && n > 0 ? n * qty : 0)
+    }, 0)
+  }, [bucketItems])
+
+  const coveragePct = useMemo(() => {
+    if (partGroups.length === 0) return 0
+    return Math.round((partsWithPricing / partGroups.length) * 100)
+  }, [partGroups.length, partsWithPricing])
 
   /* ---- Data loading ---- */
 
@@ -1120,151 +1211,42 @@ export function PortfolioPage() {
   /*  Render                                                             */
   /* ------------------------------------------------------------------ */
 
+  const uniquePartsCount =
+    portfolioSummary?.unique_parts ?? partGroups.length
+
   return (
-    <div className="relative min-h-[calc(100vh-3.5rem)] overflow-x-hidden bg-[linear-gradient(165deg,#e8eef5_0%,#f8fafc_38%,#ffffff_100%)]">
-      <div className="relative mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* ── Header ── */}
-        <header className="mb-8 flex flex-col gap-5 border-b border-slate-200/80 pb-8 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-800/90">
-              Sourcing overview
-            </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-              Portfolio
-            </h1>
-            <p className="mt-2.5 text-sm leading-relaxed text-slate-600 sm:text-[15px]">
-              Review vendor quotes page by page, remove incorrect research, and
-              track best pricing across your sourcing pipeline.
+    <div className="min-h-[calc(100vh-3.5rem)] w-full overflow-x-hidden bg-slate-50">
+      <div className="flex w-full flex-col gap-4 px-4 py-5 sm:px-6">
+        <PortfolioDashboard
+          loading={loading}
+          userName={userName}
+          uniqueParts={uniquePartsCount}
+          vendorCount={vendorGroups.length}
+          offerCount={portfolioSummary?.offer_count ?? portfolioItems.length}
+          bucketTotal={bucketTotal}
+          bucketItems={bucketItems}
+          savingsTotal={dashboardSavings}
+          coveragePct={coveragePct}
+          partsWithOffers={partsWithPricing}
+          topVendors={dashboardTopVendors}
+          insights={dashboardInsights}
+          coverageRows={dashboardCoverageRows}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+          <div>
+            <h2 className="text-base font-bold tracking-tight text-slate-900">Portfolio data</h2>
+            <p className="text-xs text-slate-500">
+              Review quotes, remove incorrect research, and compare selected parts.
             </p>
           </div>
           {token && !loading && portfolioItems.length > 0 && (
-            <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-sm shadow-sm backdrop-blur-sm sm:self-auto">
-              <span className="font-semibold tabular-nums text-slate-900">
-                {activeFilteredList.length}
-              </span>
-              <span className="text-slate-500">
-                {viewMode === "part" ? "parts in view" : viewMode === "vendor" ? "vendors in view" : "sources in view"}
-              </span>
-            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+              <span className="font-semibold tabular-nums text-slate-900">{activeFilteredList.length}</span>
+              {' '}
+              {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"} in view
+            </span>
           )}
-        </header>
-
-        {/* ── Summary cards ── */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <article className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-teal-500 to-cyan-500" />
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Unique parts
-                </p>
-                <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                  {!token || loading
-                    ? "—"
-                    : portfolioSummary != null
-                      ? portfolioSummary.unique_parts
-                      : partGroups.length}
-                </p>
-              </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 ring-1 ring-teal-700/10">
-                <Package className="h-5 w-5" strokeWidth={1.75} />
-              </span>
-            </div>
-          </article>
-
-          <article className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-slate-600 to-slate-400" />
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Line items
-                </p>
-                <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                  {!token || loading
-                    ? "—"
-                    : portfolioSummary != null
-                      ? portfolioSummary.offer_count
-                      : portfolioItems.length}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">Vendor offers loaded</p>
-              </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-900/5">
-                <Building2 className="h-5 w-5" strokeWidth={1.75} />
-              </span>
-            </div>
-          </article>
-
-          <article className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-emerald-500 to-teal-500" />
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Best price
-                </p>
-                <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-emerald-600">
-                  {!token || loading
-                    ? "—"
-                    : selectionStats.usesSelection
-                      ? selectionStats.offerCount > 0
-                        ? formatUsd(selectionStats.best)
-                        : "—"
-                      : portfolioSummary?.best_price != null
-                        ? formatUsd(portfolioSummary.best_price)
-                        : "—"}
-                </p>
-                {!loading && token && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {selectionStats.usesSelection
-                      ? selectionStats.offerCount > 0
-                        ? `Lowest of ${selectionStats.offerCount} price${selectionStats.offerCount === 1 ? "" : "s"} from ${selectedPartIds.size} selected`
-                        : `No prices on ${selectedPartIds.size} selected`
-                      : portfolioSummary != null && portfolioSummary.prices_included > 0
-                        ? `Lowest across ${portfolioSummary.prices_included} valid offer${portfolioSummary.prices_included === 1 ? "" : "s"}`
-                        : "No positive prices yet"}
-                  </p>
-                )}
-              </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/20">
-                <DollarSign className="h-5 w-5" strokeWidth={2} />
-              </span>
-            </div>
-          </article>
-
-          <article className="group relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_0_rgba(15,23,42,0.04)] transition hover:shadow-md">
-            <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-indigo-500 to-slate-500" />
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Average price
-                </p>
-                <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-800">
-                  {!token || loading
-                    ? "—"
-                    : selectionStats.usesSelection
-                      ? selectionStats.offerCount > 0
-                        ? formatUsd(selectionStats.avg)
-                        : "—"
-                      : portfolioSummary?.average_price != null
-                        ? formatUsd(portfolioSummary.average_price)
-                        : "—"}
-                </p>
-                {!loading && token && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {selectionStats.usesSelection
-                      ? selectionStats.offerCount > 0
-                        ? `Mean of ${selectionStats.offerCount} price${selectionStats.offerCount === 1 ? "" : "s"} from ${selectedPartIds.size} selected`
-                        : "No prices on selected parts"
-                      : portfolioSummary != null && portfolioSummary.prices_included > 0
-                        ? `Mean across ${portfolioSummary.prices_included} valid offer${portfolioSummary.prices_included === 1 ? "" : "s"}`
-                        : "No positive prices yet"}
-                  </p>
-                )}
-              </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white shadow-sm ring-2 ring-slate-800/15">
-                <DollarSign className="h-5 w-5" strokeWidth={2} />
-              </span>
-            </div>
-          </article>
         </div>
 
         {/* ── Selection banner ── */}
@@ -1298,7 +1280,7 @@ export function PortfolioPage() {
         )}
 
         {/* ── Toolbar ── */}
-        <div className="mb-5 rounded-xl border border-slate-200/90 bg-white/90 p-4 shadow-sm backdrop-blur-sm sm:p-5">
+        <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
             <div className="relative min-w-0 flex-1 lg:max-w-md">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

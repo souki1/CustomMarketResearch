@@ -411,6 +411,43 @@ function RowHeightIcon({ className }: { className?: string }) {
   )
 }
 
+function researchToolbarBtnClass(active: boolean, disabled = false) {
+  if (disabled) {
+    return 'inline-flex items-center gap-1.5 rounded-[5px] border border-gray-200 bg-white px-2.5 py-1 text-[13px] font-medium text-gray-400 opacity-60 cursor-default'
+  }
+  return `inline-flex items-center gap-1.5 rounded-[5px] border px-2.5 py-1 text-[13px] font-medium whitespace-nowrap transition-colors ${
+    active
+      ? 'border-blue-500 bg-blue-50 text-blue-700'
+      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+  }`
+}
+
+function ResearchFoundBadge({ count, onClick }: { count: number; onClick: () => void }) {
+  if (!count) {
+    return <span className="py-0.5 font-mono text-[11px] text-gray-400">—</span>
+  }
+
+  const tone =
+    count >= 8
+      ? 'border-blue-200 bg-blue-50 text-blue-700'
+      : count >= 4
+        ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+        : 'border-orange-200 bg-orange-50 text-orange-900'
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={`rounded-full border-[1.5px] px-2.5 py-0.5 font-mono text-[11px] font-semibold shadow-none transition-shadow hover:shadow-md ${tone}`}
+    >
+      {count} found ↗
+    </button>
+  )
+}
+
 type PersistedResearchState = {
   activeTabId: string | null
   selectedRows: number[]
@@ -1527,7 +1564,7 @@ export function ResearchPage() {
 
   return (
     <div
-      className={`bg-white text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`bg-[#f8f9fb] text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
       {deleteConfirmOpen && (
         <div
@@ -2009,13 +2046,13 @@ export function ResearchPage() {
             : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
         }
       >
-      <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-2.5">
-        <h1 className="text-[15px] font-semibold text-slate-900">Data Research</h1>
+      <div className="shrink-0 border-b border-gray-200 bg-white px-5 pb-0 pt-3">
+        <h1 className="mb-2.5 text-[17px] font-semibold text-gray-900">Data Research</h1>
       </div>
 
       {/* Unified header: tabs + toolbar in one container, flush full-width.
           z-30 keeps toolbar dropdowns above the sheet (sticky thead is z-10). */}
-      <div className="relative z-30 shrink-0 border-b border-slate-200 bg-white">
+      <div className="relative z-30 shrink-0 border-b border-gray-200 bg-white">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -2063,7 +2100,7 @@ export function ResearchPage() {
       )}
 
       {/* Toolbar */}
-      <div className="flex max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto border-t border-slate-200 bg-white px-3 py-1">
+      <div className="flex max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto border-t border-gray-200 bg-[#f8f9fb] px-4 py-2">
         <div className="flex shrink-0 items-center gap-0.5">
           <button
             ref={hideFieldsBtnRef}
@@ -2077,7 +2114,7 @@ export function ResearchPage() {
               setDensityMenuOpen(false)
               setFilterOpen(false)
             }}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className={researchToolbarBtnClass(hideFieldsOpen, !content?.[0])}
           >
             <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
             Hide fields
@@ -2149,11 +2186,7 @@ export function ResearchPage() {
               setSortMenuOpen(false)
               setDensityMenuOpen(false)
             }}
-            className={`inline-flex max-w-[min(20rem,55vw)] items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-              hasActiveColumnFilters
-                ? 'border-emerald-200/90 bg-emerald-50 text-emerald-900 hover:bg-emerald-100/90'
-                : 'border-transparent text-slate-600 hover:bg-slate-100'
-            }`}
+            className={`${researchToolbarBtnClass(hasActiveColumnFilters, !content?.[0])} max-w-[min(20rem,55vw)] text-left`}
           >
             <Filter className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
             <span className="truncate">
@@ -2215,9 +2248,7 @@ export function ResearchPage() {
               setDensityMenuOpen(false)
               setFilterOpen(false)
             }}
-            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
-              groupByCol != null ? 'bg-slate-200/80 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
-            }`}
+            className={researchToolbarBtnClass(groupByCol != null, !content?.[0])}
           >
             <LayoutGrid className="h-3.5 w-3.5 shrink-0" aria-hidden />
             Group
@@ -2284,9 +2315,7 @@ export function ResearchPage() {
               setDensityMenuOpen(false)
               setFilterOpen(false)
             }}
-            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
-              sortCol != null ? 'bg-slate-200/80 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
-            }`}
+            className={researchToolbarBtnClass(sortCol != null, !content?.[0])}
           >
             <ArrowUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
             Sort
@@ -2431,10 +2460,8 @@ export function ResearchPage() {
           }}
           disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
           title={selectedColumns.size === 0 ? 'Select column(s) first' : 'Research selected headers and rows'}
-          className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-            toolbarActive === 'selected'
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          className={`${researchToolbarBtnClass(toolbarActive === 'selected', !content || selectedColumns.size === 0 || storeSelectionLoading)} ${
+            toolbarActive === 'selected' ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700' : ''
           }`}
         >
           {storeSelectionLoading ? (
@@ -2464,7 +2491,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className={researchToolbarBtnClass(false, selectedRows.size === 0)}
         >
           <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -2509,7 +2536,7 @@ export function ResearchPage() {
           }}
           disabled={selectedRows.size === 0}
           title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className={researchToolbarBtnClass(false, selectedRows.size === 0)}
         >
           <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -2518,14 +2545,14 @@ export function ResearchPage() {
         </button>
         {/* Other options removed */}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <div className="relative w-[200px] max-w-[60vw] sm:w-[240px]">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
             <input
               type="search"
               value={rowSearchDraft}
               onChange={(e) => setRowSearchDraft(e.target.value)}
               placeholder="Search rows…"
-              className="w-full rounded-md border border-slate-300 bg-white py-1 pl-8 pr-8 text-xs text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+              className="w-[130px] border-0 bg-transparent text-xs text-gray-900 outline-none placeholder:text-gray-400 sm:w-[150px]"
             />
             {rowSearchDraft.trim() && (
               <button
@@ -2535,7 +2562,7 @@ export function ResearchPage() {
                   setRowSearchQuery('')
                   setPage(1)
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 aria-label="Clear search"
               >
                 <X className="h-3.5 w-3.5" />
@@ -2547,13 +2574,38 @@ export function ResearchPage() {
 
       </div>{/* end unified header */}
 
+      {selectedRows.size > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-4 py-1.5">
+          <span className="text-xs font-medium text-blue-700">
+            {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'} selected
+          </span>
+          <span className="h-3.5 w-px bg-blue-200" aria-hidden />
+          <button type="button" className="inline-flex items-center gap-1 rounded border border-blue-200 bg-white px-2.5 py-0.5 text-[11px] font-medium text-blue-700">
+            Research
+          </button>
+          <button type="button" className="inline-flex items-center gap-1 rounded border border-blue-200 bg-white px-2.5 py-0.5 text-[11px] font-medium text-blue-700">
+            Preview
+          </button>
+          <button type="button" className="inline-flex items-center gap-1 rounded border border-blue-200 bg-white px-2.5 py-0.5 text-[11px] font-medium text-blue-700">
+            Compare
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedRows(new Set())}
+            className="ml-auto text-[11px] text-blue-600 underline"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {content && content.length > 0 && (
         <>
           <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden bg-white">
             <div className="h-full w-full overflow-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-[#f9fafb]">
-                <tr>
+            <table className="min-w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-[#f8f9fb]">
+                <tr className="border-b-2 border-gray-200">
                   {/* Row-number gutter */}
                   <th
                     className={`w-8 border-r border-slate-200 text-center ${rd.th} ${rd.thLabel} text-slate-400`}
@@ -2605,14 +2657,14 @@ export function ResearchPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
+              <tbody className="bg-white">
                 {sheetBodyItems.map((item) => {
                   if (item.kind === 'group') {
                     return (
-                      <tr key={item.key} className="bg-emerald-50/50">
+                      <tr key={item.key} className="bg-blue-50/40">
                         <td
                           colSpan={3 + visibleColIndices.length}
-                          className="border-b border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                          className="border-b border-gray-200 px-3 py-1.5 text-[11px] font-semibold text-gray-700"
                         >
                           {item.label}
                         </td>
@@ -2620,20 +2672,22 @@ export function ResearchPage() {
                     )
                   }
                   const { dataRowIndex, row } = item
-                  const isSelectedRow = selectedRowIndex === dataRowIndex
+                  const isInspectorRow = isInspectorOpen && selectedRowIndex === dataRowIndex
+                  const isRowChecked = selectedRows.has(dataRowIndex)
                   const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
                   const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
                   const hasStructuredData = rowResearchSummary?.has_structured_data === true
+                  const stripe = dataRowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fb]'
                   return (
                     <tr
                       key={dataRowIndex}
                       data-row-index={dataRowIndex}
-                      className={`transition-colors ${
-                        isSelectedRow
-                          ? 'bg-sky-50'
-                          : hasStructuredData
-                            ? 'bg-blue-50 hover:bg-blue-100/80'
-                            : 'hover:bg-[#f9fafb]'
+                      className={`cursor-pointer border-b border-gray-200 border-l-[3px] transition-colors ${
+                        isInspectorRow
+                          ? 'border-l-blue-500 bg-[#f0f7ff]'
+                          : isRowChecked
+                            ? 'border-l-transparent bg-blue-50 hover:bg-blue-50'
+                            : `border-l-transparent ${stripe} hover:bg-[#f0f4f9]`
                       }`}
                     >
                       <td
@@ -2661,23 +2715,12 @@ export function ResearchPage() {
                         onClick={() => handleCellClick(dataRowIndex)}
                       >
                         {hasStructuredData && rowResearchSummary ? (
-                          <div className="flex items-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleCellClick(dataRowIndex)
-                              }}
-                              className="inline-flex items-center gap-0.5 rounded bg-blue-600/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-900 hover:bg-blue-600/15 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-                              aria-label="Open results in inspector"
-                              title="Click to open results"
-                            >
-                              {rowResearchSummary.structured_sources_count}
-                              <span className="font-normal text-blue-900/70">found</span>
-                            </button>
-                          </div>
+                          <ResearchFoundBadge
+                            count={rowResearchSummary.structured_sources_count}
+                            onClick={() => handleCellClick(dataRowIndex)}
+                          />
                         ) : (
-                          <span className="text-[10px] text-slate-300">—</span>
+                          <span className="font-mono text-[11px] text-gray-400">—</span>
                         )}
                       </td>
                       {visibleColIndices.map((colIndex, vi) => (
@@ -2690,7 +2733,11 @@ export function ResearchPage() {
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className={`w-full min-w-[80px] border-0 bg-transparent text-slate-700 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput}`}
+                            className={`w-full min-w-[80px] border-0 bg-transparent text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput} ${
+                              vi === 0 || /part|internal|mfr/i.test((headers[colIndex] ?? '').trim())
+                                ? 'font-mono font-medium text-blue-700'
+                                : ''
+                            }`}
                           />
                         </td>
                       ))}
@@ -2703,13 +2750,13 @@ export function ResearchPage() {
           </div>
 
           {/* Footer: Add row + pagination */}
-          <div className="mt-2 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-2">
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={(e) => openAddRowPopover(e.currentTarget)}
                 data-add-row-footer-btn
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
               >
                 + Add row
               </button>
@@ -2718,7 +2765,7 @@ export function ResearchPage() {
                 onClick={removeSelectedRows}
                 disabled={selectedRows.size === 0}
                 title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete row
               </button>
@@ -2744,7 +2791,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(1)}
                 disabled={currentPage <= 1}
-                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &laquo;
               </button>
@@ -2752,18 +2799,18 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &lsaquo;
               </button>
-              <span className="px-3 py-1.5 text-sm text-slate-600">
+              <span className="px-2 text-xs text-gray-500">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &rsaquo;
               </button>
@@ -2771,7 +2818,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(totalPages)}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &raquo;
               </button>
@@ -2834,19 +2881,30 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-            <div className="flex min-w-0 items-center gap-3">
+          <header className="flex shrink-0 flex-col border-b border-gray-200 bg-white">
+            <div className="bg-slate-900 px-4 py-3">
+            <div className="flex min-w-0 items-start justify-between gap-3">
               {inspectorMode === 'single' && selectedRowData ? (
-                <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                  <h3 className="mb-0.5 text-xs font-medium uppercase tracking-wide text-slate-500">Item</h3>
-                  <p className="truncate text-base font-semibold text-slate-900">
-                    {headers[0]
-                      ? `${headers[0]}: ${selectedRowData[0] ?? '—'}`
-                      : selectedRowData[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[15px] font-semibold text-slate-100">
+                      {String(selectedRowData[0] ?? '—')}
+                    </span>
+                    {selectedRowIndex != null && researchRowSummaryByIndex.get(selectedRowIndex) && (
+                      <span className="rounded bg-blue-800 px-1.5 py-0.5 text-[10px] font-semibold text-blue-200">
+                        {researchRowSummaryByIndex.get(selectedRowIndex)!.structured_sources_count} sources
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-sm text-slate-400">
+                    {String(selectedRowData[1] ?? headers[1] ?? 'Row details')}
                   </p>
                 </div>
               ) : (
-                <div className="min-w-0 flex-1" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-100">Selected rows</p>
+                  <p className="text-xs text-slate-400">Review and compare sheet rows</p>
+                </div>
               )}
               <div className="flex shrink-0 items-center justify-end gap-1 self-start">
                 <button
@@ -2855,7 +2913,7 @@ export function ResearchPage() {
                     e.stopPropagation()
                     setInspectorMaximized((m) => !m)
                   }}
-                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                   aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                 >
@@ -2872,7 +2930,7 @@ export function ResearchPage() {
                 <button
                   type="button"
                   onClick={closeInspector}
-                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                   title="Close panel"
                   aria-label="Close panel"
                 >
@@ -2882,8 +2940,9 @@ export function ResearchPage() {
                 </button>
               </div>
             </div>
+            </div>
             {inspectorMode === 'single' && selectedRowData && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-gray-200 px-4 py-3">
                 <button
                   type="button"
                   onClick={() => {

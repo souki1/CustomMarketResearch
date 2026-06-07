@@ -21,3 +21,20 @@ export type CompareTab = {
 }
 
 export type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
+
+export type CompareDecisionRow = {
+  id: string
+  url: string
+  vendor: string
+  price: number | null
+  priceLabel: string
+  shipping: number | null
+  shippingLabel: string
+  availability: string
+  rating: number | null
+  ratingLabel: string
+  delivery: string
+  location: string
+  contact: string
+  rawData: Record<string, unknown>
+}

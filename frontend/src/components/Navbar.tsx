@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
-import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
-import { useBucket, type BucketItem } from '@/contexts/BucketContext'
+import { BUCKET_PATH } from '@/lib/paths'
+import { useBucket } from '@/contexts/BucketContext'
 
 function NavbarIcon() {
   return (
@@ -184,7 +184,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const location = useLocation()
   const showSearchOnNarrow =
     location.pathname === '/research' || location.pathname.startsWith('/research/')
-  const { items: bucketItems, removeItem, drawerOpen, setDrawerOpen } = useBucket()
+  const { items: bucketItems } = useBucket()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -406,7 +406,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
 
             <button
               type="button"
-              onClick={() => setDrawerOpen(true)}
+              onClick={() => navigate(BUCKET_PATH)}
               className="inline-flex items-center gap-1.5 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
               aria-label="Bucket"
               title="Bucket"
@@ -656,107 +656,6 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
         </div>
       </div>
     </nav>
-
-    {drawerOpen && (
-      <BucketDrawer
-        items={bucketItems}
-        onRemove={removeItem}
-        onClose={() => setDrawerOpen(false)}
-        onViewDetails={() => { setDrawerOpen(false); navigate('/research'); }}
-        onCompare={() => { setDrawerOpen(false); navigate(RESEARCH_COMPARE_PATH); }}
-      />
-    )}
-    </>
-  )
-}
-
-function BucketDrawer({
-  items,
-  onRemove,
-  onClose,
-  onViewDetails,
-  onCompare,
-}: {
-  items: BucketItem[]
-  onRemove: (id: string) => void
-  onClose: () => void
-  onViewDetails: (item: BucketItem) => void
-  onCompare: (item: BucketItem) => void
-}) {
-  return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-black/20"
-        aria-hidden
-        onClick={onClose}
-      />
-      <aside
-        className="fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl animate-[slideInRight_0.2s_ease-out]"
-        style={{ boxShadow: '-4px 0 20px rgba(0,0,0,0.1)' }}
-        role="dialog"
-        aria-label="Bucket"
-      >
-        <style>{`
-          @keyframes slideInRight {
-            from { transform: translateX(100%); }
-            to { transform: translateX(0); }
-          }
-        `}</style>
-        <header className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-gray-50/80 px-4 py-3">
-          <h2 className="text-base font-semibold text-gray-900">Bucket ({items.length})</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </header>
-        <div className="flex-1 overflow-auto p-4">
-          {items.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-500">No items in bucket. Add items from the Research inspector.</p>
-          ) : (
-            <ul className="space-y-3">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-                >
-                  <p className="font-medium text-gray-900 truncate">{item.title || '—'}</p>
-                  <p className="mt-0.5 text-sm text-gray-600 truncate">Manufacturer: {item.manufacturer || '—'}</p>
-                  <p className="mt-0.5 text-sm text-gray-700">Price: {item.price || '—'}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onRemove(item.id)}
-                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Remove
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onViewDetails(item)}
-                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      View Details
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onCompare(item)}
-                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Compare
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </aside>
     </>
   )
 }

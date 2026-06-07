@@ -86,26 +86,26 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
   const commands: Command[] = useMemo(
     () => [
       {
-        id: 'home',
-        label: 'Go to Home',
+        id: 'dashboard',
+        label: 'Go to Dashboard',
         keywords: ['home', 'dashboard', 'main'],
         icon: <HomeIcon className="h-4 w-4 shrink-0 text-gray-500" />,
         shortcut: 'G H',
         action: () => navigate('/'),
       },
       {
-        id: 'search-files',
-        label: 'Search files',
-        keywords: ['search', 'files', 'find', 'file'],
+        id: 'files',
+        label: 'Go to Files',
+        keywords: ['search', 'files', 'find', 'file', 'upload'],
         icon: <FileIcon className="h-4 w-4 shrink-0 text-gray-500" />,
-        action: () => navigate('/'),
+        action: () => navigate('/files'),
       },
       {
         id: 'search-folders',
         label: 'Search folders',
         keywords: ['search', 'folders', 'find', 'folder'],
         icon: <FolderIcon className="h-4 w-4 shrink-0 text-gray-500" />,
-        action: () => navigate('/'),
+        action: () => navigate('/files'),
       },
       {
         id: 'new-research',
