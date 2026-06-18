@@ -28,6 +28,7 @@ import {
   type ResearchUrlItem,
   type ScrapedDataItem,
 } from '@/lib/api'
+import { isSpreadsheetWorkspaceFile } from '@/lib/workspaceFiles'
 import { collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
 import { WishlistBoard } from '@/components/wishlist/WishlistBoard'
 
@@ -752,7 +753,7 @@ async function collectWorkspaceFiles(
       const seg = item.name
       const next = pathPrefix ? `${pathPrefix} / ${seg}` : seg
       out.push(...(await collectWorkspaceFiles(token, item.id, next)))
-    } else {
+    } else if (isSpreadsheetWorkspaceFile(item)) {
       out.push({
         id: item.id,
         name: item.name,
@@ -1029,6 +1030,9 @@ export function WishlistPage() {
   const token = getToken()
 
   useEffect(() => {
+    // Sheet data is only visible in the workspace layout; skip the expensive
+    // file-content + research fetches while the user is on the Lists board.
+    if (pageLayout !== 'workspace') return
     if (!token) {
       setLoadedTabData(null)
       setTabLoadError(null)
@@ -1076,7 +1080,7 @@ export function WishlistPage() {
     return () => {
       cancelled = true
     }
-  }, [dataLoadKey, token, activeTab])
+  }, [dataLoadKey, token, activeTab, pageLayout])
 
   useLayoutEffect(() => {
     setTabLoadError(null)
@@ -1199,7 +1203,14 @@ export function WishlistPage() {
   const dialogTitleId = 'wishlist-picker-dialog-title'
 
   return (
-    <div className="flex min-h-full w-full flex-col">
+    <div
+      className={
+        pageLayout === 'lists'
+          ? // Bound the board to the viewport so list columns scroll internally.
+            'flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden'
+          : 'flex min-h-full w-full flex-col'
+      }
+    >
       <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
         <button
           type="button"
@@ -1222,7 +1233,7 @@ export function WishlistPage() {
       </div>
 
       {pageLayout === 'lists' ? (
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
           <WishlistBoard />
         </div>
       ) : (

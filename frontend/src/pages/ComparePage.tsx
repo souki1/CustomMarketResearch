@@ -23,6 +23,7 @@ import {
   upsertCompareState,
 } from '@/lib/api'
 import type { PortfolioItem, ScrapedDataItem } from '@/lib/api'
+import { isSpreadsheetWorkspaceFile } from '@/lib/workspaceFiles'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 import { useBucket } from '@/contexts/BucketContext'
 
@@ -677,7 +678,7 @@ export function ComparePage() {
         if (item.is_folder) {
           const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
           result.push(...(await collectFiles(item.id, nextPrefix)))
-        } else {
+        } else if (isSpreadsheetWorkspaceFile(item)) {
           result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
         }
       }

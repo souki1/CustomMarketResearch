@@ -19,6 +19,8 @@ import {
   moveWorkspaceItem,
   uploadWorkspaceCsv,
   uploadWorkspaceImage,
+  uploadWorkspaceDocx,
+  importReportFromDocx,
 } from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
@@ -101,6 +103,7 @@ export function HomePage() {
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadFileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
@@ -153,6 +156,7 @@ export function HomePage() {
             owner: item.owner_display_name ?? (getCurrentUserName() ?? 'You'),
             access: item.access,
             parentId: item.parent_id != null ? String(item.parent_id) : null,
+            linkedReportId: item.report_id ?? undefined,
           }
         })
 
@@ -351,6 +355,10 @@ export function HomePage() {
     fileInputRef.current?.click()
   }
 
+  const handleUploadFileClick = () => {
+    uploadFileInputRef.current?.click()
+  }
+
   const handleUploadImageClick = () => {
     setUploadTargetFolderId(currentFolderId)
     setTimeout(() => imageInputRef.current?.click(), 0)
@@ -488,14 +496,115 @@ export function HomePage() {
         parentId: created.parent_id != null ? String(created.parent_id) : null,
       }
       setRows((prev) => [...prev, newRow])
-      // reset input so same file can be selected again later
-      event.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload file')
+    }
+  }
+
+  const handleUploadFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    event.target.value = ''
+
+    if (!token) {
+      setError('You need to be signed in to upload files.')
+      return
+    }
+
+    const isDocx =
+      file.name.toLowerCase().endsWith('.docx') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    if (isDocx) {
+      try {
+        setError(null)
+        const created = await uploadWorkspaceDocx(file, token)
+        const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+        const newRow: FileTableRow = {
+          id: String(created.id),
+          name: created.name,
+          isFolder: created.is_folder,
+          favorite: created.favorite,
+          createdAt,
+          lastOpened: '—',
+          owner: created.owner_display_name ?? displayName,
+          access: created.access,
+          parentId: created.parent_id != null ? String(created.parent_id) : null,
+          linkedReportId: created.report_id ?? undefined,
+        }
+        setRows((prev) => [...prev, newRow])
+        if (created.report_id != null) {
+          navigate(`/reports?edit=${created.report_id}`)
+          return
+        }
+        if (created.parent_id != null) {
+          const reportsFolderId = String(created.parent_id)
+          setCurrentFolderId(reportsFolderId)
+          setBreadcrumbPath([{ id: reportsFolderId, name: 'Reports' }])
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to upload Word document')
+      }
+      return
+    }
+
+    const isCsv =
+      file.name.toLowerCase().endsWith('.csv') ||
+      file.type === 'text/csv' ||
+      file.type === 'application/csv'
+    const isExcel = /\.(xlsx?|xls)$/i.test(file.name)
+
+    let fileToUpload: File
+    if (isCsv) {
+      fileToUpload = file
+    } else if (isExcel) {
+      try {
+        setError(null)
+        fileToUpload = await excelFileToCsvFile(file)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to read Excel file. Try saving as CSV and uploading instead.')
+        return
+      }
+    } else {
+      setError('Unsupported file type. Upload a PDF (Reports only), CSV, or Excel file.')
+      return
+    }
+
+    try {
+      setError(null)
+      const parentNumeric = uploadTargetFolderId ? Number(uploadTargetFolderId) : null
+      const created = await uploadWorkspaceCsv(fileToUpload, parentNumeric, token)
+      const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      const newRow: FileTableRow = {
+        id: String(created.id),
+        name: created.name,
+        isFolder: created.is_folder,
+        favorite: created.favorite,
+        createdAt,
+        lastOpened: '—',
+        owner: created.owner_display_name ?? displayName,
+        access: created.access,
+        parentId: created.parent_id != null ? String(created.parent_id) : null,
+      }
+      setRows((prev) => [...prev, newRow])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload file')
     }
   }
 
   const handleOpenMove = (row: FileTableRow) => {
+    if (row.access === 'Report') {
+      setError('Report PDFs stay in the Reports folder and cannot be moved.')
+      return
+    }
     setMoveSourceRow(row)
     setMoveTargetFolderId(row.parentId ?? null)
     setMoveDialogOpen(true)
@@ -654,10 +763,21 @@ export function HomePage() {
             breadcrumbPath={breadcrumbPath}
             onOpenFolder={handleOpenFolder}
             onGoToFolder={handleGoToFolder}
-            onOpenFile={(fileId, fileName) => {
+            onOpenFile={(fileId, fileName, access, linkedReportId) => {
               if (fileId.startsWith('report:')) {
                 const rid = Number(fileId.replace(/^report:/, ''))
                 if (Number.isFinite(rid)) navigate(`/reports?edit=${rid}`)
+                return
+              }
+              if (access === 'Report') {
+                if (linkedReportId != null) {
+                  navigate(`/reports?edit=${linkedReportId}`)
+                  return
+                }
+                if (!token) return
+                void importReportFromDocx(token, Number(fileId))
+                  .then((report) => navigate(`/reports?edit=${report.id}`))
+                  .catch(() => setError('Could not open this document for editing.'))
                 return
               }
               const folderPath = breadcrumbPath.map((seg) => seg.name).join(' / ')
@@ -680,7 +800,7 @@ export function HomePage() {
             onNewFileClick={() => handleUploadCsvClick()}
             onNewResearchClick={() => navigate('/research')}
             onImportCsvClick={() => handleUploadCsvClick()}
-            onUploadFileClick={() => handleUploadCsvClick()}
+            onUploadFileClick={() => handleUploadFileClick()}
             onMoveClick={handleOpenMove}
           />
         )}
@@ -719,6 +839,13 @@ export function HomePage() {
         accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         className="hidden"
         onChange={handleCsvSelected}
+      />
+      <input
+        ref={uploadFileInputRef}
+        type="file"
+        accept=".docx,.csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="hidden"
+        onChange={handleUploadFileSelected}
       />
       <input
         ref={imageInputRef}

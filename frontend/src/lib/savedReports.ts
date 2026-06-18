@@ -27,7 +27,20 @@ export type TableLinkCell = { type: 'link'; label: string; href: string }
 
 export type TableCell = string | TableLinkCell
 
-export type ReportBlock =
+/** Optional placement metadata for PDF overlay annotations. */
+export type ReportBlockPdfMeta = {
+  pdf_overlay?: boolean
+  pdf_auto?: boolean
+  pdf_role?: 'text' | 'field' | 'label'
+  pdf_page?: number
+  pdf_x?: number
+  pdf_y?: number
+  pdf_width?: number
+  pdf_height?: number
+  pdf_field_name?: string
+}
+
+type ReportBlockCore =
   | { id: string; type: 'title'; text: string; align?: BlockAlign }
   | { id: string; type: 'heading'; text: string; align?: BlockAlign }
   | { id: string; type: 'subheading'; text: string; align?: BlockAlign }
@@ -51,12 +64,75 @@ export type ReportBlock =
       colWidths?: number[]
     }
 
+export type ReportBlock = ReportBlockCore & ReportBlockPdfMeta
+
 export type SavedReport = {
   id: number
   title: string
   createdAt: string
   updatedAt: string
   blocks: ReportBlock[]
+  /** Workspace item id when this report was imported from a Word file. */
+  sourceWorkspaceFileId?: number | null
+}
+
+export function isPdfOverlayBlock(b: ReportBlock): boolean {
+  return b.pdf_overlay === true
+}
+
+function attachPdfMeta(block: ReportBlock, raw: Record<string, unknown>): ReportBlock {
+  const pdf_overlay = raw.pdf_overlay === true
+  const pdf_auto = raw.pdf_auto === true
+  const pdf_role =
+    raw.pdf_role === 'text' || raw.pdf_role === 'field' || raw.pdf_role === 'label'
+      ? raw.pdf_role
+      : undefined
+  const pdf_page = typeof raw.pdf_page === 'number' ? raw.pdf_page : undefined
+  const pdf_x = typeof raw.pdf_x === 'number' ? raw.pdf_x : undefined
+  const pdf_y = typeof raw.pdf_y === 'number' ? raw.pdf_y : undefined
+  const pdf_width = typeof raw.pdf_width === 'number' ? raw.pdf_width : undefined
+  const pdf_height = typeof raw.pdf_height === 'number' ? raw.pdf_height : undefined
+  const pdf_field_name = typeof raw.pdf_field_name === 'string' ? raw.pdf_field_name : undefined
+  if (
+    !pdf_overlay &&
+    !pdf_auto &&
+    !pdf_role &&
+    pdf_page == null &&
+    pdf_x == null &&
+    pdf_y == null &&
+    pdf_width == null &&
+    pdf_height == null &&
+    !pdf_field_name
+  ) {
+    return block
+  }
+  return {
+    ...block,
+    pdf_overlay,
+    pdf_auto,
+    pdf_role,
+    pdf_page,
+    pdf_x,
+    pdf_y,
+    pdf_width,
+    pdf_height,
+    pdf_field_name,
+  }
+}
+
+export function reportBlockToPayload(block: ReportBlock): Record<string, unknown> {
+  const normalized = normalizeBlock(block)
+  const payload = { ...normalized } as Record<string, unknown>
+  if (normalized.pdf_overlay) payload.pdf_overlay = true
+  if (normalized.pdf_auto) payload.pdf_auto = true
+  if (normalized.pdf_role) payload.pdf_role = normalized.pdf_role
+  if (normalized.pdf_page != null) payload.pdf_page = normalized.pdf_page
+  if (normalized.pdf_x != null) payload.pdf_x = normalized.pdf_x
+  if (normalized.pdf_y != null) payload.pdf_y = normalized.pdf_y
+  if (normalized.pdf_width != null) payload.pdf_width = normalized.pdf_width
+  if (normalized.pdf_height != null) payload.pdf_height = normalized.pdf_height
+  if (normalized.pdf_field_name) payload.pdf_field_name = normalized.pdf_field_name
+  return payload
 }
 
 function newId(): string {
@@ -239,8 +315,9 @@ function parseOneBlock(raw: unknown): ReportBlock | null {
 export function parseBlocksArray(arr: unknown[]): ReportBlock[] {
   const out: ReportBlock[] = []
   for (const row of arr) {
+    if (!row || typeof row !== 'object') continue
     const b = parseOneBlock(row)
-    if (b) out.push(b)
+    if (b) out.push(attachPdfMeta(b, row as Record<string, unknown>))
   }
   return out
 }
@@ -347,13 +424,18 @@ export function apiResponseToSavedReport(resp: {
   blocks: Array<Record<string, unknown>>
   created_at: string
   updated_at: string
+  source_workspace_file_id?: number | null
+  source_workspace_pdf_id?: number | null
 }): SavedReport {
+  const sourceWorkspaceFileId =
+    resp.source_workspace_file_id ?? resp.source_workspace_pdf_id ?? null
   const blocks = parseBlocksArray(resp.blocks)
   return {
     id: resp.id,
     title: resp.title,
     createdAt: resp.created_at,
     updatedAt: resp.updated_at,
+    sourceWorkspaceFileId,
     blocks: blocks.length
       ? blocks.map(normalizeBlock)
       : [createEmptyBlock('title'), createEmptyBlock('paragraph')],

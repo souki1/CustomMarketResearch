@@ -1,21 +1,42 @@
-import type { ReportBlock, TableCell } from '@/lib/savedReports'
+import type { ReportBlock, ReportBlockPdfMeta, TableCell } from '@/lib/savedReports'
 import { ReportListBlockEditor } from '@/components/reports/ReportListBlockEditor'
 import { alignClass, calloutToneClass, spacerHeight } from '@/components/reports/reportBlockUtils'
+
+type PdfOverlayOpts = Pick<
+  ReportBlockPdfMeta,
+  'pdf_role' | 'pdf_width' | 'pdf_height' | 'pdf_auto' | 'pdf_field_name'
+>
 
 type Props = {
   block: ReportBlock
   selected: boolean
   onSelect: () => void
   onChange: (next: ReportBlock) => void
+  pdfOverlay?: PdfOverlayOpts
 }
 
 function tableCellToInputString(cell: TableCell): string {
   return typeof cell === 'string' ? cell : cell.label
 }
 
-export function ReportBlockEditor({ block, selected, onSelect, onChange }: Props) {
-  const ring = selected ? 'ring-2 ring-blue-500 ring-offset-2' : 'ring-1 ring-transparent hover:ring-slate-200'
-  const baseWrap = `group relative rounded-lg transition-shadow ${ring}`
+export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOverlay }: Props) {
+  const isPdfField = pdfOverlay?.pdf_role === 'field'
+  const isPdfLabel = pdfOverlay?.pdf_role === 'label'
+  const ring = selected
+    ? isPdfField
+      ? 'ring-2 ring-violet-500 ring-offset-1'
+      : 'ring-2 ring-blue-500 ring-offset-2'
+    : pdfOverlay?.pdf_auto
+      ? 'ring-1 ring-dashed ring-violet-300/80'
+      : 'ring-1 ring-transparent hover:ring-slate-200'
+  const baseWrap = `group relative rounded transition-shadow ${ring}`
+  const overlayBoxStyle =
+    pdfOverlay?.pdf_width || pdfOverlay?.pdf_height
+      ? {
+          width: pdfOverlay.pdf_width ? `${pdfOverlay.pdf_width}px` : undefined,
+          minHeight: pdfOverlay.pdf_height ? `${pdfOverlay.pdf_height}px` : undefined,
+        }
+      : undefined
 
   if (block.type === 'divider') {
     const dashed = block.style === 'dashed'
@@ -340,52 +361,81 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange }: Props
       ? block.text
       : ''
 
+  const pdfPlaceholder =
+    pdfOverlay?.pdf_field_name?.trim() ||
+    (isPdfField ? 'Enter value…' : isPdfLabel ? 'Label' : 'Type here…')
+
+  const overlayInputClass = isPdfField
+    ? 'w-full rounded border border-violet-300 bg-white/95 px-1.5 py-0.5 text-sm text-gray-900 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400/30'
+    : isPdfLabel
+      ? 'w-full rounded border border-transparent bg-white/70 px-1 py-0.5 text-xs font-semibold text-slate-800 focus:border-violet-300 focus:bg-white focus:outline-none'
+      : 'w-full resize-none rounded border border-violet-200/80 bg-white/85 px-1.5 py-0.5 text-sm leading-snug text-gray-900 focus:border-violet-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/20'
+
   return (
-    <div className={baseWrap} onClick={onSelect} role="presentation">
-      <div className={alignClass(block.align)}>
+    <div className={baseWrap} style={overlayBoxStyle} onClick={onSelect} role="presentation">
+      <div className={pdfOverlay ? '' : alignClass(block.align)}>
         {selected ? (
-          <textarea
-            className={`w-full resize-y rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
-              block.type === 'title' ? 'min-h-14 text-3xl font-bold' : ''
-            } ${block.type === 'subheading' ? 'text-xs font-semibold uppercase tracking-wider' : ''}`}
-            rows={block.type === 'paragraph' || block.type === 'callout' ? 4 : 2}
-            value={textValue}
-            placeholder={
-              block.type === 'title'
-                ? 'Report title'
-                : block.type === 'heading'
-                  ? 'Section heading'
-                  : block.type === 'subheading'
-                    ? 'Subheading'
-                    : block.type === 'quote'
-                      ? 'Quoted text'
-                      : 'Type here…'
-            }
-            onChange={(e) => {
-              if (
-                block.type === 'title' ||
-                block.type === 'heading' ||
-                block.type === 'subheading' ||
-                block.type === 'paragraph' ||
-                block.type === 'callout' ||
-                block.type === 'quote'
-              ) {
-                onChange({ ...block, text: e.target.value })
+          isPdfField ? (
+            <input
+              type="text"
+              className={overlayInputClass}
+              value={textValue}
+              placeholder={pdfPlaceholder}
+              onChange={(e) => {
+                if (block.type === 'paragraph' || block.type === 'callout' || block.type === 'quote') {
+                  onChange({ ...block, text: e.target.value })
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <textarea
+              className={
+                pdfOverlay
+                  ? overlayInputClass
+                  : `w-full resize-y rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                      block.type === 'title' ? 'min-h-14 text-3xl font-bold' : ''
+                    } ${block.type === 'subheading' ? 'text-xs font-semibold uppercase tracking-wider' : ''}`
               }
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
+              rows={
+                pdfOverlay
+                  ? Math.max(1, Math.min(4, Math.ceil((pdfOverlay.pdf_height ?? 24) / 20)))
+                  : block.type === 'paragraph' || block.type === 'callout'
+                    ? 4
+                    : 2
+              }
+              value={textValue}
+              placeholder={pdfPlaceholder}
+              onChange={(e) => {
+                if (
+                  block.type === 'title' ||
+                  block.type === 'heading' ||
+                  block.type === 'subheading' ||
+                  block.type === 'paragraph' ||
+                  block.type === 'callout' ||
+                  block.type === 'quote'
+                ) {
+                  onChange({ ...block, text: e.target.value })
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )
         ) : (
           <div
             className={`min-h-6 whitespace-pre-wrap py-1 ${
-              block.type === 'callout' ? calloutToneClass(block.tone) : textStyles
+              pdfOverlay
+                ? `${overlayInputClass} ${!textValue.trim() ? 'text-slate-400' : ''}`
+                : block.type === 'callout'
+                  ? calloutToneClass(block.tone)
+                  : textStyles
             }`}
           >
             {textValue.trim() ? (
               textValue
             ) : (
               <span className="text-gray-400">
-                {block.type === 'title' ? 'Report title' : 'Empty block — click to edit'}
+                {pdfOverlay ? pdfPlaceholder : block.type === 'title' ? 'Report title' : 'Empty block — click to edit'}
               </span>
             )}
           </div>

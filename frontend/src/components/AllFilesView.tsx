@@ -10,7 +10,7 @@ type AllFilesViewProps = {
   breadcrumbPath: BreadcrumbSegment[]
   onOpenFolder: (folderId: string) => void
   onGoToFolder: (folderId: string | null) => void
-  onOpenFile?: (fileId: string, fileName?: string) => void
+  onOpenFile?: (fileId: string, fileName?: string, access?: string, linkedReportId?: number) => void
   onDelete?: (row: FileTableRow) => void
   onNewFolderClick: () => void
   onNewFileClick?: () => void

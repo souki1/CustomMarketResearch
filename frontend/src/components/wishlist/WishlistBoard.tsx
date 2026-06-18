@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Search } from 'lucide-react'
 import { getToken } from '@/lib/auth'
-import { fetchWishlistCatalogItems, type WishlistCatalogItem } from '@/lib/wishlistCatalog'
+import {
+  fetchWishlistCatalogItems,
+  migrateWishlistItemId,
+  type WishlistCatalogItem,
+} from '@/lib/wishlistCatalog'
 
 type WishlistStatus = 'priority' | 'watching' | 'interested' | 'ordered'
 
@@ -28,6 +33,28 @@ const SORTS = ['Price ↑', 'Price ↓', 'Score ↓', 'Score ↑', 'Part A–Z',
 
 const LISTS_STORAGE_KEY = 'ir-wishlist-board-lists'
 const STATUS_STORAGE_KEY = 'ir-wishlist-board-statuses'
+const CATALOG_CACHE_KEY = 'ir-wishlist-catalog-cache-v1'
+/** How often the catalog re-syncs with research/portfolio data in the background. */
+const CATALOG_REFRESH_MS = 60_000
+
+function loadCachedCatalog(): WishlistCatalogItem[] {
+  try {
+    const raw = sessionStorage.getItem(CATALOG_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as WishlistCatalogItem[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveCachedCatalog(items: WishlistCatalogItem[]) {
+  try {
+    sessionStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify(items))
+  } catch {
+    // ignore quota errors — cache is an optimization only
+  }
+}
 
 function priceTier(price: number | null) {
   if (price == null) return { label: '—', col: '#64748b', bg: '#f8fafc', dot: '#cbd5e1' }
@@ -50,7 +77,7 @@ function loadLists(): WishlistList[] {
     return parsed.map((list) => ({
       ...(list as WishlistList),
       itemIds: Array.isArray((list as WishlistList).itemIds)
-        ? (list as WishlistList).itemIds.map((id) => String(id))
+        ? [...new Set((list as WishlistList).itemIds.map((id) => migrateWishlistItemId(String(id))))]
         : [],
     }))
   } catch {
@@ -66,7 +93,7 @@ function loadStatuses(): Record<string, WishlistStatus> {
     if (!parsed || typeof parsed !== 'object') return {}
     const out: Record<string, WishlistStatus> = {}
     for (const [key, value] of Object.entries(parsed)) {
-      out[String(key)] = value
+      out[migrateWishlistItemId(String(key))] = value
     }
     return out
   } catch {
@@ -97,6 +124,40 @@ function Tag({ label, bg, col }: { label: string; bg: string; col: string }) {
   )
 }
 
+function ItemThumb({
+  src,
+  alt,
+  onPreview,
+}: {
+  src: string
+  alt: string
+  onPreview: () => void
+}) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onPreview()
+      }}
+      className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-[#e0ddd4] bg-white transition-transform hover:scale-105"
+      title="Click to enlarge"
+      aria-label={`View image of ${alt}`}
+    >
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+    </button>
+  )
+}
+
 function ItemCard({
   item,
   status,
@@ -107,6 +168,7 @@ function ItemCard({
   activeListId,
   selected,
   onSelect,
+  onPreviewImage,
 }: {
   item: WishlistCatalogItem
   status: WishlistStatus
@@ -117,6 +179,7 @@ function ItemCard({
   activeListId: string
   selected: boolean
   onSelect: (itemId: string) => void
+  onPreviewImage: (item: WishlistCatalogItem) => void
 }) {
   const tier = priceTier(item.price)
   const statusMeta = STATUS_META[status]
@@ -141,6 +204,9 @@ function ItemCard({
               onClick={(event) => event.stopPropagation()}
               className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#378ADD]"
             />
+            {item.imageUrl && (
+              <ItemThumb src={item.imageUrl} alt={item.part} onPreview={() => onPreviewImage(item)} />
+            )}
             <span className="font-mono text-xs font-medium text-[#0C447C]">{item.part}</span>
             <Tag label={statusMeta.label} bg={statusMeta.bg} col={statusMeta.col} />
             <Tag label={tier.label} bg={tier.bg} col={tier.col} />
@@ -296,7 +362,7 @@ function SidebarItem({
 export function WishlistBoard() {
   const [lists, setLists] = useState<WishlistList[]>(loadLists)
   const [statuses, setStatuses] = useState<Record<string, WishlistStatus>>(loadStatuses)
-  const [catalogItems, setCatalogItems] = useState<WishlistCatalogItem[]>([])
+  const [catalogItems, setCatalogItems] = useState<WishlistCatalogItem[]>(loadCachedCatalog)
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string>('all')
@@ -312,15 +378,23 @@ export function WishlistBoard() {
   const [addToItem, setAddToItem] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showPartPicker, setShowPartPicker] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerTier, setPickerTier] = useState<'all' | 'best' | 'good' | 'mid' | 'high'>('all')
+  const [pickerHideAdded, setPickerHideAdded] = useState(false)
+  const [pickerShipsToday, setPickerShipsToday] = useState(false)
+  const pickerSearchRef = useRef<HTMLInputElement | null>(null)
   const [showBulkCreateList, setShowBulkCreateList] = useState(false)
   const [bulkListName, setBulkListName] = useState('')
   const [bulkListEmoji, setBulkListEmoji] = useState('📦')
   const [bulkListColor, setBulkListColor] = useState(COLORS[0])
   const [filterStatus, setFilterStatus] = useState<'all' | WishlistStatus>('all')
+  const [imagePreview, setImagePreview] = useState<WishlistCatalogItem | null>(null)
   const newRef = useRef<HTMLInputElement | null>(null)
   const bulkListRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => {
+  const catalogFetchSeq = useRef(0)
+
+  const refreshCatalog = useCallback((opts?: { silent?: boolean }) => {
     const token = getToken()
     if (!token) {
       setCatalogItems([])
@@ -328,40 +402,41 @@ export function WishlistBoard() {
       setCatalogLoading(false)
       return
     }
-    let cancelled = false
-    setCatalogLoading(true)
+    const seq = ++catalogFetchSeq.current
+    if (!opts?.silent) setCatalogLoading(true)
     setCatalogError(null)
     void fetchWishlistCatalogItems(token)
       .then((items) => {
-        if (cancelled) return
+        if (seq !== catalogFetchSeq.current) return
         setCatalogItems(items)
+        saveCachedCatalog(items)
       })
       .catch((error: unknown) => {
-        if (cancelled) return
-        setCatalogItems([])
-        setCatalogError(error instanceof Error ? error.message : 'Failed to load wishlist items')
+        if (seq !== catalogFetchSeq.current) return
+        // Keep previously loaded items on a failed background refresh.
+        if (!opts?.silent) {
+          setCatalogError(error instanceof Error ? error.message : 'Failed to load wishlist items')
+        }
       })
       .finally(() => {
-        if (!cancelled) setCatalogLoading(false)
+        if (seq === catalogFetchSeq.current) setCatalogLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
   }, [])
 
+  // Initial load + auto-update: re-sync when the tab regains focus and on an interval,
+  // so newly researched parts and price changes show up without a reload.
+  // When a cached catalog exists, render it immediately and refresh silently
+  // (stale-while-revalidate) instead of blocking on a loading screen.
   useEffect(() => {
-    if (catalogItems.length === 0) return
-    const valid = new Set(catalogItems.map((item) => item.id))
-    setLists((prev) => {
-      let changed = false
-      const next = prev.map((list) => {
-        const itemIds = list.itemIds.filter((id) => valid.has(id))
-        if (itemIds.length !== list.itemIds.length) changed = true
-        return itemIds.length === list.itemIds.length ? list : { ...list, itemIds }
-      })
-      return changed ? next : prev
-    })
-  }, [catalogItems])
+    refreshCatalog({ silent: loadCachedCatalog().length > 0 })
+    const onFocus = () => refreshCatalog({ silent: true })
+    window.addEventListener('focus', onFocus)
+    const interval = window.setInterval(() => refreshCatalog({ silent: true }), CATALOG_REFRESH_MS)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.clearInterval(interval)
+    }
+  }, [refreshCatalog])
 
   useEffect(() => {
     localStorage.setItem(LISTS_STORAGE_KEY, JSON.stringify(lists))
@@ -378,6 +453,24 @@ export function WishlistBoard() {
   useEffect(() => {
     if (showBulkCreateList) bulkListRef.current?.focus()
   }, [showBulkCreateList])
+
+  useEffect(() => {
+    if (!imagePreview) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImagePreview(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [imagePreview])
+
+  useEffect(() => {
+    if (!showPartPicker) return
+    setPickerSearch('')
+    setPickerTier('all')
+    setPickerHideAdded(false)
+    setPickerShipsToday(false)
+    pickerSearchRef.current?.focus()
+  }, [showPartPicker])
 
   const activeList = lists.find((list) => list.id === activeId)
   const activeItemIds =
@@ -408,6 +501,24 @@ export function WishlistBoard() {
         return a.vendor.localeCompare(b.vendor)
       })
   }, [activeItemIds, catalogItems, search, sort, filterStatus, statuses])
+
+  const pickerItems = useMemo(() => {
+    const query = pickerSearch.trim().toLowerCase()
+    return catalogItems.filter((item) => {
+      if (
+        query &&
+        !item.part.toLowerCase().includes(query) &&
+        !item.vendor.toLowerCase().includes(query) &&
+        !item.companyBrand.toLowerCase().includes(query)
+      ) {
+        return false
+      }
+      if (pickerTier !== 'all' && priceTier(item.price).label.toLowerCase() !== pickerTier) return false
+      if (pickerShipsToday && !item.shipsToday) return false
+      if (pickerHideAdded && activeList?.itemIds.includes(item.id)) return false
+      return true
+    })
+  }, [catalogItems, pickerSearch, pickerTier, pickerShipsToday, pickerHideAdded, activeList])
 
   const pricedItems = visibleItems.filter((item) => item.price != null)
   const bestPrice = pricedItems.length ? Math.min(...pricedItems.map((item) => item.price!)) : null
@@ -517,8 +628,8 @@ export function WishlistBoard() {
   const addToPart = addToItem != null ? catalogItems.find((item) => item.id === addToItem) : null
 
   return (
-    <div className="grid min-h-[560px] grid-cols-1 text-slate-900 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="flex flex-col gap-0.5 border-r border-slate-200 bg-slate-50/90 p-3">
+    <div className="grid h-full min-h-0 grid-cols-1 text-slate-900 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col gap-0.5 overflow-hidden border-r border-slate-200 bg-slate-50/90 p-3">
         <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">My Wishlists</div>
 
         <button
@@ -821,6 +932,7 @@ export function WishlistBoard() {
                   activeListId={activeId}
                   selected={selected.has(item.id)}
                   onSelect={toggleSelection}
+                  onPreviewImage={setImagePreview}
                 />
               ))}
             </div>
@@ -957,8 +1069,96 @@ export function WishlistBoard() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 text-[15px] font-medium">Add parts to "{activeList.name}"</div>
+
+            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-[#e0ddd4] bg-[#f7f5f0] px-2.5 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-[#a3a19a]" strokeWidth={2} />
+              <input
+                ref={pickerSearchRef}
+                placeholder="Search part, vendor, or brand…"
+                value={pickerSearch}
+                onChange={(event) => setPickerSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setShowPartPicker(false)
+                }}
+                className="min-w-0 flex-1 bg-transparent text-xs text-[#1a1a18] outline-none placeholder:text-[#a3a19a]"
+              />
+              {pickerSearch && (
+                <button
+                  type="button"
+                  onClick={() => setPickerSearch('')}
+                  className="shrink-0 text-xs text-[#a3a19a] hover:text-[#73726c]"
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <div className="mb-2.5 flex flex-wrap items-center gap-1">
+              {(['all', 'best', 'good', 'mid', 'high'] as const).map((tier) => {
+                const active = pickerTier === tier
+                const meta =
+                  tier === 'all'
+                    ? { label: 'All prices', bg: '#f7f5f0', col: '#1a1a18', dot: '#c8c6be' }
+                    : tier === 'best'
+                      ? { label: 'Best', bg: '#EAF3DE', col: '#27500A', dot: '#1D9E75' }
+                      : tier === 'good'
+                        ? { label: 'Good', bg: '#E6F1FB', col: '#0C447C', dot: '#378ADD' }
+                        : tier === 'mid'
+                          ? { label: 'Mid', bg: '#FAEEDA', col: '#633806', dot: '#EF9F27' }
+                          : { label: 'High', bg: '#FAECE7', col: '#712B13', dot: '#D85A30' }
+                return (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => setPickerTier(tier)}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    style={{
+                      border: `0.5px solid ${active ? meta.dot : '#c8c6be'}`,
+                      backgroundColor: active ? meta.bg : '#f7f5f0',
+                      color: active ? meta.col : '#73726c',
+                    }}
+                  >
+                    {meta.label}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => setPickerShipsToday((prev) => !prev)}
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  border: `0.5px solid ${pickerShipsToday ? '#1D9E75' : '#c8c6be'}`,
+                  backgroundColor: pickerShipsToday ? '#EAF3DE' : '#f7f5f0',
+                  color: pickerShipsToday ? '#27500A' : '#73726c',
+                }}
+              >
+                ⚡ Ships today
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickerHideAdded((prev) => !prev)}
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  border: `0.5px solid ${pickerHideAdded ? '#378ADD' : '#c8c6be'}`,
+                  backgroundColor: pickerHideAdded ? '#E6F1FB' : '#f7f5f0',
+                  color: pickerHideAdded ? '#0C447C' : '#73726c',
+                }}
+              >
+                Hide added
+              </button>
+              <span className="ml-auto text-[10px] text-[#a3a19a]">
+                {pickerItems.length} of {catalogItems.length}
+              </span>
+            </div>
+
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
-              {catalogItems.map((item) => {
+              {pickerItems.length === 0 && (
+                <div className="py-8 text-center text-xs text-[#73726c]">
+                  No parts match your search or filters.
+                </div>
+              )}
+              {pickerItems.map((item) => {
                 const inList = activeList.itemIds.includes(item.id)
                 const tier = priceTier(item.price)
                 return (
@@ -999,6 +1199,55 @@ export function WishlistBoard() {
             >
               Done
             </button>
+          </div>
+        </div>
+      )}
+
+      {imagePreview?.imageUrl && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-6"
+          onClick={() => setImagePreview(null)}
+          role="dialog"
+          aria-label={`Image of ${imagePreview.part}`}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#e0ddd4] px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-sm font-medium text-[#0C447C]">{imagePreview.part}</div>
+                <div className="truncate text-xs text-[#73726c]">{imagePreview.vendor}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImagePreview(null)}
+                className="ml-3 shrink-0 rounded-md border border-[#c8c6be] bg-[#f7f5f0] px-2.5 py-1 text-sm text-[#73726c] hover:text-[#1a1a18]"
+                aria-label="Close image preview"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-[#f7f5f0] p-4">
+              <img
+                src={imagePreview.imageUrl}
+                alt={imagePreview.part}
+                referrerPolicy="no-referrer"
+                className="max-h-[65vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+            {imagePreview.url && (
+              <div className="border-t border-[#e0ddd4] px-4 py-2 text-right">
+                <a
+                  href={imagePreview.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-[#0C447C] underline"
+                >
+                  View vendor page ↗
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}

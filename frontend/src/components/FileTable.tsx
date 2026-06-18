@@ -14,7 +14,7 @@ type SortDir = 'asc' | 'desc'
 type FileTableProps = {
   rows: Row[]
   onOpenFolder?: (folderId: string) => void
-  onOpenFile?: (fileId: string, fileName?: string) => void
+  onOpenFile?: (fileId: string, fileName?: string, access?: string, linkedReportId?: number) => void
   onRename?: (row: Row) => void
   onMove?: (row: Row) => void
   onShare?: (row: Row) => void
@@ -107,7 +107,7 @@ function FileTableRow({
 }: {
   row: Row
   onOpenFolder?: (folderId: string) => void
-  onOpenFile?: (fileId: string, fileName?: string) => void
+  onOpenFile?: (fileId: string, fileName?: string, access?: string, linkedReportId?: number) => void
   onRename?: (row: Row) => void
   onMove?: (row: Row) => void
   onShare?: (row: Row) => void
@@ -119,7 +119,7 @@ function FileTableRow({
 
   const handleOpen = () => {
     if (row.isFolder && onOpenFolder) onOpenFolder(row.id)
-    else if (!row.isFolder && onOpenFile) onOpenFile(row.id, row.name)
+    else if (!row.isFolder && onOpenFile) onOpenFile(row.id, row.name, row.access, row.linkedReportId)
   }
 
   const handleRename = () => { onRename?.(row) }
@@ -140,7 +140,7 @@ function FileTableRow({
     <tr className="bg-white transition-colors duration-150 ease-out hover:bg-gray-50">
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          {row.isFolder ? <FolderIcon /> : row.rowKind === 'report' ? <ReportFileIcon /> : <FileIcon />}
+          {row.isFolder ? <FolderIcon /> : row.rowKind === 'report' || row.access === 'Report' ? <ReportFileIcon /> : <FileIcon />}
           {row.isFolder && onOpenFolder ? (
             <button
               type="button"
@@ -152,7 +152,7 @@ function FileTableRow({
           ) : onOpenFile ? (
             <button
               type="button"
-              onClick={() => onOpenFile(row.id, row.name)}
+              onClick={() => onOpenFile(row.id, row.name, row.access, row.linkedReportId)}
               className="font-medium text-gray-900 text-left hover:text-blue-600 focus:outline-none focus:ring-0 focus:underline"
             >
               {row.name}
@@ -208,7 +208,7 @@ function FileTableRow({
                 <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 Rename
               </DropdownMenuItem>
-              {!row.isFolder && onMove && row.rowKind !== 'report' && (
+              {!row.isFolder && onMove && row.rowKind !== 'report' && row.access !== 'Report' && (
                 <DropdownMenuItem onSelect={handleMove} className="flex cursor-pointer items-center gap-2 px-4 py-2">
                   <svg className="h-4 w-4 shrink-0 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5h6m-3-3v6m-7 4h4m-4 4h4m4 0h4m-4-4h4" /></svg>
                   Move file to folder

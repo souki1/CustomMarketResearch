@@ -14,6 +14,7 @@ from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
 from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
+from reports.docx_import import create_linked_report_from_docx
 from workspace_reports_folder import get_or_create_reports_folder_id
 
 
@@ -77,6 +78,7 @@ async def list_items(
                 created_at=doc["created_at"],
                 last_opened=doc.get("last_opened"),
                 owner_display_name=user.display_name,
+                report_id=int(doc["report_id"]) if doc.get("report_id") is not None else None,
             )
         )
     return results
@@ -297,6 +299,80 @@ async def upload_image(
     )
 
 
+@router.post("/upload-docx", response_model=WorkspaceItemResponse, status_code=201)
+async def upload_docx(
+    file: UploadFile = File(...),
+    user: Annotated[User, Depends(get_current_user)] = None,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = None,
+):
+    """Upload a Word document into the Reports folder and create an editable report."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix != ".docx":
+        raise HTTPException(status_code=400, detail="Only .docx Word files are supported")
+
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Document too large (max 25MB)")
+
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    reports_folder_id = await get_or_create_reports_folder_id(mongo_db, user.id)
+    safe_name = Path(file.filename).name
+
+    now = datetime.utcnow()
+    new_id = await get_next_sequence(mongo_db, "workspace_items")
+    item_doc = {
+        "id": new_id,
+        "name": safe_name,
+        "is_folder": False,
+        "parent_id": reports_folder_id,
+        "owner_id": user.id,
+        "favorite": False,
+        "access": "Report",
+        "file_kind": "report_docx",
+        "created_at": now,
+        "last_opened": None,
+    }
+    await mongo_db["workspace_items"].insert_one(item_doc)
+
+    await mongo_db["workspace_files"].insert_one(
+        {
+            "workspace_item_id": new_id,
+            "owner_id": user.id,
+            "filename": safe_name,
+            "content_type": file.content_type
+            or "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "size": len(content),
+            "content": content,
+        }
+    )
+
+    report_doc = await create_linked_report_from_docx(
+        mongo_db,
+        owner_id=user.id,
+        reports_folder_id=reports_folder_id,
+        workspace_item_id=new_id,
+        filename=safe_name,
+        content=content,
+    )
+
+    return WorkspaceItemResponse(
+        id=new_id,
+        name=safe_name,
+        is_folder=False,
+        parent_id=reports_folder_id,
+        favorite=False,
+        access="Report",
+        created_at=now,
+        last_opened=None,
+        owner_display_name=user.display_name,
+        report_id=int(report_doc["id"]),
+    )
+
+
 @router.get("/items/{item_id}/media")
 async def get_item_media(
     item_id: int,
@@ -322,8 +398,14 @@ async def get_item_media(
         raise HTTPException(status_code=404, detail="File has no content")
 
     content_type = doc.get("content_type", "application/octet-stream")
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Not an image file")
+    is_image = content_type.startswith("image/")
+    is_docx = (
+        content_type
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        or str(item.get("file_kind")) == "report_docx"
+    )
+    if not is_image and not is_docx:
+        raise HTTPException(status_code=400, detail="Not a downloadable media file")
 
     content = doc["content"]
     if isinstance(content, str):
@@ -364,6 +446,15 @@ async def delete_item(
         {"workspace_item_id": item_id, "owner_id": user.id}
     )
 
+    linked_report_id = item.get("report_id")
+    if linked_report_id is not None:
+        await mongo_db["reports"].delete_one(
+            {"id": int(linked_report_id), "owner_id": user.id}
+        )
+        await mongo_db["report_export_blobs"].delete_many(
+            {"report_id": int(linked_report_id), "owner_id": user.id}
+        )
+
     await mongo_db["workspace_items"].delete_one({"id": item_id, "owner_id": user.id})
 
 
@@ -386,6 +477,11 @@ async def move_item(
         raise HTTPException(
             status_code=400,
             detail="The Reports folder cannot be moved.",
+        )
+    if str(item.get("access")) == "Report":
+        raise HTTPException(
+            status_code=400,
+            detail="Report files cannot be moved. They stay in the Reports folder.",
         )
 
     new_parent_id = payload.parent_id

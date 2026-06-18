@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Download,
-  Eye,
   FileText,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Sparkles,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import { formatCreated } from '@/components/reports/reportBlockUtils'
-import { exportReportDocx, exportReportPdf } from '@/lib/api'
+import { exportReportDocx, uploadWorkspaceDocx } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { blocksToPlainText, type SavedReport } from '@/lib/savedReports'
 
@@ -68,34 +70,47 @@ export function ReportGalleryHome({
   loading = false,
   onOpenStudioNew,
   onOpenStudioAi,
-  onOpenStudioPreview,
+  onOpenStudioEdit,
   onDeleteReport,
 }: ReportGalleryHomeProps) {
   const token = useMemo(() => getToken(), [])
+  const navigate = useNavigate()
+  const docxInputRef = useRef<HTMLInputElement>(null)
   const [exportingId, setExportingId] = useState<number | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [uploadingDocx, setUploadingDocx] = useState(false)
 
-  const handleExport = async (id: number, title: string, format: 'docx' | 'pdf') => {
+  const handleExport = async (id: number, title: string) => {
     if (!token) return
     setExportError(null)
     setExportingId(id)
     try {
-      const blob =
-        format === 'docx' ? await exportReportDocx(token, id) : await exportReportPdf(token, id)
-      const ext = format === 'docx' ? '.docx' : '.pdf'
-      const filename = `${(title.trim() || 'report').slice(0, 80)}${ext}`
+      const blob = await exportReportDocx(token, id)
+      const filename = `${(title.trim() || 'report').slice(0, 80)}.docx`
       triggerBlobDownload(blob, filename)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed'
-      if (format === 'pdf' && /libreoffice|soffice/i.test(message)) {
-        setExportError(
-          "PDF export isn't available yet. LibreOffice is required on the server."
-        )
-      } else {
-        setExportError(message || 'Export failed')
-      }
+      setExportError(message || 'Export failed')
     } finally {
       setExportingId(null)
+    }
+  }
+
+  const handleDocxSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !token) return
+    setUploadingDocx(true)
+    setExportError(null)
+    try {
+      const created = await uploadWorkspaceDocx(file, token)
+      if (created.report_id != null) {
+        navigate(`/reports?edit=${created.report_id}`)
+      }
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Failed to upload Word document')
+    } finally {
+      setUploadingDocx(false)
     }
   }
 
@@ -112,10 +127,30 @@ export function ReportGalleryHome({
           <div>
             <h1 className="m-0 text-lg font-bold tracking-tight text-slate-900">Reports</h1>
             <p className="mt-1 text-[13px] text-slate-500">
-              Generated reports and exports for your procurement data.
+              Create and edit Word-style reports; export as .docx.
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              disabled={uploadingDocx}
+              onClick={() => docxInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-200 bg-white px-2.5 py-[5px] text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {uploadingDocx ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" strokeWidth={1.75} />
+              )}
+              Upload Word
+            </button>
+            <input
+              ref={docxInputRef}
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => void handleDocxSelected(e)}
+            />
             <button
               type="button"
               onClick={onOpenStudioAi}
@@ -194,16 +229,16 @@ export function ReportGalleryHome({
                   <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => onOpenStudioPreview(report)}
+                      onClick={() => onOpenStudioEdit(report)}
                       className="inline-flex items-center gap-1 rounded-[5px] border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      <Eye className="h-3 w-3" strokeWidth={1.75} />
-                      View
+                      <Pencil className="h-3 w-3" strokeWidth={1.75} />
+                      Edit
                     </button>
                     <button
                       type="button"
                       disabled={isExporting}
-                      onClick={() => void handleExport(report.id, report.title, 'docx')}
+                      onClick={() => void handleExport(report.id, report.title)}
                       className="inline-flex items-center gap-1 rounded-[5px] px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                     >
                       {isExporting ? (
@@ -211,7 +246,7 @@ export function ReportGalleryHome({
                       ) : (
                         <Download className="h-3 w-3" strokeWidth={1.75} />
                       )}
-                      Download
+                      Download .docx
                     </button>
                     <button
                       type="button"

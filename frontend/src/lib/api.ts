@@ -22,6 +22,7 @@ export type WorkspaceItem = {
   created_at: string
   last_opened: string | null
   owner_display_name?: string | null
+  report_id?: number | null
 }
 
 async function request<T>(
@@ -208,6 +209,38 @@ export async function uploadWorkspaceImage(
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
   }
   return res.json()
+}
+
+export async function uploadWorkspaceDocx(file: File, token: string): Promise<WorkspaceItem> {
+  const form = new FormData()
+  form.append('file', file)
+
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
+
+  const res = await fetch(`${API_BASE}/workspace/upload-docx`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+  return res.json()
+}
+
+export async function getWorkspaceMediaBlob(itemId: number, token: string): Promise<Blob> {
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
+  const res = await fetch(`${API_BASE}/workspace/items/${itemId}/media`, { headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+  return res.blob()
 }
 
 export async function moveWorkspaceItem(
@@ -691,6 +724,8 @@ export type ReportResponse = {
   created_at: string
   updated_at: string
   workspace_parent_id?: number | null
+  source_workspace_file_id?: number | null
+  source_workspace_pdf_id?: number | null
 }
 
 export async function createReport(token: string, payload: ReportPayload): Promise<ReportResponse> {
@@ -707,6 +742,14 @@ export async function listReports(token: string): Promise<ReportResponse[]> {
 
 export async function getReport(token: string, id: number): Promise<ReportResponse> {
   return request<ReportResponse>(`/reports/${id}`, { token })
+}
+
+/** Open an uploaded workspace Word file as an editable report. */
+export async function importReportFromDocx(token: string, workspaceItemId: number): Promise<ReportResponse> {
+  return request<ReportResponse>(`/reports/import-from-docx/${workspaceItemId}`, {
+    method: 'POST',
+    token,
+  })
 }
 
 export async function updateReport(

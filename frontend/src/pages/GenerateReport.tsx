@@ -6,6 +6,7 @@ import {
   createReport,
   deleteReport,
   getReport,
+  importReportFromDocx,
   listDataSheetSelections,
   listPortfolioItems,
   listReports,
@@ -15,10 +16,12 @@ import {
   type ScrapedDataItem,
 } from '@/lib/api'
 import { getToken } from '@/lib/auth'
+import { listReportWorkspaceDocx } from '@/lib/workspaceFiles'
 import {
   apiResponseToSavedReport,
   createEmptyBlock,
   normalizeBlock,
+  reportBlockToPayload,
   type ReportBlock,
   type ReportBlockType,
   type SavedReport,
@@ -322,6 +325,13 @@ export function GenerateReportPage() {
     if (!token) return
     setLoading(true)
     try {
+      const docxFiles = await listReportWorkspaceDocx(token)
+      const unlinked = docxFiles.filter((p) => p.report_id == null)
+      if (unlinked.length > 0) {
+        await Promise.all(
+          unlinked.map((p) => importReportFromDocx(token, p.id).catch(() => null))
+        )
+      }
       const data = await listReports(token)
       setReports(data.map(apiResponseToSavedReport))
     } catch {
@@ -418,6 +428,35 @@ export function GenerateReportPage() {
     }
   }, [editFromUrl, token, setSearchParams, openStudioEdit])
 
+  const editDocxFromUrl = searchParams.get('editDocx')
+  useEffect(() => {
+    if (!editDocxFromUrl || !token) return
+    const workspaceId = Number(editDocxFromUrl)
+    if (!Number.isFinite(workspaceId)) return
+    let cancelled = false
+
+    void importReportFromDocx(token, workspaceId)
+      .then((r) => {
+        if (cancelled) return
+        openStudioEdit(apiResponseToSavedReport(r))
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('editDocx')
+            return next
+          },
+          { replace: true }
+        )
+      })
+      .catch(() => {
+        // stay on gallery
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [editDocxFromUrl, token, setSearchParams, openStudioEdit])
+
   const openStudioPreview = useCallback((r: SavedReport) => {
     setEditingId(r.id)
     setReadOnlyPreview(true)
@@ -512,6 +551,23 @@ export function GenerateReportPage() {
     setBlocks((prev) => prev.map((b) => (b.id === id ? normalizeBlock(next) : b)))
   }, [])
 
+  /** Insert a fully-formed block (e.g. prefilled date/signature from the fill toolbar). */
+  const insertBlock = useCallback((nb: ReportBlock) => {
+    setBlocks((prev) => {
+      if (!selectedId) return [...prev, nb]
+      const i = prev.findIndex((b) => b.id === selectedId)
+      if (i < 0) return [...prev, nb]
+      return [...prev.slice(0, i + 1), nb, ...prev.slice(i + 1)]
+    })
+    setSelectedId(nb.id)
+  }, [selectedId])
+
+  /** Replace the whole document (undo/redo from the studio). */
+  const replaceBlocks = useCallback((next: ReportBlock[]) => {
+    setBlocks(next)
+    setSelectedId((cur) => (cur && next.some((b) => b.id === cur) ? cur : null))
+  }, [])
+
   const removeBlock = useCallback((id: string) => {
     setBlocks((prev) => {
       if (prev.length <= 1) return prev
@@ -552,7 +608,7 @@ export function GenerateReportPage() {
     if (!token) return
     const title = docTitle.trim() || 'Untitled report'
     const normalized = blocks.map((b) => normalizeBlock(structuredClone(b)))
-    const blocksPayload = normalized as unknown as Array<Record<string, unknown>>
+    const blocksPayload = normalized.map((b) => reportBlockToPayload(b))
 
     setSaving(true)
     try {
@@ -606,6 +662,8 @@ export function GenerateReportPage() {
           selectedId={selectedId}
           onSelectId={setSelectedId}
           onAddBlock={addBlock}
+          onInsertBlock={insertBlock}
+          onReplaceBlocks={replaceBlocks}
           onUpdateBlock={updateBlock}
           onRemoveBlock={removeBlock}
           onMoveBlock={moveBlock}

@@ -82,6 +82,7 @@ class WorkspaceItemMove(BaseModel):
 
 class WorkspaceItemResponse(WorkspaceItemBase):
     owner_display_name: str | None = None
+    report_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -262,6 +263,8 @@ class ReportResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     workspace_parent_id: int | None = None
+    source_workspace_file_id: int | None = None
+    source_workspace_pdf_id: int | None = None  # legacy
 
 
 # ---------------------------------------------------------------------------

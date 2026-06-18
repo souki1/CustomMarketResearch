@@ -13,6 +13,16 @@ export type WishlistCatalogItem = {
   shipsToday: boolean
   available: boolean
   url?: string
+  imageUrl?: string
+}
+
+/** Only allow plain http(s) image URLs of sane length (no data:/javascript: etc). */
+export function safeImageUrl(raw: string | null | undefined): string | undefined {
+  if (raw == null || typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  if (!t || t.length > 2048) return undefined
+  if (!/^https?:\/\//i.test(t)) return undefined
+  return t
 }
 
 function extractDomain(url: string): string {
@@ -83,9 +93,22 @@ function shipsTodayFromDelivery(delivery: string, availabilityRaw: string | null
   return false
 }
 
-function catalogId(part: string, vendor: string, url: string, researchId: number, index: number): string {
-  const base = `${researchId}::${index}::${part}::${vendor}::${url}`.trim()
-  return base.replace(/\s+/g, '_')
+/**
+ * Stable, content-based id so saved wishlist entries survive re-fetches.
+ * (Index-based ids broke whenever research/portfolio data grew or reordered.)
+ */
+function catalogId(part: string, vendor: string, url: string): string {
+  return `${part}::${vendor}::${url}`.trim().replace(/\s+/g, '_')
+}
+
+/**
+ * Old ids embedded array indexes (`{researchId}::{index}::part::vendor::url` or
+ * `portfolio::{index}::part::vendor::url`). Strip the unstable prefix so lists
+ * saved before the format change keep working.
+ */
+export function migrateWishlistItemId(id: string): string {
+  const m = id.match(/^(?:portfolio::\d+::|\d+::\d+::)(.+)$/)
+  return m ? m[1] : id
 }
 
 function partLabelFromResearch(row: ResearchUrlItem): string {
@@ -106,7 +129,6 @@ function getCompanyBrandFromSourceData(data: Record<string, unknown>, vendor: st
 
 function mapScrapedSource(
   row: ResearchUrlItem,
-  sourceIndex: number,
   url: string,
   data: Record<string, unknown>
 ): WishlistCatalogItem {
@@ -119,10 +141,11 @@ function mapScrapedSource(
   const ratingRaw = pickFirstFieldValue(data, [/rating/i, /score/i, /stars?/i])
   const delivery = pickFirstFieldValue(data, [/delivery/i, /eta/i, /lead.?time/i, /shipping/i]) ?? '—'
   const contact = pickFirstFieldValue(data, [/contact/i, /phone/i, /email/i, /support/i]) ?? '—'
+  const imageRaw = pickFirstFieldValue(data, [/^image(_url)?$/i, /image/i, /^img/i, /photo/i, /picture/i, /thumbnail/i])
   const price = parseMoneyValue(priceRaw)
   const score = parseScoreValue(ratingRaw)
   return {
-    id: catalogId(part, vendor, url, row.id, sourceIndex),
+    id: catalogId(part, vendor, url),
     part,
     vendor,
     companyBrand,
@@ -133,10 +156,11 @@ function mapScrapedSource(
     shipsToday: shipsTodayFromDelivery(delivery, availabilityRaw),
     available: isAvailable(availabilityRaw),
     url,
+    imageUrl: safeImageUrl(imageRaw),
   }
 }
 
-function mapPortfolioItem(item: PortfolioItem, index: number): WishlistCatalogItem | null {
+function mapPortfolioItem(item: PortfolioItem): WishlistCatalogItem | null {
   const part = (item.part_number ?? '').trim()
   const vendor = (item.vendor_name ?? '').trim()
   const url = (item.url ?? '').trim()
@@ -144,7 +168,7 @@ function mapPortfolioItem(item: PortfolioItem, index: number): WishlistCatalogIt
   const price = parseMoneyValue(item.price)
   const resolvedVendor = vendor || (url ? extractDomain(url) : '—')
   return {
-    id: `portfolio::${index}::${part}::${vendor}::${url}`.replace(/\s+/g, '_'),
+    id: catalogId(part || '—', vendor, url),
     part: part || '—',
     vendor: resolvedVendor,
     companyBrand: resolvedVendor,
@@ -155,6 +179,7 @@ function mapPortfolioItem(item: PortfolioItem, index: number): WishlistCatalogIt
     shipsToday: false,
     available: true,
     url: url || undefined,
+    imageUrl: safeImageUrl(item.image_url),
   }
 }
 
@@ -167,7 +192,7 @@ export function buildWishlistCatalogFromResearch(items: ResearchUrlItem[]): Wish
       const data = (source.data ?? {}) as Record<string, unknown>
       const url = (source.url ?? row.urls[index] ?? row.urls[0] ?? '').trim()
       if (!url && Object.keys(data).length === 0) return
-      out.push(mapScrapedSource(row, index, url, data))
+      out.push(mapScrapedSource(row, url, data))
     })
   }
   return out
@@ -181,10 +206,16 @@ export function mergeWishlistCatalogItems(
   for (const item of buildWishlistCatalogFromResearch(researchItems)) {
     byId.set(item.id, item)
   }
-  portfolioItems.forEach((item, index) => {
-    const mapped = mapPortfolioItem(item, index)
+  portfolioItems.forEach((item) => {
+    const mapped = mapPortfolioItem(item)
     if (!mapped) return
-    if (!byId.has(mapped.id)) byId.set(mapped.id, mapped)
+    const existing = byId.get(mapped.id)
+    if (!existing) {
+      byId.set(mapped.id, mapped)
+    } else if (!existing.imageUrl && mapped.imageUrl) {
+      // Research entry wins, but borrow the portfolio image when it has none.
+      byId.set(mapped.id, { ...existing, imageUrl: mapped.imageUrl })
+    }
   })
   return [...byId.values()].sort((a, b) => {
     const partCmp = a.part.localeCompare(b.part)
