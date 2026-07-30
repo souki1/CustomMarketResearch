@@ -224,10 +224,21 @@ export function mergeWishlistCatalogItems(
   })
 }
 
+/** Share one in-flight load so Strict Mode / focus refresh don't stack heavy requests. */
+let catalogInflight: Promise<WishlistCatalogItem[]> | null = null
+
 export async function fetchWishlistCatalogItems(token: string): Promise<WishlistCatalogItem[]> {
-  const [researchItems, portfolioItems] = await Promise.all([
-    listResearchUrls(token).catch(() => [] as ResearchUrlItem[]),
-    listPortfolioItems(token).catch(() => [] as PortfolioItem[]),
-  ])
-  return mergeWishlistCatalogItems(researchItems, portfolioItems)
+  if (catalogInflight) return catalogInflight
+  catalogInflight = (async () => {
+    try {
+      const [researchItems, portfolioItems] = await Promise.all([
+        listResearchUrls(token, { fast: true }).catch(() => [] as ResearchUrlItem[]),
+        listPortfolioItems(token).catch(() => [] as PortfolioItem[]),
+      ])
+      return mergeWishlistCatalogItems(researchItems, portfolioItems)
+    } finally {
+      catalogInflight = null
+    }
+  })()
+  return catalogInflight
 }

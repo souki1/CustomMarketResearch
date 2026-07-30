@@ -377,6 +377,8 @@ export async function listResearchUrls(
     tabId?: string | null
     fileId?: number | null
     tableRowIndex?: number | null
+    /** Skip Groq re-cleaning; use cached cleaned/raw scraped data only (wishlist/catalog). */
+    fast?: boolean
   }
 ): Promise<ResearchUrlItem[]> {
   const params = new URLSearchParams()
@@ -384,6 +386,7 @@ export async function listResearchUrls(
   if (options?.tabId != null) params.set('tab_id', options.tabId)
   if (options?.fileId != null) params.set('file_id', String(options.fileId))
   if (options?.tableRowIndex != null) params.set('table_row_index', String(options.tableRowIndex))
+  if (options?.fast) params.set('fast', 'true')
   const search = params.toString() ? `?${params}` : ''
   return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
 }

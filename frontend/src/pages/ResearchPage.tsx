@@ -33,6 +33,11 @@ import { ResearchRowAiChat } from '@/components/research/ResearchRowAiChat'
 import { ResearchSheetFilterBuilder } from '@/components/research/ResearchSheetFilterBuilder'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
 import {
+  flattenScrapedToColumnUpdates,
+  RESEARCH_AI_SHEET_INSTRUCTIONS,
+  type SheetColumnUpdate,
+} from '@/lib/researchSheetUpdates'
+import {
   defaultFilterBuilderItems,
   evalFilterBuilder,
   filterBuilderIsActive,
@@ -139,7 +144,8 @@ function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label:
 function buildResearchInspectorContext(
   headerRow: string[],
   row: string[] | null,
-  scraped: Array<{ url: string; data: Record<string, unknown> }> | null
+  scraped: Array<{ url: string; data: Record<string, unknown> }> | null,
+  options?: { sourceIndex?: number; sourceOnly?: boolean }
 ): string {
   const sheetRow: Record<string, string> = {}
   if (row) {
@@ -148,15 +154,29 @@ function buildResearchInspectorContext(
       sheetRow[key] = String(row[i] ?? '')
     })
   }
-  const sources = (scraped ?? []).map((s, i) => ({
+  const allSources = (scraped ?? []).map((s, i) => ({
     source_index: i + 1,
     url: s.url,
     data: s.data,
   }))
+  const sources =
+    options?.sourceOnly && options.sourceIndex != null
+      ? allSources.filter((s) => s.source_index === options.sourceIndex! + 1)
+      : allSources
   try {
-    return JSON.stringify({ sheet_row: sheetRow, scraped_sources: sources })
+    return JSON.stringify({
+      sheet_headers: headerRow.map((h, i) => (h || `Column ${i + 1}`).trim()),
+      sheet_row: sheetRow,
+      scraped_sources: sources,
+      assistant_instructions: RESEARCH_AI_SHEET_INSTRUCTIONS,
+    })
   } catch {
-    return JSON.stringify({ sheet_row: sheetRow, scraped_sources: [] })
+    return JSON.stringify({
+      sheet_headers: [],
+      sheet_row: sheetRow,
+      scraped_sources: [],
+      assistant_instructions: RESEARCH_AI_SHEET_INSTRUCTIONS,
+    })
   }
 }
 
@@ -462,7 +482,6 @@ type PersistedResearchState = {
   inspectorMode: 'single' | 'multi'
   inspectorMultiRowIndices: number[]
   inspectorCompareSelection: number[]
-  inspectorDetailTab: 'details' | 'ai'
 }
 
 export function ResearchPage() {
@@ -549,6 +568,9 @@ export function ResearchPage() {
     'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
   )
   const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
+  const [researchProgress, setResearchProgress] = useState(0)
+  const [researchingRowIndices, setResearchingRowIndices] = useState<Set<number>>(new Set())
+  const researchProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [researchVersion, setResearchVersion] = useState(0)
   const [previewScrapedData, setPreviewScrapedData] = useState<
     Array<{ url: string; data: Record<string, unknown> }> | null
@@ -557,7 +579,8 @@ export function ResearchPage() {
   const [inspectorScrapedSourceSelection, setInspectorScrapedSourceSelection] = useState<Set<number>>(new Set())
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
-  const [inspectorDetailTab, setInspectorDetailTab] = useState<'details' | 'ai'>('details')
+  const [inspectorSourceAiOpen, setInspectorSourceAiOpen] = useState<Set<number>>(new Set())
+  const [inspectorRowAiOpen, setInspectorRowAiOpen] = useState(false)
   const [researchRowSummaryByIndex, setResearchRowSummaryByIndex] = useState<
     Map<number, ResearchGridSummaryRow>
   >(() => new Map())
@@ -624,6 +647,89 @@ export function ResearchPage() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
+
+  const clearResearchProgressTicker = useCallback(() => {
+    if (researchProgressIntervalRef.current) {
+      clearInterval(researchProgressIntervalRef.current)
+      researchProgressIntervalRef.current = null
+    }
+  }, [])
+
+  const startResearchProgressTicker = useCallback(() => {
+    clearResearchProgressTicker()
+    researchProgressIntervalRef.current = setInterval(() => {
+      setResearchProgress((p) => (p < 90 ? p + 1 : p))
+    }, 350)
+  }, [clearResearchProgressTicker])
+
+  const runSelectedResearch = useCallback(
+    async (aiQuery?: string) => {
+      if (!content || selectedColumns.size === 0) return
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to research selected')
+        return
+      }
+      const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
+      const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
+      const rowIndices =
+        selectedRows.size > 0
+          ? Array.from(selectedRows).sort((a, b) => a - b)
+          : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
+      const rows = rowIndices.map((rowIdx) => {
+        const row = content[rowIdx + 1] ?? []
+        return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+      })
+
+      setResearchingRowIndices(new Set(rowIndices))
+      setStoreSelectionLoading(true)
+      setResearchProgress(8)
+      startResearchProgressTicker()
+      setResearchFieldsPopupOpen(false)
+
+      try {
+        setResearchProgress(20)
+        const saved = await saveDataSheetSelection(
+          {
+            headers,
+            rows,
+            row_indices: rowIndices,
+            sheet_name: activeTab?.name ?? null,
+            file_id: activeTab?.fileId ?? null,
+            tab_id: effectiveTabId ?? null,
+          },
+          token
+        )
+        setResearchProgress(45)
+        const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery?.trim() || null)
+        setResearchProgress(100)
+        setResearchVersion((v) => v + 1)
+        showToast(
+          `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
+        )
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Failed to save or search')
+      } finally {
+        clearResearchProgressTicker()
+        setStoreSelectionLoading(false)
+        setResearchingRowIndices(new Set())
+        window.setTimeout(() => setResearchProgress(0), 400)
+      }
+    },
+    [
+      activeTab?.fileId,
+      activeTab?.name,
+      clearResearchProgressTicker,
+      content,
+      effectiveTabId,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      startResearchProgressTicker,
+    ]
+  )
+
+  useEffect(() => () => clearResearchProgressTicker(), [clearResearchProgressTicker])
 
   // Persist tabs in localStorage so they survive route changes and reloads
   useEffect(() => {
@@ -728,9 +834,6 @@ export function ResearchPage() {
       if (Array.isArray(data.inspectorCompareSelection)) {
         setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
       }
-      if (data.inspectorDetailTab === 'details' || data.inspectorDetailTab === 'ai') {
-        setInspectorDetailTab(data.inspectorDetailTab)
-      }
     } catch {
       // ignore parse errors
     }
@@ -752,7 +855,6 @@ export function ResearchPage() {
         inspectorMode,
         inspectorMultiRowIndices,
         inspectorCompareSelection: Array.from(inspectorCompareSelection),
-        inspectorDetailTab,
       }
       localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
     } catch {
@@ -771,7 +873,6 @@ export function ResearchPage() {
     inspectorMode,
     inspectorMultiRowIndices,
     inspectorCompareSelection,
-    inspectorDetailTab,
   ])
 
   useEffect(() => {
@@ -809,7 +910,6 @@ export function ResearchPage() {
     setInspectorMode('single')
     setInspectorMultiRowIndices([])
     setInspectorCompareSelection(new Set())
-    setInspectorDetailTab('details')
     setCollapseSidebarForInspector(false)
   }, [effectiveTabId, setCollapseSidebarForInspector])
 
@@ -881,6 +981,11 @@ export function ResearchPage() {
   useEffect(() => {
     setInspectorScrapedSourceSelection(new Set())
   }, [previewScrapedData])
+
+  useEffect(() => {
+    setInspectorSourceAiOpen(new Set())
+    setInspectorRowAiOpen(false)
+  }, [selectedRowIndex])
 
   // Grid row highlights + counts from latest selection (no full scrape payload)
   useEffect(() => {
@@ -1048,6 +1153,69 @@ export function ResearchPage() {
     },
     [setActiveTabData]
   )
+
+  const applySheetColumnUpdates = useCallback(
+    (updates: SheetColumnUpdate[]) => {
+      if (!updates.length || selectedRowIndex == null || !content?.length) {
+        showToast('Select a row before applying sheet updates')
+        return
+      }
+      const validUpdates = updates.filter((u) => u.column.trim())
+      if (!validUpdates.length) return
+
+      userHasEditedRef.current = true
+      saveImmediatelyRef.current = true
+      const dataRowIndex = selectedRowIndex + 1
+      setActiveTabData((prev) => {
+        if (!prev.length) return prev
+        const next = prev.map((row) => [...row])
+        const headerRow = [...(next[0] ?? [])]
+        const row = [...(next[dataRowIndex] ?? [])]
+
+        for (const { column, value } of validUpdates) {
+          const name = column.trim()
+          const norm = name.toLowerCase()
+          let colIdx = headerRow.findIndex((h) => (h || '').trim().toLowerCase() === norm)
+          if (colIdx < 0) {
+            colIdx = headerRow.length
+            headerRow.push(name)
+            for (let r = 1; r < next.length; r++) {
+              while (next[r].length < headerRow.length) next[r].push('')
+            }
+          }
+          while (row.length < headerRow.length) row.push('')
+          row[colIdx] = value
+        }
+
+        next[0] = headerRow
+        next[dataRowIndex] = row
+        return next
+      })
+      showToast(`Updated ${validUpdates.length} column${validUpdates.length === 1 ? '' : 's'} on this row`)
+    },
+    [content, selectedRowIndex, setActiveTabData, showToast]
+  )
+
+  const applyScrapedSourceToSheet = useCallback(
+    (sourceData: Record<string, unknown>) => {
+      const updates = flattenScrapedToColumnUpdates(sourceData)
+      if (!updates.length) {
+        showToast('No fields to add from this source')
+        return
+      }
+      applySheetColumnUpdates(updates)
+    },
+    [applySheetColumnUpdates, showToast]
+  )
+
+  const toggleInspectorSourceAi = useCallback((sourceIndex: number) => {
+    setInspectorSourceAiOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(sourceIndex)) next.delete(sourceIndex)
+      else next.add(sourceIndex)
+      return next
+    })
+  }, [])
 
   // addColumn UI removed with "Other options"
 
@@ -1328,7 +1496,6 @@ export function ResearchPage() {
       setInspectorMode('single')
       setInspectorMultiRowIndices([])
       setInspectorCompareSelection(new Set())
-      setInspectorDetailTab('details')
       setCollapseSidebarForInspector(false)
     },
     [setCollapseSidebarForInspector]
@@ -1951,49 +2118,7 @@ export function ResearchPage() {
               <button
                 type="button"
                 disabled={storeSelectionLoading}
-                onClick={async () => {
-                  if (!content || selectedColumns.size === 0) return
-                  const token = getToken()
-                  if (!token) {
-                    showToast('Sign in to research selected')
-                    return
-                  }
-                  const aiQuery = researchAiQueryInput.trim() || undefined
-                  const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
-                  const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
-                  const rowIndices =
-                    selectedRows.size > 0
-                      ? Array.from(selectedRows).sort((a, b) => a - b)
-                      : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
-                  const rows = rowIndices.map((rowIdx) => {
-                    const row = content[rowIdx + 1] ?? []
-                    return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
-                  })
-                  setStoreSelectionLoading(true)
-                  setResearchFieldsPopupOpen(false)
-                  try {
-                    const saved = await saveDataSheetSelection(
-                      {
-                        headers,
-                        rows,
-                        row_indices: rowIndices,
-                        sheet_name: activeTab?.name ?? null,
-                        file_id: activeTab?.fileId ?? null,
-                        tab_id: effectiveTabId ?? null,
-                      },
-                      token
-                    )
-                    const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery || null)
-                    setResearchVersion((v) => v + 1)
-                    showToast(
-                      `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
-                    )
-                  } catch (e) {
-                    showToast(e instanceof Error ? e.message : 'Failed to save or search')
-                  } finally {
-                    setStoreSelectionLoading(false)
-                  }
-                }}
+                onClick={() => void runSelectedResearch(researchAiQueryInput)}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {storeSelectionLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
@@ -2461,18 +2586,29 @@ export function ResearchPage() {
           }}
           disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
           title={selectedColumns.size === 0 ? 'Select column(s) first' : 'Research selected headers and rows'}
-          className={`${researchToolbarBtnClass(toolbarActive === 'selected', !content || selectedColumns.size === 0 || storeSelectionLoading)} ${
+          className={`relative overflow-hidden ${researchToolbarBtnClass(toolbarActive === 'selected', !content || selectedColumns.size === 0 || storeSelectionLoading)} ${
             toolbarActive === 'selected' ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700' : ''
           }`}
         >
-          {storeSelectionLoading ? (
-            <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
-          ) : (
-            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+          {storeSelectionLoading && (
+            <span
+              className={`absolute inset-y-0 left-0 transition-[width] duration-300 ease-out ${
+                toolbarActive === 'selected' ? 'bg-white/25' : 'bg-blue-500/20'
+              }`}
+              style={{ width: `${researchProgress}%` }}
+              aria-hidden
+            />
           )}
-          {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
+          <span className="relative z-[1] inline-flex items-center gap-1.5">
+            {storeSelectionLoading ? (
+              <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            )}
+            {storeSelectionLoading ? `Researching… ${researchProgress}%` : 'Research Selected'}
+          </span>
         </button>
 
         <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
@@ -2675,7 +2811,7 @@ export function ResearchPage() {
                   const { dataRowIndex, row } = item
                   const isInspectorRow = isInspectorOpen && selectedRowIndex === dataRowIndex
                   const isRowChecked = selectedRows.has(dataRowIndex)
-                  const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
+                  const isRowBeingResearched = researchingRowIndices.has(dataRowIndex)
                   const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
                   const hasStructuredData = rowResearchSummary?.has_structured_data === true
                   const stripe = dataRowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fb]'
@@ -2697,16 +2833,18 @@ export function ResearchPage() {
                         {dataRowIndex + 1}
                       </td>
                       <td className={`w-8 border-r border-slate-200 align-middle ${rd.tdCb}`}>
-                        {isRowBeingResearched ? (
-                          <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
-                        ) : (
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(dataRowIndex)}
-                            onChange={() => toggleRowSelection(dataRowIndex)}
-                            className="rounded border-slate-300"
-                          />
-                        )}
+                        <div className="flex items-center justify-center">
+                          {isRowBeingResearched ? (
+                            <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={selectedRows.has(dataRowIndex)}
+                              onChange={() => toggleRowSelection(dataRowIndex)}
+                              className="rounded border-slate-300"
+                            />
+                          )}
+                        </div>
                       </td>
                       <td
                         className={`w-[80px] shrink-0 cursor-pointer border-r border-slate-200 align-middle transition-colors ${rd.tdResearch} ${
@@ -3028,60 +3166,24 @@ export function ResearchPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setInspectorDetailTab('ai')}
-                  className={`inline-flex items-center justify-center rounded-lg border border-sky-300/80 bg-sky-50 p-2 text-sky-700 shadow-sm hover:border-sky-400 hover:bg-sky-100 hover:text-sky-900 ${
-                    inspectorDetailTab === 'ai' ? 'ring-2 ring-sky-400 ring-offset-1' : ''
+                  onClick={() => setInspectorRowAiOpen((open) => !open)}
+                  className={`inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    inspectorRowAiOpen
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-sky-300 bg-white text-sky-800 hover:bg-sky-50'
                   }`}
-                  title="AI"
-                  aria-label="AI — chat with row context"
+                  title="Chat with AI about this row"
+                  aria-pressed={inspectorRowAiOpen}
                 >
-                  <Bot className="h-5 w-5 shrink-0" strokeWidth={2} />
+                  <Bot className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  AI
                 </button>
               </div>
             )}
           </header>
           <div className="flex flex-1 min-h-0 flex-col p-4">
-            {inspectorMode === 'single' && selectedRowData && (
-              <div className="mb-3 flex shrink-0 gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => setInspectorDetailTab('details')}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    inspectorDetailTab === 'details'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:bg-white/70'
-                  }`}
-                >
-                  Details
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInspectorDetailTab('ai')}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    inspectorDetailTab === 'ai'
-                      ? 'bg-sky-100 text-sky-900 shadow-sm'
-                      : 'text-slate-600 hover:bg-white/70'
-                  }`}
-                >
-                  AI
-                </button>
-              </div>
-            )}
-            <div
-              className={
-                inspectorMode === 'single' && selectedRowData && inspectorDetailTab === 'ai'
-                  ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
-                  : 'min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain'
-              }
-            >
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
-              inspectorMode === 'single' && selectedRowData && inspectorDetailTab === 'ai' ? (
-                <ResearchRowAiChat
-                  tabRowKey={researchAiTabRowKey}
-                  researchContext={researchAiContext}
-                  sessionLabel={researchAiSessionLabel}
-                />
-              ) : (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
                   <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -3187,6 +3289,14 @@ export function ResearchPage() {
                   </div>
                 ) : (
                   <>
+                    {inspectorRowAiOpen && (
+                      <ResearchRowAiChat
+                        tabRowKey={researchAiTabRowKey}
+                        researchContext={researchAiContext}
+                        sessionLabel={researchAiSessionLabel}
+                        onApplySheetUpdates={applySheetColumnUpdates}
+                      />
+                    )}
                     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -3226,10 +3336,22 @@ export function ResearchPage() {
                         </div>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
                         <div className="space-y-4">
-                          {previewScrapedData.map((item, idx) => (
+                          {previewScrapedData.map((item, idx) => {
+                            const sourceAiOpen = inspectorSourceAiOpen.has(idx)
+                            const sourceAiContext = buildResearchInspectorContext(
+                              headers,
+                              selectedRowData,
+                              previewScrapedData,
+                              { sourceIndex: idx, sourceOnly: true }
+                            )
+                            const sourceAiKey = `${researchAiTabRowKey}:source:${idx}`
+                            const sourceAiLabel = `${researchAiSessionLabel} · Source ${idx + 1}`
+                            return (
                             <div key={idx} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                               {item.url && (
-                                <div className="mb-2 flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
+                                <div className="flex min-w-0 flex-1 items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
                                   <input
                                     type="checkbox"
                                     checked={inspectorScrapedSourceSelection.has(idx)}
@@ -3257,6 +3379,42 @@ export function ResearchPage() {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                     </svg>
                                   </a>
+                                </div>
+                              )}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => applyScrapedSourceToSheet(item.data)}
+                                    className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+                                    title="Add scraped fields as sheet columns for this row"
+                                  >
+                                    Add columns
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleInspectorSourceAi(idx)}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                      sourceAiOpen
+                                        ? 'border-sky-400 bg-sky-100 text-sky-900'
+                                        : 'border-sky-200 bg-white text-sky-800 hover:bg-sky-50'
+                                    }`}
+                                    title="Chat with AI about this source"
+                                  >
+                                    <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    {sourceAiOpen ? 'Hide AI' : 'Ask AI'}
+                                  </button>
+                                </div>
+                              </div>
+                              {sourceAiOpen && (
+                                <div className="mb-3">
+                                  <ResearchRowAiChat
+                                    compact
+                                    tabRowKey={sourceAiKey}
+                                    researchContext={sourceAiContext}
+                                    sessionLabel={sourceAiLabel}
+                                    onApplySheetUpdates={applySheetColumnUpdates}
+                                  />
                                 </div>
                               )}
                               <div className="overflow-x-auto">
@@ -3376,7 +3534,8 @@ export function ResearchPage() {
                                 )}
                               </div>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-500">
@@ -3387,7 +3546,6 @@ export function ResearchPage() {
                   </>
                 )}
               </div>
-              )
             ) : (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                 Select a row in the table to preview its details here.

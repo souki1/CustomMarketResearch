@@ -35,7 +35,9 @@ const LISTS_STORAGE_KEY = 'ir-wishlist-board-lists'
 const STATUS_STORAGE_KEY = 'ir-wishlist-board-statuses'
 const CATALOG_CACHE_KEY = 'ir-wishlist-catalog-cache-v1'
 /** How often the catalog re-syncs with research/portfolio data in the background. */
-const CATALOG_REFRESH_MS = 60_000
+const CATALOG_REFRESH_MS = 120_000
+/** Ignore focus-triggered refresh if we fetched this recently. */
+const FOCUS_REFRESH_COOLDOWN_MS = 30_000
 
 function loadCachedCatalog(): WishlistCatalogItem[] {
   try {
@@ -393,8 +395,9 @@ export function WishlistBoard() {
   const bulkListRef = useRef<HTMLInputElement | null>(null)
 
   const catalogFetchSeq = useRef(0)
+  const lastCatalogFetchAt = useRef(0)
 
-  const refreshCatalog = useCallback((opts?: { silent?: boolean }) => {
+  const refreshCatalog = useCallback((opts?: { silent?: boolean; force?: boolean }) => {
     const token = getToken()
     if (!token) {
       setCatalogItems([])
@@ -402,7 +405,15 @@ export function WishlistBoard() {
       setCatalogLoading(false)
       return
     }
+    if (
+      !opts?.force &&
+      opts?.silent &&
+      Date.now() - lastCatalogFetchAt.current < FOCUS_REFRESH_COOLDOWN_MS
+    ) {
+      return
+    }
     const seq = ++catalogFetchSeq.current
+    lastCatalogFetchAt.current = Date.now()
     if (!opts?.silent) setCatalogLoading(true)
     setCatalogError(null)
     void fetchWishlistCatalogItems(token)
@@ -428,7 +439,7 @@ export function WishlistBoard() {
   // When a cached catalog exists, render it immediately and refresh silently
   // (stale-while-revalidate) instead of blocking on a loading screen.
   useEffect(() => {
-    refreshCatalog({ silent: loadCachedCatalog().length > 0 })
+    refreshCatalog({ silent: loadCachedCatalog().length > 0, force: true })
     const onFocus = () => refreshCatalog({ silent: true })
     window.addEventListener('focus', onFocus)
     const interval = window.setInterval(() => refreshCatalog({ silent: true }), CATALOG_REFRESH_MS)
