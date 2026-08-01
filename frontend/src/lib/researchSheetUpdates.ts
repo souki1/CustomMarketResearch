@@ -3,48 +3,6 @@ export type SheetColumnUpdate = {
   value: string
 }
 
-function titleCaseLabel(key: string): string {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function scalarToCellValue(val: unknown): string | null {
-  if (val == null) return null
-  if (typeof val === 'string') {
-    const s = val.trim()
-    return s || null
-  }
-  if (typeof val === 'number' || typeof val === 'boolean') return String(val)
-  if (Array.isArray(val)) {
-    const parts = val
-      .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim() : ''))
-      .filter(Boolean)
-    return parts.length > 0 ? parts.join(' | ') : null
-  }
-  return null
-}
-
-/** Flatten scraped source JSON into sheet column name + value pairs. */
-export function flattenScrapedToColumnUpdates(
-  data: Record<string, unknown>,
-  prefix = ''
-): SheetColumnUpdate[] {
-  const out: SheetColumnUpdate[] = []
-  for (const [rawKey, val] of Object.entries(data)) {
-    const label = prefix ? `${prefix} ${titleCaseLabel(rawKey)}` : titleCaseLabel(rawKey)
-    if (val != null && typeof val === 'object' && !Array.isArray(val)) {
-      out.push(...flattenScrapedToColumnUpdates(val as Record<string, unknown>, label))
-      continue
-    }
-    const cell = scalarToCellValue(val)
-    if (cell != null) out.push({ column: label, value: cell })
-  }
-  return out
-}
-
 const SHEET_UPDATES_FENCE = /```sheet_updates\s*([\s\S]*?)```/i
 
 /** Parse optional sheet update JSON from an assistant reply. */

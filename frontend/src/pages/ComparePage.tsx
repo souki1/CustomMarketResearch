@@ -891,9 +891,11 @@ export function ComparePage() {
     compareMode === 'different-same-vendor' &&
     structuredPartSelectValue === 'all' &&
     effectiveVendorFilteredParts.length > 1
-  const currentComparedPartLabel = showingAllStructuredParts
-    ? `All selected parts (${effectiveVendorFilteredParts.length})`
-    : (selectedRowForScraped?.partLabel ?? effectiveVendorFilteredParts[0]?.title ?? 'Selected part')
+  const currentComparedPartLabel = selectedRowForScraped?.partLabel
+    ? selectedRowForScraped.partLabel
+    : showingAllStructuredParts
+      ? `All selected parts (${effectiveVendorFilteredParts.length})`
+      : (effectiveVendorFilteredParts[0]?.title ?? 'Selected part')
 
   const handleStructuredPartViewChange = useCallback((id: string) => {
     if (compareMode === 'different-same-vendor' && id === 'all') {
@@ -927,7 +929,7 @@ export function ComparePage() {
     }
     if (structuredPartView === 'all') return
     const exists = effectiveVendorFilteredParts.some((item) => item.id === structuredPartView)
-    if (!exists) setStructuredPartView('all')
+    if (!exists) setStructuredPartView(selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? 'all')
   }, [compareMode, effectiveVendorFilteredParts, selectedPartItemId, structuredPartView])
 
   /** Domains that count as "common": on ≥2 parts when comparing multiple parts; all domains when only one part. */
@@ -1217,12 +1219,16 @@ export function ComparePage() {
     const effectiveFilter = scrapedVendorFilter === 'all' ? null : scrapedVendorFilter
 
     if (compareMode === 'different-same-vendor') {
-      const commonSet = new Set(commonVendorDomains)
-      const sourceParts = showingAllStructuredParts
-        ? effectiveVendorFilteredParts
-        : effectiveVendorFilteredParts.filter((item) => item.id === structuredPartSelectValue)
+      // Decision workspace / multi-part tabs: show ALL vendors for the active part.
+      // Fall back to structured part view (including "all") when no active part is set.
+      const activeId = selectedPartItemId
+      const sourceParts = activeId
+        ? effectiveVendorFilteredParts.filter((item) => item.id === activeId)
+        : showingAllStructuredParts
+          ? effectiveVendorFilteredParts
+          : effectiveVendorFilteredParts.filter((item) => item.id === structuredPartSelectValue)
 
-      const rows = sourceParts.flatMap((part) =>
+      let baseRows = sourceParts.flatMap((part) =>
         (scrapedDataByPart[part.id] ?? []).map((item, idx) => ({
           ...item,
           sourceKey: `${part.id}::${item.url}::${idx}`,
@@ -1231,7 +1237,22 @@ export function ComparePage() {
         }))
       )
 
-      const baseRows = rows.filter((row) => commonSet.has(extractDomain(row.url)))
+      // While per-part scrape map is still loading, fall back to the single-part scrape cache.
+      if (
+        baseRows.length === 0 &&
+        activeId &&
+        scrapedData?.length &&
+        selectedPartItemId === activeId
+      ) {
+        const partLabel = (selectedRowForScraped?.partLabel || 'Selected part').trim() || 'Selected part'
+        baseRows = scrapedData.map((item, idx) => ({
+          ...item,
+          sourceKey: `single::${item.url}::${idx}`,
+          partId: activeId,
+          partLabel,
+        }))
+      }
+
       return effectiveFilter
         ? baseRows.filter((row) => extractDomain(row.url) === effectiveFilter)
         : baseRows
@@ -1251,7 +1272,6 @@ export function ComparePage() {
   }, [
     scrapedVendorFilter,
     compareMode,
-    commonVendorDomains,
     showingAllStructuredParts,
     effectiveVendorFilteredParts,
     structuredPartSelectValue,
@@ -1553,13 +1573,17 @@ export function ComparePage() {
       }
       const isSelected = fileBackedItems.some((i) => i.id === id)
       if (isSelected) {
+        // Already in the multi-part list: activate to show its vendors.
+        // Click the active chip again to remove it from the selection.
+        if (selectedPartItemId !== id || structuredPartView !== id) {
+          handleStructuredPartViewChange(id)
+          return
+        }
         toggleFileRow(parsed.fileId, parsed.rowIdx, false)
-        if (selectedPartItemId === id) {
-          const next = fileBackedItems.find((i) => i.id !== id)
-          if (next) handleStructuredPartViewChange(next.id)
-          else {
-            updateActiveTabData((d) => ({ ...d, selectedRowForScraped: null }))
-          }
+        const next = fileBackedItems.find((i) => i.id !== id)
+        if (next) handleStructuredPartViewChange(next.id)
+        else {
+          updateActiveTabData((d) => ({ ...d, selectedRowForScraped: null }))
         }
       } else {
         toggleFileRow(parsed.fileId, parsed.rowIdx, true)
@@ -1567,10 +1591,10 @@ export function ComparePage() {
       }
     },
     [
-      comparePartChips,
       fileBackedItems,
       toggleFileRow,
       selectedPartItemId,
+      structuredPartView,
       handleStructuredPartViewChange,
       updateActiveTabData,
     ]

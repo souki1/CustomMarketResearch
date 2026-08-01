@@ -15,6 +15,8 @@ from mongo import get_mongo_db, get_next_sequence
 from schemas import (
     DataSheetSelectionCreate,
     DataSheetSelectionResponse,
+    ResearchMoreSourceBody,
+    ResearchMoreSourceResponse,
     ResearchSearchBody,
     ResearchSearchResponse,
 )
@@ -288,7 +290,7 @@ async def _get_or_create_cleaned_data(
         url = s.get("url", "")
         raw_data = s.get("data") or {}
         if not isinstance(raw_data, dict):
-            return {"url": url, "data": raw_data}
+            return {"id": scraped_id, "url": url, "data": raw_data}
 
         # Check if we have stored cleaned data
         if scraped_id is not None:
@@ -296,7 +298,7 @@ async def _get_or_create_cleaned_data(
                 {"research_scraped_id": scraped_id, "owner_id": owner_id}
             )
             if existing and isinstance(existing.get("data"), dict):
-                return {"url": url, "data": existing["data"]}
+                return {"id": scraped_id, "url": url, "data": existing["data"]}
 
         # Clean with Groq (or use raw if no key)
         cleaned = None
@@ -317,7 +319,7 @@ async def _get_or_create_cleaned_data(
                 "created_at": datetime.utcnow(),
             })
 
-        return {"url": url, "data": data_to_use}
+        return {"id": scraped_id, "url": url, "data": data_to_use}
 
     return await asyncio.gather(*[process_one(s) for s in scraped_docs])
 
@@ -349,17 +351,51 @@ def _scraped_payloads_fast(
     scraped_docs: list[dict],
     cleaned_by_id: dict,
 ) -> list[dict]:
-    """Map scraped docs to {url, data} using cached cleaned data, else raw. No LLM."""
+    """Map scraped docs to {id, url, data} using cached cleaned data, else raw. No LLM."""
     result: list[dict] = []
     for s in scraped_docs:
         scraped_id = s.get("id")
         url = s.get("url", "")
         raw_data = s.get("data") or {}
         if scraped_id is not None and scraped_id in cleaned_by_id:
-            result.append({"url": url, "data": cleaned_by_id[scraped_id]})
+            result.append({"id": scraped_id, "url": url, "data": cleaned_by_id[scraped_id]})
         else:
-            result.append({"url": url, "data": raw_data})
+            result.append({"id": scraped_id, "url": url, "data": raw_data})
     return result
+
+
+def _merge_scraped_field_dicts(existing: dict, incoming: dict) -> tuple[dict, list[str], list[str]]:
+    """
+    Merge extraction results into existing structured data.
+    - Updates existing keys when the new value is non-empty
+    - Adds new keys as new columns
+    Returns (merged, updated_fields, new_fields).
+    """
+    merged: dict = dict(existing) if isinstance(existing, dict) else {}
+    updated: list[str] = []
+    added: list[str] = []
+    if not isinstance(incoming, dict):
+        return merged, updated, added
+
+    for raw_key, value in incoming.items():
+        key = str(raw_key).strip()
+        if not key:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+
+        if key in merged:
+            if merged.get(key) != value:
+                merged[key] = value
+                updated.append(key)
+        else:
+            merged[key] = value
+            added.append(key)
+    return merged, updated, added
 
 
 async def _attach_scraped_for_docs(
@@ -451,6 +487,128 @@ def _table_row_index_as_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+@router.post(
+    "/research-urls/{research_url_id}/sources/research-more",
+    response_model=ResearchMoreSourceResponse,
+)
+async def research_more_existing_source(
+    research_url_id: int,
+    body: ResearchMoreSourceBody,
+    user: Annotated[User, Depends(get_current_user)] = ...,
+    mongo_db: Annotated[AsyncIOMotorDatabase, Depends(get_mongo_db)] = ...,
+):
+    """
+    Re-scrape a single already-stored source URL with a custom prompt.
+    Merges returned fields into that source only (updates existing keys, adds new columns).
+    Does not search for new URLs or touch other sources on the row.
+    """
+    if mongo_db is None:
+        raise HTTPException(status_code=500, detail="MongoDB is not configured")
+
+    ai_query = (body.ai_query or "").strip()
+    if not ai_query:
+        raise HTTPException(status_code=400, detail="ai_query is required")
+    if len(ai_query) > 4000:
+        raise HTTPException(status_code=400, detail="ai_query is too long (max 4000 characters)")
+
+    research_doc = await mongo_db["research_urls"].find_one(
+        {"id": research_url_id, "owner_id": user.id}
+    )
+    if not research_doc:
+        raise HTTPException(status_code=404, detail="Research URL record not found")
+
+    scraped_doc = await mongo_db["research_scraped_data"].find_one(
+        {
+            "id": body.scraped_id,
+            "owner_id": user.id,
+            "research_url_id": research_url_id,
+        }
+    )
+    if not scraped_doc:
+        raise HTTPException(status_code=404, detail="Scraped source not found for this research row")
+
+    source_url = str(scraped_doc.get("url") or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="Selected source has no URL to re-scrape")
+    if not (source_url.startswith("http://") or source_url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Selected source URL is not http(s)")
+
+    settings = get_settings()
+    if not settings.firecrawl_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="FIRECRAWL_API_KEY is not configured. Add it to .env.development",
+        )
+
+    try:
+        extracted = await scrape_url_with_ai_extraction(
+            settings.firecrawl_api_key,
+            source_url,
+            ai_query,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Scrape failed: {e!s}") from e
+
+    if not extracted or not isinstance(extracted, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="No structured data returned for this source. Try a more specific prompt.",
+        )
+
+    existing_raw = scraped_doc.get("data") if isinstance(scraped_doc.get("data"), dict) else {}
+    # Prefer merging onto cleaned view if present so UI fields stay consistent.
+    cleaned_existing = await mongo_db["research_cleaned_data"].find_one(
+        {"research_scraped_id": body.scraped_id, "owner_id": user.id}
+    )
+    base_data = (
+        cleaned_existing.get("data")
+        if cleaned_existing and isinstance(cleaned_existing.get("data"), dict)
+        else existing_raw
+    )
+    merged, updated_fields, new_fields = _merge_scraped_field_dicts(base_data, extracted)
+
+    now = datetime.utcnow()
+    await mongo_db["research_scraped_data"].update_one(
+        {"id": body.scraped_id, "owner_id": user.id},
+        {"$set": {"data": merged, "updated_at": now}},
+    )
+
+    # Refresh cleaned cache so list endpoints return the merged payload.
+    await mongo_db["research_cleaned_data"].delete_many(
+        {"research_scraped_id": body.scraped_id, "owner_id": user.id}
+    )
+    data_to_store = merged
+    if settings.groq_api_key:
+        cleaned = await clean_structured_data(
+            settings.groq_api_key, merged, model=settings.groq_model
+        )
+        if cleaned and isinstance(cleaned, dict):
+            # Keep newly extracted values even if the cleaner drops/renames some keys.
+            data_to_store, _, _ = _merge_scraped_field_dicts(cleaned, extracted)
+
+    clean_id = await get_next_sequence(mongo_db, "research_cleaned_data")
+    await mongo_db["research_cleaned_data"].insert_one(
+        {
+            "id": clean_id,
+            "owner_id": user.id,
+            "research_scraped_id": body.scraped_id,
+            "research_url_id": research_url_id,
+            "url": source_url,
+            "data": data_to_store,
+            "created_at": now,
+        }
+    )
+
+    return ResearchMoreSourceResponse(
+        research_url_id=research_url_id,
+        scraped_id=body.scraped_id,
+        url=source_url,
+        data=data_to_store,
+        updated_fields=updated_fields,
+        new_fields=new_fields,
+    )
 
 
 @router.get("/research-urls/grid-summary")

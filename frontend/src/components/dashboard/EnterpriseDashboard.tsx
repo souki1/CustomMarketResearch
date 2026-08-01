@@ -145,40 +145,51 @@ export function EnterpriseDashboard({
     {
       label: 'Parts Researched',
       value: loading ? '—' : `${partsResearched}/${totalParts}`,
-      sub: loading ? '' : `${coveragePct}% coverage`,
-      trend: '+12%',
-      trendUp: true,
+      sub: loading
+        ? ''
+        : unresearchedParts > 0
+          ? `${unresearchedParts} still pending`
+          : totalParts > 0
+            ? 'All parts researched'
+            : 'No parts yet',
+      trend: partsResearched > 0 ? `${coveragePct}% coverage` : '—',
+      trendUp: partsResearched > 0,
       color: 'text-blue-600',
     },
     {
       label: 'Active Vendors',
       value: loading ? '—' : String(vendorCount),
       sub: 'across all parts',
-      trend: vendorCount > 0 ? `+${Math.min(3, vendorCount)} this week` : '—',
-      trendUp: true,
+      trend: vendorCount > 0 ? `${vendorCount} vendor${vendorCount !== 1 ? 's' : ''}` : '—',
+      trendUp: vendorCount > 0,
       color: 'text-violet-600',
     },
     {
       label: 'Bucket Value',
       value: loading ? '—' : formatUsd(bucketTotal),
       sub: loading ? '' : `${bucketItemCount} line items`,
-      trend: bucketTotal > 0 ? `+${formatUsd(Math.min(bucketTotal * 0.1, 142))}` : '—',
-      trendUp: true,
+      trend: bucketTotal > 0 ? `${bucketItemCount} items` : '—',
+      trendUp: bucketTotal > 0,
       color: 'text-emerald-600',
     },
     {
       label: 'Savings Identified',
       value: loading ? '—' : formatUsd(savingsTotal),
       sub: 'vs avg market price',
-      trend: savingsTotal > 0 ? `${formatUsd(savingsTotal / 10, 2)} top opp` : '—',
-      trendUp: true,
+      trend: savingsTotal > 0 ? 'Opportunity found' : '—',
+      trendUp: savingsTotal > 0,
       color: 'text-amber-600',
     },
     {
       label: 'Files Uploaded',
       value: loading ? '—' : String(fileCount),
       sub: fileRowsHint,
-      trend: unresearchedParts > 0 ? '1 pending research' : 'All caught up',
+      trend:
+        fileCount === 0
+          ? '—'
+          : unresearchedParts > 0
+            ? `${unresearchedParts} pending research`
+            : 'All caught up',
       trendUp: false,
       color: 'text-slate-600',
     },

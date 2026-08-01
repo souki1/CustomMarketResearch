@@ -352,7 +352,11 @@ export type ResearchUrlResult = {
   position?: number
 }
 
-export type ScrapedDataItem = { url: string; data: Record<string, unknown> }
+export type ScrapedDataItem = {
+  id?: number | null
+  url: string
+  data: Record<string, unknown>
+}
 
 export type ResearchUrlItem = {
   id: number
@@ -389,6 +393,34 @@ export async function listResearchUrls(
   if (options?.fast) params.set('fast', 'true')
   const search = params.toString() ? `?${params}` : ''
   return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
+}
+
+export type ResearchMoreSourceResult = {
+  research_url_id: number
+  scraped_id: number
+  url: string
+  data: Record<string, unknown>
+  updated_fields: string[]
+  new_fields: string[]
+}
+
+/** Re-scrape one existing source URL with a prompt; merges updated/new fields into that source only. */
+export async function researchMoreSource(
+  token: string,
+  researchUrlId: number,
+  payload: { scrapedId: number; aiQuery: string }
+): Promise<ResearchMoreSourceResult> {
+  return request<ResearchMoreSourceResult>(
+    `/datasheet/research-urls/${researchUrlId}/sources/research-more`,
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify({
+        scraped_id: payload.scrapedId,
+        ai_query: payload.aiQuery,
+      }),
+    }
+  )
 }
 
 export type ResearchGridSummaryRow = {

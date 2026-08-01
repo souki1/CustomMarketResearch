@@ -15,8 +15,14 @@ import type {
 } from '@/components/dashboard/EnterpriseDashboard'
 import { useBucket } from '@/contexts/BucketContext'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { getPortfolioSummary, listPortfolioItems, listWorkspaceItems } from '@/lib/api'
-import type { PortfolioItem } from '@/lib/api'
+import {
+  getPortfolioSummary,
+  listDataSheetSelections,
+  listPortfolioItems,
+  listResearchGridSummary,
+  listWorkspaceItems,
+} from '@/lib/api'
+import type { DataSheetSelection, PortfolioItem, ResearchGridSummaryRow } from '@/lib/api'
 
 function parsePrice(s: string | null | undefined): number | null {
   if (s == null || !String(s).trim()) return null
@@ -44,26 +50,92 @@ function buildTrend(endValue: number, steps = 7): number[] {
   return out
 }
 
-const DEMO_CATEGORY_ROWS: DashboardCategoryRow[] = [
-  { label: 'Multi-vendor parts', total: 24, found: 18 },
-  { label: 'Single vendor', total: 31, found: 12 },
-  { label: 'With pricing', total: 55, found: 42 },
-  { label: 'Needs research', total: 56, found: 8 },
-]
+/** Group portfolio offers by part number (vendors for the same PN stay one part). */
+function portfolioPartKey(item: PortfolioItem): string {
+  const pn = (item.part_number ?? '').trim().toUpperCase()
+  if (pn) return `pn:${pn}`
+  if (item.row_index != null) return `row:${item.row_index}`
+  return `url:${(item.url ?? '').trim() || 'unknown'}`
+}
 
-const DEMO_TOP_VENDORS: DashboardTopVendor[] = [
-  { name: "Messick's", score: 94, parts: 67, spend: 459.8, trend: 'up' },
-  { name: 'Super Parts Factory', score: 76, parts: 44, spend: 174.95, trend: 'up' },
-  { name: 'Bahrns.com', score: 58, parts: 38, spend: 47.98, trend: 'down' },
-  { name: 'Bingham Equipment', score: 68, parts: 29, spend: 88.5, trend: 'flat' },
-]
+function hasVendorOffer(item: PortfolioItem): boolean {
+  const price = parsePrice(item.price)
+  if (price != null && price > 0) return true
+  return Boolean(item.vendor_name?.trim())
+}
+
+function isResearchedGridRow(row: ResearchGridSummaryRow): boolean {
+  return row.has_structured_data || row.structured_sources_count > 0
+}
+
+/** Latest selection per file/tab; sum row counts so total parts = sheet rows, not vendor offers. */
+function countPartsFromSelections(selections: DataSheetSelection[]): number {
+  if (selections.length === 0) return 0
+  const bySheet = new Map<string, DataSheetSelection>()
+  for (const s of selections) {
+    const key =
+      s.file_id != null ? `file:${s.file_id}` : s.tab_id ? `tab:${s.tab_id}` : `sel:${s.id}`
+    const prev = bySheet.get(key)
+    if (!prev || new Date(s.created_at).getTime() > new Date(prev.created_at).getTime()) {
+      bySheet.set(key, s)
+    }
+  }
+  let total = 0
+  for (const s of bySheet.values()) {
+    total += s.rows?.length ?? 0
+  }
+  return total
+}
+
+/**
+ * Same signal as ResearchFoundBadge: unique sheet rows (table_row_index) with structured scrape data.
+ * Avoids collapsing separate parts that share selection-local row_index 0 across runs.
+ */
+async function loadResearchRowCoverage(
+  token: string,
+  fileIds: number[],
+  tabIds: string[]
+): Promise<{ researched: number; tracked: number }> {
+  const jobs: Promise<ResearchGridSummaryRow[]>[] = [
+    ...fileIds.map((fileId) =>
+      listResearchGridSummary(token, { fileId }).catch(() => [] as ResearchGridSummaryRow[])
+    ),
+    ...tabIds.map((tabId) =>
+      listResearchGridSummary(token, { tabId }).catch(() => [] as ResearchGridSummaryRow[])
+    ),
+  ]
+  if (jobs.length === 0) return { researched: 0, tracked: 0 }
+
+  const summaries = await Promise.all(jobs)
+  // Dedupe by sheet scope + table row so the same row isn't counted twice.
+  const seen = new Set<string>()
+  let researched = 0
+  let tracked = 0
+  const scopes = [
+    ...fileIds.map((id) => `file:${id}`),
+    ...tabIds.map((id) => `tab:${id}`),
+  ]
+  summaries.forEach((rows, i) => {
+    const scope = scopes[i] ?? `scope:${i}`
+    for (const row of rows) {
+      const key = `${scope}:${row.table_row_index}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      tracked += 1
+      if (isResearchedGridRow(row)) researched += 1
+    }
+  })
+  return { researched, tracked }
+}
 
 export function DashboardPage() {
   const { items: bucketItems } = useBucket()
   const [userName, setUserName] = useState(() => getCurrentUserName())
   const [loading, setLoading] = useState(true)
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([])
-  const [uniqueParts, setUniqueParts] = useState(0)
+  const [selectionPartCount, setSelectionPartCount] = useState(0)
+  const [researchedPartsCount, setResearchedPartsCount] = useState(0)
+  const [trackedResearchRows, setTrackedResearchRows] = useState(0)
   const [offerCount, setOfferCount] = useState(0)
   const [fileCount, setFileCount] = useState(0)
 
@@ -76,9 +148,11 @@ export function DashboardPage() {
     const token = getToken()
     if (!token) {
       setPortfolioItems([])
-      setUniqueParts(67)
-      setOfferCount(142)
-      setFileCount(5)
+      setSelectionPartCount(0)
+      setResearchedPartsCount(0)
+      setTrackedResearchRows(0)
+      setOfferCount(0)
+      setFileCount(0)
       setLoading(false)
       return
     }
@@ -90,18 +164,38 @@ export function DashboardPage() {
       listPortfolioItems(token),
       getPortfolioSummary(token),
       listWorkspaceItems(null, token),
+      listDataSheetSelections(token).catch(() => [] as DataSheetSelection[]),
     ])
-      .then(([items, summary, workspace]) => {
+      .then(async ([items, summary, workspace, selections]) => {
+        if (cancelled) return
+        const files = workspace.filter((w) => !w.is_folder)
+        const fileIds = files.map((f) => f.id)
+        const tabIds = [
+          ...new Set(
+            selections
+              .map((s) => s.tab_id)
+              .filter((id): id is string => Boolean(id && String(id).trim()))
+          ),
+        ]
+        // Also include file_ids from selections in case workspace root listing missed nested files.
+        for (const s of selections) {
+          if (s.file_id != null && !fileIds.includes(s.file_id)) fileIds.push(s.file_id)
+        }
+        const coverage = await loadResearchRowCoverage(token, fileIds, tabIds)
         if (cancelled) return
         setPortfolioItems(items)
-        setUniqueParts(summary.unique_parts)
+        setSelectionPartCount(countPartsFromSelections(selections))
+        setResearchedPartsCount(coverage.researched)
+        setTrackedResearchRows(coverage.tracked)
         setOfferCount(summary.offer_count)
-        setFileCount(workspace.filter((w) => !w.is_folder).length)
+        setFileCount(files.length)
       })
       .catch(() => {
         if (!cancelled) {
           setPortfolioItems([])
-          setUniqueParts(0)
+          setSelectionPartCount(0)
+          setResearchedPartsCount(0)
+          setTrackedResearchRows(0)
           setOfferCount(0)
           setFileCount(0)
         }
@@ -128,18 +222,14 @@ export function DashboardPage() {
   const partsWithOffers = useMemo(() => {
     const byPart = new Map<string, PortfolioItem[]>()
     for (const item of portfolioItems) {
-      const key = (item.part_number ?? '').trim() || `row-${item.row_index ?? 'unknown'}`
+      const key = portfolioPartKey(item)
       const list = byPart.get(key) ?? []
       list.push(item)
       byPart.set(key, list)
     }
     let count = 0
     for (const entries of byPart.values()) {
-      const hasPrice = entries.some((e) => {
-        const n = parsePrice(e.price)
-        return n != null && n > 0
-      })
-      if (hasPrice) count++
+      if (entries.some(hasVendorOffer)) count++
     }
     return count
   }, [portfolioItems])
@@ -156,7 +246,7 @@ export function DashboardPage() {
   const savingsTotal = useMemo(() => {
     const byPart = new Map<string, PortfolioItem[]>()
     for (const item of portfolioItems) {
-      const key = (item.part_number ?? '').trim() || `row-${item.row_index ?? 'unknown'}`
+      const key = portfolioPartKey(item)
       const list = byPart.get(key) ?? []
       list.push(item)
       byPart.set(key, list)
@@ -171,29 +261,26 @@ export function DashboardPage() {
       const avg = prices.reduce((s, p) => s + p, 0) / prices.length
       total += Math.max(0, avg - best)
     }
-    return total > 0 ? total : loading ? 0 : 642
-  }, [portfolioItems, loading])
+    return total
+  }, [portfolioItems])
 
-  const totalParts = useMemo(() => {
-    if (uniqueParts > 0) return uniqueParts
-    return loading ? 0 : 111
-  }, [uniqueParts, loading])
-
-  const partsResearched = useMemo(() => {
-    if (partsWithOffers > 0) return partsWithOffers
-    return loading ? 0 : 67
-  }, [partsWithOffers, loading])
-
+  // Prefer research-grid row counts (matches Research "N found" badges), then selection size.
+  const partsResearched = Math.max(researchedPartsCount, 0)
+  const totalParts = Math.max(
+    selectionPartCount,
+    trackedResearchRows,
+    partsResearched,
+    // Fallback if grid/selection empty but portfolio still has priced unique parts
+    partsResearched === 0 ? partsWithOffers : 0
+  )
   const unresearchedParts = Math.max(0, totalParts - partsResearched)
 
   const topVendors = useMemo((): DashboardTopVendor[] => {
-    if (portfolioItems.length === 0 && !loading) {
-      return getToken() ? [] : DEMO_TOP_VENDORS
-    }
+    if (portfolioItems.length === 0) return []
     const byVendor = new Map<string, { parts: Set<string>; spend: number; offers: number }>()
     for (const item of portfolioItems) {
       const name = item.vendor_name?.trim() || 'Unknown vendor'
-      const partKey = (item.part_number ?? '').trim() || `row-${item.row_index ?? 'x'}`
+      const partKey = portfolioPartKey(item)
       const price = parsePrice(item.price) ?? 0
       const cur = byVendor.get(name) ?? { parts: new Set(), spend: 0, offers: 0 }
       cur.parts.add(partKey)
@@ -214,45 +301,33 @@ export function DashboardPage() {
       }))
       .sort((a, b) => b.parts - a.parts || b.score - a.score)
       .slice(0, 4)
-  }, [portfolioItems, loading])
+  }, [portfolioItems])
 
   const categoryRows = useMemo((): DashboardCategoryRow[] => {
-    if (portfolioItems.length === 0 && !loading) {
-      return getToken() ? [] : DEMO_CATEGORY_ROWS
-    }
+    if (portfolioItems.length === 0) return []
     const byPart = new Map<string, PortfolioItem[]>()
     for (const item of portfolioItems) {
-      const key = (item.part_number ?? '').trim() || `row-${item.row_index ?? 'unknown'}`
+      const key = portfolioPartKey(item)
       const list = byPart.get(key) ?? []
       list.push(item)
       byPart.set(key, list)
     }
     const groups = [...byPart.values()]
-    const multi = groups.filter((g) => g.length >= 2).length
-    const single = groups.filter((g) => g.length === 1).length
-    const withPricing = groups.filter((g) =>
-      g.some((e) => {
-        const n = parsePrice(e.price)
-        return n != null && n > 0
-      })
-    ).length
-    const total = Math.max(groups.length, 1)
+    const multi = groups.filter((g) => g.filter((e) => e.vendor_name?.trim()).length >= 2).length
+    const single = groups.filter((g) => g.filter((e) => e.vendor_name?.trim()).length === 1).length
+    const withPricing = groups.filter((g) => g.some(hasVendorOffer)).length
+    const total = groups.length
     return [
       { label: 'Multi-vendor parts', total, found: multi },
       { label: 'Single vendor', total, found: single },
       { label: 'With pricing', total, found: withPricing },
       { label: 'Needs more offers', total, found: Math.max(0, total - withPricing) },
     ]
-  }, [portfolioItems, loading])
+  }, [portfolioItems])
 
   const coveragePct = totalParts > 0 ? Math.round((partsResearched / totalParts) * 100) : 0
-  const spendTrend = buildTrend(Math.max(bucketTotal, spendLatestFallback(bucketTotal)))
+  const spendTrend = buildTrend(bucketTotal)
   const researchTrend = buildTrend(coveragePct)
-
-  function spendLatestFallback(bucket: number): number {
-    if (bucket > 0) return bucket
-    return loading ? 0 : 2100
-  }
 
   const dateLabel = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -327,7 +402,11 @@ export function DashboardPage() {
   ])
 
   const fileRowsHint =
-    offerCount > 0 ? `${offerCount} offers tracked` : fileCount > 0 ? `${fileCount} files` : '340 total rows'
+    offerCount > 0
+      ? `${offerCount} offers tracked`
+      : fileCount > 0
+        ? `${fileCount} file${fileCount !== 1 ? 's' : ''}`
+        : 'No files yet'
 
   return (
     <div className="min-h-full overflow-y-auto bg-slate-50 p-5">
@@ -337,11 +416,11 @@ export function DashboardPage() {
         dateLabel={dateLabel}
         partsResearched={partsResearched}
         totalParts={totalParts}
-        vendorCount={vendorCount || (loading ? 0 : 67)}
+        vendorCount={vendorCount}
         bucketTotal={bucketTotal}
         bucketItemCount={bucketItems.length}
         savingsTotal={savingsTotal}
-        fileCount={fileCount || (loading ? 0 : 5)}
+        fileCount={fileCount}
         fileRowsHint={fileRowsHint}
         unresearchedParts={unresearchedParts}
         spendTrend={spendTrend}

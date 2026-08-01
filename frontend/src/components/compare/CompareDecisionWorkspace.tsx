@@ -536,8 +536,8 @@ export function CompareDecisionWorkspace({
       <div className="flex flex-col gap-3 pt-4">
       {/* Part tabs + actions */}
       <div className="flex flex-wrap items-center gap-2">
-        {activeChips.length > 1 && (
-          <div className="inline-flex gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+        {activeChips.length > 0 && (
+          <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
             {activeChips.map((p) => (
               <button
                 key={p.id}
@@ -552,7 +552,7 @@ export function CompareDecisionWorkspace({
             ))}
           </div>
         )}
-        {activeChips.length > 1 && <span className="text-slate-300">·</span>}
+        {activeChips.length > 0 && <span className="text-slate-300">·</span>}
         <span className="text-sm text-slate-500">{partLabel}</span>
         {partCategory && <Tag>{partCategory}</Tag>}
         <div className="flex-1" />

@@ -132,6 +132,22 @@ class ResearchSearchBody(BaseModel):
     ai_query: str | None = None
 
 
+class ResearchMoreSourceBody(BaseModel):
+    """Re-scrape one existing source URL with a custom extraction prompt."""
+
+    scraped_id: int
+    ai_query: str
+
+
+class ResearchMoreSourceResponse(BaseModel):
+    research_url_id: int
+    scraped_id: int
+    url: str
+    data: dict
+    updated_fields: list[str] = []
+    new_fields: list[str] = []
+
+
 class PortfolioItemResponse(BaseModel):
     part_number: str | None = None
     vendor_name: str | None = None
