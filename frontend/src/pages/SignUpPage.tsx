@@ -63,10 +63,10 @@ export function SignUpPage() {
     setLoading(true)
     try {
       const res = await signUp({ email: email.trim(), password })
-      setToken(res.access_token)
-      setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
       setCurrentUserEmail(email.trim())
+      setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
       setCurrentUserPhotoUrl(null)
+      setToken(res.access_token)
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed')

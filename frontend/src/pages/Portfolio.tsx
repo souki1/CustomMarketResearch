@@ -1085,7 +1085,9 @@ export function PortfolioPage() {
     openComparison(items)
     markCompareNavFromPortfolio()
     showToast("Opened comparison")
-    navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
+    navigate(RESEARCH_COMPARE_PATH, {
+      state: { returnTo: "/portfolio", initialComparisonItems: items },
+    })
   }, [
     bestEntryForGroup,
     clearComparison,
@@ -1115,7 +1117,9 @@ export function PortfolioPage() {
       openComparison(items)
       markCompareNavFromPortfolio()
       showToast("Opened comparison")
-      navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
+      navigate(RESEARCH_COMPARE_PATH, {
+        state: { returnTo: "/portfolio", initialComparisonItems: items },
+      })
     },
     [clearComparison, navigate, openComparison, showToast],
   )
@@ -1139,7 +1143,9 @@ export function PortfolioPage() {
       openComparison(items)
       markCompareNavFromPortfolio()
       showToast("Opened comparison")
-      navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
+      navigate(RESEARCH_COMPARE_PATH, {
+        state: { returnTo: "/portfolio", initialComparisonItems: items },
+      })
     },
     [clearComparison, navigate, openComparison, showToast],
   )
@@ -1164,7 +1170,9 @@ export function PortfolioPage() {
       openComparison(items)
       markCompareNavFromPortfolio()
       showToast("Opened comparison")
-      navigate(RESEARCH_COMPARE_PATH, { state: { returnTo: "/portfolio" } })
+      navigate(RESEARCH_COMPARE_PATH, {
+        state: { returnTo: "/portfolio", initialComparisonItems: items },
+      })
     },
     [clearComparison, navigate, openComparison, showToast],
   )

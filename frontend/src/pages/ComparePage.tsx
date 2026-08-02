@@ -2,7 +2,7 @@ import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
-import { getToken } from '@/lib/auth'
+import { getToken, workspaceStorageKey } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import {
   CompareDecisionWorkspace,
@@ -223,6 +223,7 @@ function newBlankCompareTab(): CompareTab {
 }
 
 const COMPARE_PAGE_STATE_KEY = 'ir-compare-page-state-v1'
+const COMPARE_VENDOR_COVERAGE_VIEW_KEY = 'ir-compare-vendor-coverage-view'
 
 /** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
 const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
@@ -233,7 +234,8 @@ function readPersistedCompareState(): {
   compareMode?: CompareMode
 } | null {
   try {
-    const raw = localStorage.getItem(COMPARE_PAGE_STATE_KEY)
+    // Never read the legacy unscoped key — it leaked across accounts.
+    const raw = localStorage.getItem(workspaceStorageKey(COMPARE_PAGE_STATE_KEY))
     if (!raw) return null
     const parsed = JSON.parse(raw) as {
       compareTabs?: CompareTab[]
@@ -336,10 +338,10 @@ function coerceRouteComparisonItems(raw: unknown): ComparisonItem[] {
           }
         })
         .filter((x): x is { label: string; value: string } => x != null)
-      if (!id || !title || specs.length === 0) return null
+      if (!id || specs.length === 0) return null
       return {
         id,
-        title,
+        title: title || '—',
         specs,
         sourceName,
         imageUrl,
@@ -400,7 +402,7 @@ export function ComparePage() {
   const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
   const [vendorCoverageView, setVendorCoverageView] = useState<'map' | 'overview'>(() => {
     try {
-      const v = localStorage.getItem('ir-compare-vendor-coverage-view')
+      const v = localStorage.getItem(workspaceStorageKey(COMPARE_VENDOR_COVERAGE_VIEW_KEY))
       return v === 'overview' ? 'overview' : 'map'
     } catch {
       return 'map'
@@ -449,11 +451,42 @@ export function ComparePage() {
   useEffect(() => {
     if (consumedRouteItemsRef.current) return
     if (!activeTab?.id) return
-    if (routeComparisonItems.length === 0) return
-    setExternalItemsByTab((prev) => ({ ...prev, [activeTab.id]: routeComparisonItems }))
-    openWithItems(routeComparisonItems)
-    consumedRouteItemsRef.current = true
-  }, [routeComparisonItems, activeTab?.id, openWithItems])
+    if (routeComparisonItems.length > 0) {
+      const tabId = activeTab.id
+      setExternalItemsByTab((prev) => ({ ...prev, [tabId]: routeComparisonItems }))
+      openWithItems(routeComparisonItems)
+      // Drop persisted file row selections so sync does not merge stale file items
+      // into a Research/Portfolio handoff.
+      setCompareTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                data: {
+                  ...t.data,
+                  selectedFilesData: [],
+                  selectedFileRows: {},
+                  activeFileId: null,
+                  selectedRowForScraped: null,
+                },
+              }
+            : t
+        )
+      )
+      consumedRouteItemsRef.current = true
+      return
+    }
+    // Research/Portfolio often set ComparisonContext before navigate without route payload.
+    // Seed external items from context so the sync effect cannot wipe them with [].
+    if (items.length > 0) {
+      const tabId = activeTab.id
+      setExternalItemsByTab((prev) => {
+        if ((prev[tabId] ?? []).length > 0) return prev
+        return { ...prev, [tabId]: items }
+      })
+      consumedRouteItemsRef.current = true
+    }
+  }, [routeComparisonItems, activeTab?.id, openWithItems, items])
 
   useEffect(() => {
     if (consumedResearchRequestRef.current) return
@@ -514,6 +547,10 @@ export function ComparePage() {
       hasHydratedCompareStateRef.current = true
       return
     }
+    // Snapshot route handoff on mount only — do not treat leftover ComparisonContext
+    // items as a handoff (those persist across navigations).
+    const hasRouteHandoff =
+      routeComparisonItems.length > 0 || Boolean(routeResearchRequest)
     let cancelled = false
     ;(async () => {
       try {
@@ -522,13 +559,19 @@ export function ComparePage() {
           hasHydratedCompareStateRef.current = true
           return
         }
-        if (Array.isArray(state.compare_tabs) && state.compare_tabs.length > 0) {
+        if (
+          !hasRouteHandoff &&
+          Array.isArray(state.compare_tabs) &&
+          state.compare_tabs.length > 0
+        ) {
           const tabs = coercePersistedTabs(state.compare_tabs)
           if (tabs.length > 0) {
-          setCompareTabs(tabs)
-          setActiveCompareTabId(
-            typeof state.active_compare_tab_id === 'string' ? state.active_compare_tab_id : tabs[0]?.id ?? null
-          )
+            setCompareTabs(tabs)
+            setActiveCompareTabId(
+              typeof state.active_compare_tab_id === 'string'
+                ? state.active_compare_tab_id
+                : tabs[0]?.id ?? null
+            )
           }
         }
         setScrapedVendorFilter(state.scraped_vendor_filter || 'all')
@@ -547,6 +590,8 @@ export function ComparePage() {
     return () => {
       cancelled = true
     }
+    // Mount-only hydrate; route handoff is snapshotted above from first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const updateActiveTabData = useCallback((updater: (d: CompareTabData) => CompareTabData) => {
@@ -595,7 +640,7 @@ export function ComparePage() {
   useEffect(() => {
     try {
       localStorage.setItem(
-        COMPARE_PAGE_STATE_KEY,
+        workspaceStorageKey(COMPARE_PAGE_STATE_KEY),
         JSON.stringify({
           compareTabs: serializeCompareTabsForPersistence(compareTabs),
           activeCompareTabId,
@@ -644,7 +689,7 @@ export function ComparePage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('ir-compare-vendor-coverage-view', vendorCoverageView)
+      localStorage.setItem(workspaceStorageKey(COMPARE_VENDOR_COVERAGE_VIEW_KEY), vendorCoverageView)
     } catch {
       // ignore
     }
@@ -789,17 +834,26 @@ export function ComparePage() {
       setScrapedData(null)
       return
     }
+    let cancelled = false
     setScrapedDataLoading(true)
     listResearchUrls(token, {
       fileId: selectedRowForScraped.fileId,
       tableRowIndex: selectedRowForScraped.rowIdx,
     })
       .then((res) => {
+        if (cancelled) return
         const data = res[0]?.scraped_data ?? null
         setScrapedData(data)
       })
-      .catch(() => setScrapedData(null))
-      .finally(() => setScrapedDataLoading(false))
+      .catch(() => {
+        if (!cancelled) setScrapedData(null)
+      })
+      .finally(() => {
+        if (!cancelled) setScrapedDataLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [selectedRowForScraped])
 
   // For "different parts from same vendor", collect scraped sources for every selected part.
@@ -1522,7 +1576,9 @@ export function ComparePage() {
     if (!activeTab) return
     const external = externalItemsByTab[activeTab.id] ?? []
     if (activeTab.data.selectedFilesData.length === 0) {
-      openWithItems(external)
+      // Only push external items when present. Never openWithItems([]) here —
+      // that wiped Research/Portfolio handoffs that lived only in ComparisonContext.
+      if (external.length > 0) openWithItems(external)
       return
     }
     const restored: ComparisonItem[] = []
@@ -1533,13 +1589,21 @@ export function ComparePage() {
       restored.push(...buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b)))
     }
     if (restored.length === 0) {
-      openWithItems(external)
+      if (external.length > 0) openWithItems(external)
+      else openWithItems([])
       return
     }
     const merged = [...external, ...restored]
     const deduped = merged.filter((item, idx) => merged.findIndex((x) => x.id === item.id) === idx)
     openWithItems(deduped)
-  }, [activeTab, buildItemsFromFileRows, openWithItems, externalItemsByTab])
+  }, [
+    activeTab?.id,
+    activeTab?.data.selectedFilesData,
+    activeTab?.data.selectedFileRows,
+    buildItemsFromFileRows,
+    openWithItems,
+    externalItemsByTab,
+  ])
 
   const totalSelectedAcrossFiles = selectedFilesData.reduce(
     (sum: number, f: LoadedFile) => sum + (selectedFileRows[f.fileId]?.length ?? 0),

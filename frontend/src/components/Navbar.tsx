@@ -396,10 +396,10 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
           <div className="flex items-center gap-0 ml-auto">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-500 text-white text-xs font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 text-white text-xs font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors cursor-pointer"
             >
               <StarIcon className="w-3.5 h-3.5 text-white" />
-              Upgrade your plan
+              Upgrade
             </button>
 
             <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />

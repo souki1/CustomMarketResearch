@@ -64,9 +64,10 @@ export function SignInPage() {
     setLoading(true)
     try {
       const res = await signIn({ email: email.trim(), password })
-      setToken(res.access_token)
-      setCurrentUserName(res.display_name)
+      // Bind workspace owner before token so scoped storage keys never read another user's cache.
       setCurrentUserEmail(email.trim())
+      setCurrentUserName(res.display_name)
+      setToken(res.access_token)
       // Fetch profile photo right after login so navbar can show it
       getMe(res.access_token)
         .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))

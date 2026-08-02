@@ -4,6 +4,7 @@ import { CommandPalette, Navbar, Sidebar } from '@/components'
 import { BucketProvider } from '@/contexts/BucketContext'
 import { ComparisonProvider } from '@/contexts/ComparisonContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
+import { getCurrentUserEmail, syncWorkspaceOwner } from '@/lib/auth'
 
 const SIDEBAR_OPEN_KEY = 'sidebar-open'
 
@@ -28,6 +29,11 @@ function MainLayoutContent() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const { collapseSidebarForInspector, setCollapseSidebarForInspector } = useLayout()
+
+  // Bind / scrub workspace caches for the active account (drops legacy unscoped keys).
+  useEffect(() => {
+    syncWorkspaceOwner(getCurrentUserEmail())
+  }, [])
 
   // When leaving Research (e.g. Home, AI, Compare), undo inspector collapse and show the full sidebar again.
   useEffect(() => {

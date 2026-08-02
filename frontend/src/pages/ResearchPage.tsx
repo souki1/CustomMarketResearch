@@ -13,10 +13,11 @@ import {
   Plus,
   Search,
   Table2,
+  Trash2,
   X,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { getToken } from '@/lib/auth'
+import { getToken, workspaceStorageKey } from '@/lib/auth'
 import {
   getWorkspaceFileContent,
   listResearchGridSummary,
@@ -506,6 +507,7 @@ const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
 const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
 const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
+const RESEARCH_TABS_KEY = 'research-tabs'
 
 const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
@@ -563,13 +565,46 @@ function RowHeightIcon({ className }: { className?: string }) {
 
 function researchToolbarBtnClass(active: boolean, disabled = false) {
   if (disabled) {
-    return 'inline-flex items-center gap-1.5 rounded-[5px] border border-gray-200 bg-white px-2.5 py-1 text-[13px] font-medium text-gray-400 opacity-60 cursor-default'
+    return 'group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 opacity-60 cursor-default'
   }
-  return `inline-flex items-center gap-1.5 rounded-[5px] border px-2.5 py-1 text-[13px] font-medium whitespace-nowrap transition-colors ${
+  return `group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
     active
       ? 'border-blue-500 bg-blue-50 text-blue-700'
       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
   }`
+}
+
+function ResearchToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-md transition-opacity duration-100 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  )
+}
+
+function ResearchToolbarDivider() {
+  return <span className="mx-1 h-5 w-px shrink-0 bg-slate-300/80" aria-hidden />
+}
+
+function ResearchToolbarGroup({
+  children,
+  label,
+}: {
+  children: ReactNode
+  label: string
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex shrink-0 items-center gap-1"
+    >
+      {children}
+    </div>
+  )
 }
 
 function ResearchFoundBadge({ count, onClick }: { count: number; onClick: () => void }) {
@@ -620,7 +655,8 @@ export function ResearchPage() {
   const folderFromUrl = searchParams.get('folder')
   const [tabs, setTabs] = useState<TabState[]>(() => {
     try {
-      const raw = localStorage.getItem('research-tabs')
+      // Never read the legacy unscoped `research-tabs` key — it leaked across accounts.
+      const raw = localStorage.getItem(workspaceStorageKey(RESEARCH_TABS_KEY))
       if (!raw) return [newBlankSheet()]
       const parsed = JSON.parse(raw) as TabState[]
       // Preserve an intentionally empty tab set after user closes all tabs.
@@ -654,6 +690,8 @@ export function ResearchPage() {
   const [groupMenuOpen, setGroupMenuOpen] = useState(false)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [densityMenuOpen, setDensityMenuOpen] = useState(false)
+  const [addColumnOpen, setAddColumnOpen] = useState(false)
+  const [addColumnNameDraft, setAddColumnNameDraft] = useState('')
   const hideFieldsBtnRef = useRef<HTMLButtonElement>(null)
   const hideFieldsDropRef = useRef<HTMLDivElement>(null)
   const groupMenuBtnRef = useRef<HTMLButtonElement>(null)
@@ -664,6 +702,9 @@ export function ResearchPage() {
   const densityMenuDropRef = useRef<HTMLDivElement>(null)
   const filterBtnRef = useRef<HTMLButtonElement>(null)
   const filterDropRef = useRef<HTMLDivElement>(null)
+  const addColumnBtnRef = useRef<HTMLButtonElement>(null)
+  const addColumnDropRef = useRef<HTMLDivElement>(null)
+  const addColumnInputRef = useRef<HTMLInputElement>(null)
   /** Bumps when scroll/resize so portaled menus re-read anchor getBoundingClientRect. */
   const [, setToolbarMenuLayoutTick] = useState(0)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
@@ -691,7 +732,7 @@ export function ResearchPage() {
     y: number
   }>({ open: false, x: 0, y: 0 })
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<'rows' | 'columns' | null>(null)
   const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
   const [researchAiQueryInput, setResearchAiQueryInput] = useState(
     'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
@@ -747,7 +788,14 @@ export function ResearchPage() {
     (items: ComparisonItem[], navigateState: unknown) => {
       clearComparison()
       openComparison(items)
-      comparePreviewNavigateStateRef.current = navigateState
+      const base =
+        navigateState != null && typeof navigateState === 'object'
+          ? (navigateState as Record<string, unknown>)
+          : {}
+      comparePreviewNavigateStateRef.current = {
+        ...base,
+        initialComparisonItems: items,
+      }
       setComparePreviewModalOpen(true)
       showToast('Comparison preview ready')
     },
@@ -883,7 +931,7 @@ export function ResearchPage() {
   // Persist tabs in localStorage so they survive route changes and reloads
   useEffect(() => {
     try {
-      localStorage.setItem('research-tabs', JSON.stringify(tabs))
+      localStorage.setItem(workspaceStorageKey(RESEARCH_TABS_KEY), JSON.stringify(tabs))
     } catch {
       // ignore quota or serialization errors
     }
@@ -950,11 +998,14 @@ export function ResearchPage() {
   useLayoutEffect(() => {
     if (hasRestoredPageStateRef.current) return
     const st = location.state as { restoreResearchSelection?: unknown; restoreInspector?: unknown } | undefined
-    if (st?.restoreResearchSelection || st?.restoreInspector) return
+    if (st?.restoreResearchSelection || st?.restoreInspector) {
+      // Dedicated restore effect owns this handoff; do not hydrate from localStorage yet.
+      return
+    }
 
     hasRestoredPageStateRef.current = true
     try {
-      const raw = localStorage.getItem(RESEARCH_PAGE_STATE_KEY)
+      const raw = localStorage.getItem(workspaceStorageKey(RESEARCH_PAGE_STATE_KEY))
       if (!raw) return
       const data = JSON.parse(raw) as Partial<PersistedResearchState>
       if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
@@ -986,10 +1037,11 @@ export function ResearchPage() {
     } catch {
       // ignore parse errors
     }
-  }, [location.state, tabs])
+  }, [location.state, tabs, setCollapseSidebarForInspector])
 
   // Persist Research page state so it survives navigation to other pages
   useEffect(() => {
+    if (!hasRestoredPageStateRef.current) return
     try {
       const data: PersistedResearchState = {
         activeTabId,
@@ -1005,7 +1057,7 @@ export function ResearchPage() {
         inspectorMultiRowIndices,
         inspectorCompareSelection: Array.from(inspectorCompareSelection),
       }
-      localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
+      localStorage.setItem(workspaceStorageKey(RESEARCH_PAGE_STATE_KEY), JSON.stringify(data))
     } catch {
       // ignore quota or serialization errors
     }
@@ -1054,6 +1106,8 @@ export function ResearchPage() {
     setGroupMenuOpen(false)
     setSortMenuOpen(false)
     setDensityMenuOpen(false)
+    setAddColumnOpen(false)
+    setAddColumnNameDraft('')
     setIsInspectorOpen(false)
     setInspectorMaximized(false)
     setInspectorMode('single')
@@ -1299,6 +1353,33 @@ export function ResearchPage() {
     [effectiveTabId]
   )
 
+  /** Persist sheet CSV to Mongo workspace_files when the tab is backed by a file. */
+  const persistSheetContent = useCallback(
+    async (nextData: string[][]): Promise<boolean> => {
+      const fileId = activeTab?.fileId ?? null
+      if (!fileId) return false
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to save changes to the server')
+        return false
+      }
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+      try {
+        await updateWorkspaceFileContent(fileId, serializeToCsv(nextData), token)
+        userHasEditedRef.current = false
+        saveImmediatelyRef.current = false
+        return true
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to save to server')
+        return false
+      }
+    },
+    [activeTab?.fileId, showToast]
+  )
+
   const updateCell = useCallback(
     (rowIndex: number, colIndex: number, value: string) => {
       userHasEditedRef.current = true
@@ -1486,7 +1567,34 @@ export function ResearchPage() {
     showToast,
   ])
 
-  // addColumn UI removed with "Other options"
+  const addSheetColumn = useCallback(
+    async (rawName?: string) => {
+      const defaultLabel = `Column ${(content?.[0]?.length ?? 0) + 1}`
+      const label = (rawName ?? '').trim() || defaultLabel
+      const nextData = (() => {
+        if (!content?.length) return [[label]]
+        const next = content.map((row) => [...row])
+        const headerRow = [...(next[0] ?? []), label]
+        next[0] = headerRow
+        for (let r = 1; r < next.length; r++) {
+          while (next[r].length < headerRow.length) next[r].push('')
+        }
+        return next
+      })()
+
+      userHasEditedRef.current = true
+      saveImmediatelyRef.current = true
+      setActiveTabData(() => nextData)
+      setAddColumnOpen(false)
+      setAddColumnNameDraft('')
+
+      const saved = await persistSheetContent(nextData)
+      showToast(
+        saved ? `Added column “${label}” and saved` : `Added column “${label}”`
+      )
+    },
+    [content, persistSheetContent, setActiveTabData, showToast]
+  )
 
   const addRow = useCallback((count: number = 1) => {
     userHasEditedRef.current = true
@@ -1502,12 +1610,22 @@ export function ResearchPage() {
 
   const removeSelectedRows = useCallback(() => {
     if (!content || selectedRows.size === 0) return
-    setDeleteConfirmOpen(true)
+    setDeleteConfirm('rows')
   }, [content, selectedRows.size])
+
+  const removeSelectedColumns = useCallback(() => {
+    if (!content?.[0] || selectedColumns.size === 0) return
+    const colCount = content[0].length
+    if (selectedColumns.size >= colCount) {
+      showToast('Keep at least one column')
+      return
+    }
+    setDeleteConfirm('columns')
+  }, [content, selectedColumns.size, showToast])
 
   const confirmDeleteSelectedRows = useCallback(() => {
     if (!content || selectedRows.size === 0) {
-      setDeleteConfirmOpen(false)
+      setDeleteConfirm(null)
       return
     }
 
@@ -1535,13 +1653,102 @@ export function ResearchPage() {
     setInspectorMultiRowIndices([])
     setInspectorCompareSelection(new Set())
     setCollapseSidebarForInspector(false)
-    setDeleteConfirmOpen(false)
+    setDeleteConfirm(null)
   }, [
     content,
     selectedRows,
     setActiveTabData,
     setCollapseSidebarForInspector,
   ])
+
+  const confirmDeleteSelectedColumns = useCallback(async () => {
+    if (!content?.[0] || selectedColumns.size === 0) {
+      setDeleteConfirm(null)
+      return
+    }
+    const colCount = content[0].length
+    const toRemove = Array.from(selectedColumns)
+      .filter((i) => i >= 0 && i < colCount)
+      .sort((a, b) => a - b)
+    if (toRemove.length === 0) {
+      setDeleteConfirm(null)
+      return
+    }
+    if (toRemove.length >= colCount) {
+      showToast('Keep at least one column')
+      setDeleteConfirm(null)
+      return
+    }
+
+    const remapCol = (oldIdx: number | null): number | null => {
+      if (oldIdx == null) return null
+      if (toRemove.includes(oldIdx)) return null
+      return oldIdx - toRemove.filter((r) => r < oldIdx).length
+    }
+
+    const removedHeaderKeys = new Set(
+      toRemove
+        .map((i) => String(content[0][i] ?? '').trim())
+        .filter(Boolean)
+        .map((h) => h.toLowerCase())
+    )
+    const nextData = content.map((row) => row.filter((_, colIdx) => !toRemove.includes(colIdx)))
+
+    userHasEditedRef.current = true
+    saveImmediatelyRef.current = true
+    setActiveTabData(() => nextData)
+
+    setSelectedColumns(new Set())
+    setHiddenColumns((prev) => {
+      const next = new Set<number>()
+      for (const idx of prev) {
+        const mapped = remapCol(idx)
+        if (mapped != null) next.add(mapped)
+      }
+      return next
+    })
+    setSortCol((prev) => remapCol(prev))
+    setGroupByCol((prev) => remapCol(prev))
+    setFilterBuilderItems((prev) =>
+      prev.map((item) => {
+        if (item.type === 'line') {
+          return {
+            ...item,
+            row: { ...item.row, fieldCol: remapCol(item.row.fieldCol) },
+          }
+        }
+        return {
+          ...item,
+          rows: item.rows.map((row) => ({ ...row, fieldCol: remapCol(row.fieldCol) })),
+        }
+      })
+    )
+    if (removedHeaderKeys.size > 0) {
+      setPreviewScrapedData((prev) => {
+        if (!prev?.length) return prev
+        return prev.map((item) => {
+          const data = { ...item.data }
+          let changed = false
+          for (const key of Object.keys(data)) {
+            if (removedHeaderKeys.has(key.trim().toLowerCase())) {
+              delete data[key]
+              changed = true
+            }
+          }
+          return changed ? { ...item, data } : item
+        })
+      })
+    }
+    setDeleteConfirm(null)
+
+    const saved = await persistSheetContent(nextData)
+    const n = toRemove.length
+    showToast(
+      saved
+        ? `Deleted ${n} column${n === 1 ? '' : 's'} and saved`
+        : `Deleted ${n} column${n === 1 ? '' : 's'}`
+    )
+  }, [content, persistSheetContent, selectedColumns, setActiveTabData, showToast])
 
   const openAddRowPopover = (anchor: HTMLElement | null) => {
     if (!anchor) return
@@ -1786,10 +1993,16 @@ export function ResearchPage() {
     setGroupMenuOpen(false)
     setSortMenuOpen(false)
     setDensityMenuOpen(false)
+    setAddColumnOpen(false)
   }, [])
 
   const anyToolbarMenuOpen =
-    hideFieldsOpen || filterOpen || groupMenuOpen || sortMenuOpen || densityMenuOpen
+    hideFieldsOpen ||
+    filterOpen ||
+    groupMenuOpen ||
+    sortMenuOpen ||
+    densityMenuOpen ||
+    addColumnOpen
 
   useLayoutEffect(() => {
     if (!anyToolbarMenuOpen) return
@@ -1803,7 +2016,23 @@ export function ResearchPage() {
   }, [anyToolbarMenuOpen])
 
   useEffect(() => {
-    if (!hideFieldsOpen && !filterOpen && !groupMenuOpen && !sortMenuOpen && !densityMenuOpen) return
+    if (addColumnOpen) {
+      const t = window.setTimeout(() => addColumnInputRef.current?.focus(), 0)
+      return () => window.clearTimeout(t)
+    }
+  }, [addColumnOpen])
+
+  useEffect(() => {
+    if (
+      !hideFieldsOpen &&
+      !filterOpen &&
+      !groupMenuOpen &&
+      !sortMenuOpen &&
+      !densityMenuOpen &&
+      !addColumnOpen
+    ) {
+      return
+    }
     function onPointerDown(e: PointerEvent) {
       const t = e.target as Node
       if (
@@ -1828,6 +2057,12 @@ export function ResearchPage() {
         return
       }
       if (filterOpen && (filterBtnRef.current?.contains(t) || filterDropRef.current?.contains(t))) return
+      if (
+        addColumnOpen &&
+        (addColumnBtnRef.current?.contains(t) || addColumnDropRef.current?.contains(t))
+      ) {
+        return
+      }
       closeAllGridMenus()
     }
     function onKeyDown(e: KeyboardEvent) {
@@ -1839,7 +2074,15 @@ export function ResearchPage() {
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [hideFieldsOpen, filterOpen, groupMenuOpen, sortMenuOpen, densityMenuOpen, closeAllGridMenus])
+  }, [
+    hideFieldsOpen,
+    filterOpen,
+    groupMenuOpen,
+    sortMenuOpen,
+    densityMenuOpen,
+    addColumnOpen,
+    closeAllGridMenus,
+  ])
 
   // Capture element details for selected row (for Add details)
   useEffect(() => {
@@ -1947,6 +2190,7 @@ export function ResearchPage() {
       setCollapseSidebarForInspector(true)
     }
     if (st?.restoreInspector || st?.restoreResearchSelection) {
+      hasRestoredPageStateRef.current = true
       navigate(location.pathname + location.search, { replace: true })
     }
   }, [location.pathname, location.search, location.state, navigate, setCollapseSidebarForInspector])
@@ -2003,35 +2247,62 @@ export function ResearchPage() {
     <div
       className={`bg-[#f8f9fb] text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
-      {deleteConfirmOpen && (
+      {deleteConfirm != null && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="delete-rows-title"
-          onClick={(e) => e.target === e.currentTarget && setDeleteConfirmOpen(false)}
+          aria-labelledby="delete-confirm-title"
+          onClick={(e) => e.target === e.currentTarget && setDeleteConfirm(null)}
         >
           <div
             className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="delete-rows-title" className="text-sm font-semibold text-gray-900">
-              Delete selected row{selectedRows.size === 1 ? '' : 's'}?
-            </h2>
-            <p className="mt-1 text-sm text-gray-600">
-              You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be undone.
-            </p>
+            {deleteConfirm === 'rows' ? (
+              <>
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                  Delete selected row{selectedRows.size === 1 ? '' : 's'}?
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be
+                  undone.
+                </p>
+              </>
+            ) : deleteConfirm === 'columns' ? (
+              <>
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                  Delete selected column{selectedColumns.size === 1 ? '' : 's'}?
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  You are about to delete {selectedColumns.size} column
+                  {selectedColumns.size === 1 ? '' : 's'} from the sheet. This cannot be undone.
+                </p>
+              </>
+            ) : (
+              (() => {
+                const _exhaustive: never = deleteConfirm
+                return _exhaustive
+              })()
+            )}
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmOpen(false)}
+                onClick={() => setDeleteConfirm(null)}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={confirmDeleteSelectedRows}
+                onClick={() => {
+                  if (deleteConfirm === 'rows') confirmDeleteSelectedRows()
+                  else if (deleteConfirm === 'columns') confirmDeleteSelectedColumns()
+                  else {
+                    const _exhaustive: never = deleteConfirm
+                    return _exhaustive
+                  }
+                }}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
               >
                 Delete
@@ -2337,8 +2608,18 @@ export function ResearchPage() {
                   type="button"
                   onClick={() => {
                     setComparePreviewModalOpen(false)
+                    const base =
+                      comparePreviewNavigateStateRef.current != null &&
+                      typeof comparePreviewNavigateStateRef.current === 'object'
+                        ? (comparePreviewNavigateStateRef.current as Record<string, unknown>)
+                        : { returnTo: '/research' }
                     navigate(RESEARCH_COMPARE_PATH, {
-                      state: comparePreviewNavigateStateRef.current ?? { returnTo: '/research' },
+                      state: {
+                        ...base,
+                        initialComparisonItems:
+                          (base.initialComparisonItems as ComparisonItem[] | undefined) ??
+                          comparisonItems,
+                      },
                     })
                   }}
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
@@ -2495,8 +2776,8 @@ export function ResearchPage() {
       )}
 
       {/* Toolbar */}
-      <div className="flex max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto border-t border-gray-200 bg-[#f8f9fb] px-4 py-2">
-        <div className="flex shrink-0 items-center gap-0.5">
+      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-3 overflow-visible border-t border-gray-200 bg-[#f8f9fb] px-4 py-2">
+        <ResearchToolbarGroup label="View">
           <button
             ref={hideFieldsBtnRef}
             type="button"
@@ -2508,11 +2789,13 @@ export function ResearchPage() {
               setSortMenuOpen(false)
               setDensityMenuOpen(false)
               setFilterOpen(false)
+              setAddColumnOpen(false)
             }}
             className={researchToolbarBtnClass(hideFieldsOpen, !content?.[0])}
+            aria-label="Hide fields"
           >
             <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
-            Hide fields
+            <ResearchToolbarTooltip label="Hide fields" />
           </button>
           {hideFieldsOpen &&
             content?.[0] &&
@@ -2580,13 +2863,19 @@ export function ResearchPage() {
               setGroupMenuOpen(false)
               setSortMenuOpen(false)
               setDensityMenuOpen(false)
+              setAddColumnOpen(false)
             }}
-            className={`${researchToolbarBtnClass(hasActiveColumnFilters, !content?.[0])} max-w-[min(20rem,55vw)] text-left`}
+            className={researchToolbarBtnClass(hasActiveColumnFilters, !content?.[0])}
+            aria-label={
+              hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'
+            }
           >
             <Filter className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
-            <span className="truncate">
-              {hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'}
-            </span>
+            <ResearchToolbarTooltip
+              label={
+                hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'
+              }
+            />
           </button>
           {filterOpen &&
             content?.[0] &&
@@ -2642,11 +2931,13 @@ export function ResearchPage() {
               setSortMenuOpen(false)
               setDensityMenuOpen(false)
               setFilterOpen(false)
+              setAddColumnOpen(false)
             }}
             className={researchToolbarBtnClass(groupByCol != null, !content?.[0])}
+            aria-label="Group"
           >
             <LayoutGrid className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Group
+            <ResearchToolbarTooltip label="Group" />
           </button>
           {groupMenuOpen &&
             content?.[0] &&
@@ -2709,11 +3000,13 @@ export function ResearchPage() {
               setGroupMenuOpen(false)
               setDensityMenuOpen(false)
               setFilterOpen(false)
+              setAddColumnOpen(false)
             }}
             className={researchToolbarBtnClass(sortCol != null, !content?.[0])}
+            aria-label="Sort"
           >
             <ArrowUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            Sort
+            <ResearchToolbarTooltip label="Sort" />
           </button>
           {sortMenuOpen &&
             content?.[0] &&
@@ -2786,12 +3079,13 @@ export function ResearchPage() {
               setGroupMenuOpen(false)
               setSortMenuOpen(false)
               setFilterOpen(false)
+              setAddColumnOpen(false)
             }}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-slate-600 hover:bg-slate-100"
-            title="Row height"
+            className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-slate-600 hover:bg-slate-50"
             aria-label="Row height"
           >
             <RowHeightIcon className="h-4 w-4" />
+            <ResearchToolbarTooltip label="Row height" />
           </button>
           {densityMenuOpen &&
             createPortal(
@@ -2836,121 +3130,258 @@ export function ResearchPage() {
               </div>,
               document.body
             )}
-        </div>
+        </ResearchToolbarGroup>
 
-        <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+        <ResearchToolbarDivider />
 
-        <button
-          type="button"
-          onClick={() => {
-            setToolbarActive('selected')
-            if (!content || selectedColumns.size === 0) {
-              showToast('Select at least one column first')
-              return
-            }
-            setResearchAiQueryInput(
-              'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
-            )
-            setResearchFieldsPopupOpen(true)
-          }}
-          disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
-          title={selectedColumns.size === 0 ? 'Select column(s) first' : 'Research selected headers and rows'}
-          className={`relative overflow-hidden ${researchToolbarBtnClass(toolbarActive === 'selected', !content || selectedColumns.size === 0 || storeSelectionLoading)} ${
-            toolbarActive === 'selected' ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700' : ''
-          }`}
-        >
-          {storeSelectionLoading && (
-            <span
-              className={`absolute inset-y-0 left-0 transition-[width] duration-300 ease-out ${
-                toolbarActive === 'selected' ? 'bg-white/25' : 'bg-blue-500/20'
-              }`}
-              style={{ width: `${researchProgress}%` }}
-              aria-hidden
-            />
-          )}
-          <span className="relative z-[1] inline-flex items-center gap-1.5">
-            {storeSelectionLoading ? (
-              <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+        <ResearchToolbarGroup label="Columns">
+          <button
+            ref={addColumnBtnRef}
+            type="button"
+            disabled={!content}
+            onClick={() => {
+              if (!content) return
+              setAddColumnOpen((o) => !o)
+              setAddColumnNameDraft('')
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className={researchToolbarBtnClass(addColumnOpen, !content)}
+            aria-label="Add column"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip label="Add column" />
+          </button>
+          {addColumnOpen &&
+            createPortal(
+              <div
+                ref={addColumnDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (addColumnBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, addColumnBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 260 - 8 : 8
+                  ),
+                  width: 260,
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  New column
+                </p>
+                <input
+                  ref={addColumnInputRef}
+                  type="text"
+                  value={addColumnNameDraft}
+                  onChange={(e) => setAddColumnNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addSheetColumn(addColumnNameDraft)
+                    }
+                  }}
+                  placeholder={`Column ${(content?.[0]?.length ?? 0) + 1}`}
+                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+                <div className="mt-2.5 flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddColumnOpen(false)
+                      setAddColumnNameDraft('')
+                    }}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addSheetColumn(addColumnNameDraft)}
+                    className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Add
+                  </button>
+                </div>
+              </div>,
+              document.body
             )}
-            {storeSelectionLoading ? `Researching… ${researchProgress}%` : 'Research Selected'}
-          </span>
-        </button>
 
-        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+          <button
+            type="button"
+            onClick={removeSelectedColumns}
+            disabled={selectedColumns.size === 0}
+            className={researchToolbarBtnClass(selectedColumns.size > 0, selectedColumns.size === 0)}
+            aria-label={
+              selectedColumns.size === 0
+                ? 'Select column(s) in the header to remove'
+                : 'Delete column'
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedColumns.size === 0
+                  ? 'Select column(s) to delete'
+                  : 'Delete column'
+              }
+            />
+          </button>
+        </ResearchToolbarGroup>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedRows.size === 0) return
-            const first = Math.min(...selectedRows)
-            setSelectedRowIndex(first)
-            setIsInspectorOpen(true)
-            setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
-            const all = Array.from(selectedRows).sort((a, b) => a - b)
-            setInspectorMultiRowIndices(all)
-            setInspectorCompareSelection(new Set())
-            setCollapseSidebarForInspector(true)
-          }}
-          disabled={selectedRows.size === 0}
-          title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className={researchToolbarBtnClass(false, selectedRows.size === 0)}
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          Preview Selected
-        </button>
+        <ResearchToolbarDivider />
 
-        <span className="h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+        <ResearchToolbarGroup label="Selection actions">
+          <button
+            type="button"
+            onClick={() => {
+              setToolbarActive('selected')
+              if (!content || selectedColumns.size === 0 || selectedRows.size === 0) {
+                showToast(
+                  selectedColumns.size === 0 && selectedRows.size === 0
+                    ? 'Select at least one column and one row first'
+                    : selectedColumns.size === 0
+                      ? 'Select at least one column first'
+                      : 'Select at least one row first'
+                )
+                return
+              }
+              setResearchAiQueryInput(
+                'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
+              )
+              setResearchFieldsPopupOpen(true)
+            }}
+            disabled={
+              !content ||
+              selectedColumns.size === 0 ||
+              selectedRows.size === 0 ||
+              storeSelectionLoading
+            }
+            className={`${researchToolbarBtnClass(
+              toolbarActive === 'selected' && selectedColumns.size > 0 && selectedRows.size > 0,
+              !content ||
+                selectedColumns.size === 0 ||
+                selectedRows.size === 0 ||
+                storeSelectionLoading
+            )} ${
+              toolbarActive === 'selected' && selectedColumns.size > 0 && selectedRows.size > 0
+                ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700'
+                : ''
+            }`}
+            aria-label={
+              storeSelectionLoading
+                ? `Researching… ${researchProgress}%`
+                : selectedColumns.size === 0 || selectedRows.size === 0
+                  ? 'Select column(s) and row(s) first'
+                  : 'Research Selected'
+            }
+          >
+            {storeSelectionLoading && (
+              <span
+                className="pointer-events-none absolute inset-0 overflow-hidden rounded-[4px]"
+                aria-hidden
+              >
+                <span
+                  className={`absolute inset-y-0 left-0 transition-[width] duration-300 ease-out ${
+                    toolbarActive === 'selected' ? 'bg-white/25' : 'bg-blue-500/20'
+                  }`}
+                  style={{ width: `${researchProgress}%` }}
+                />
+              </span>
+            )}
+            <span className="relative z-[1] inline-flex items-center justify-center">
+              {storeSelectionLoading ? (
+                <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              )}
+            </span>
+            <ResearchToolbarTooltip
+              label={
+                storeSelectionLoading
+                  ? `Researching… ${researchProgress}%`
+                  : selectedColumns.size === 0 || selectedRows.size === 0
+                    ? 'Select column(s) and row(s) first'
+                    : 'Research Selected'
+              }
+            />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedRows.size === 0 || !content || !effectiveTabId) return
-            const items = Array.from(selectedRows)
-              .map((rowIndex) => {
-                const row = content[rowIndex + 1]
-                if (!row) return null
-                const title = String(row[0] ?? '')
-                const specs = headers.map((label, i) => ({
-                  label: (label || `Column ${i + 1}`).trim(),
-                  value: String(row[i] ?? '—'),
-                }))
-                const imageUrl = null
-                return {
-                  id: `${effectiveTabId}-${rowIndex}`,
-                  title,
-                  imageUrl,
-                  specs,
-                }
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedRows.size === 0) return
+              const first = Math.min(...selectedRows)
+              setSelectedRowIndex(first)
+              setIsInspectorOpen(true)
+              setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
+              const all = Array.from(selectedRows).sort((a, b) => a - b)
+              setInspectorMultiRowIndices(all)
+              setInspectorCompareSelection(new Set())
+              setCollapseSidebarForInspector(true)
+            }}
+            disabled={selectedRows.size === 0}
+            className={researchToolbarBtnClass(false, selectedRows.size === 0)}
+            aria-label={selectedRows.size === 0 ? 'Select a row first' : 'Preview Selected'}
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <ResearchToolbarTooltip
+              label={selectedRows.size === 0 ? 'Select a row first' : 'Preview Selected'}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedRows.size === 0 || !content || !effectiveTabId) return
+              const items = Array.from(selectedRows)
+                .map((rowIndex) => {
+                  const row = content[rowIndex + 1]
+                  if (!row) return null
+                  const title = String(row[0] ?? '')
+                  const specs = headers.map((label, i) => ({
+                    label: (label || `Column ${i + 1}`).trim(),
+                    value: String(row[i] ?? '—'),
+                  }))
+                  const imageUrl = null
+                  return {
+                    id: `${effectiveTabId}-${rowIndex}`,
+                    title,
+                    imageUrl,
+                    specs,
+                  }
+                })
+                .filter((x): x is NonNullable<typeof x> => x != null)
+              openComparePreviewModal(items, {
+                returnTo: '/research',
+                restoreResearchSelection: {
+                  selectedRows: Array.from(selectedRows),
+                  activeTabId: effectiveTabId,
+                  page: currentPage,
+                  rowsPerPage,
+                },
               })
-              .filter((x): x is NonNullable<typeof x> => x != null)
-            openComparePreviewModal(items, {
-              returnTo: '/research',
-              restoreResearchSelection: {
-                selectedRows: Array.from(selectedRows),
-                activeTabId: effectiveTabId,
-                page: currentPage,
-                rowsPerPage,
-              },
-            })
-          }}
-          disabled={selectedRows.size === 0}
-          title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className={researchToolbarBtnClass(false, selectedRows.size === 0)}
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-          Compare Selected
-        </button>
-        {/* Other options removed */}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+            }}
+            disabled={selectedRows.size === 0}
+            className={researchToolbarBtnClass(false, selectedRows.size === 0)}
+            aria-label={selectedRows.size === 0 ? 'Select rows first' : 'Compare Selected'}
+          >
+            <GitCompare className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={selectedRows.size === 0 ? 'Select rows first' : 'Compare Selected'}
+            />
+          </button>
+        </ResearchToolbarGroup>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
           <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1">
             <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
             <input
@@ -3008,25 +3439,24 @@ export function ResearchPage() {
                   </th>
                   {visibleColIndices.map((i) => {
                     const cell = content[0][i] ?? ''
-                    const columnHasData = content.some((row) => (row[i] ?? '').trim().length > 0)
                     return (
                       <th key={i} scope="col" className={`border-r border-slate-200 last:border-r-0 ${rd.th}`}>
                         <div className="flex items-center gap-1.5">
-                          {columnHasData && (
-                            <input
-                              type="checkbox"
-                              checked={selectedColumns.has(i)}
-                              onChange={() =>
-                                setSelectedColumns((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(i)) next.delete(i)
-                                  else next.add(i)
-                                  return next
-                                })
-                              }
-                              className="mt-0.5 rounded border-slate-300"
-                            />
-                          )}
+                          <input
+                            type="checkbox"
+                            checked={selectedColumns.has(i)}
+                            onChange={() =>
+                              setSelectedColumns((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(i)) next.delete(i)
+                                else next.add(i)
+                                return next
+                              })
+                            }
+                            className="mt-0.5 rounded border-slate-300"
+                            title="Select column"
+                            aria-label={`Select column ${cell || i + 1}`}
+                          />
                           <input
                             value={cell}
                             onChange={(e) => updateCell(0, i, e.target.value)}
