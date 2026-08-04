@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CompareVendorMindMapModel } from '@/components/compare/CompareVendorMindMap'
 import { CompareInsightsPanel } from '@/components/compare/CompareInsightsPanel'
 import { CompareMindMapPanel } from '@/components/compare/CompareMindMapPanel'
+import { CompareSparkAiPanel } from '@/components/compare/CompareSparkAiPanel'
 import {
   AlertCircle,
   ArrowDown,
@@ -15,13 +16,48 @@ import {
   ExternalLink,
   Filter,
   Heart,
+  Layers,
   List,
   Map,
   Search,
   ShoppingCart,
+  Sparkles,
   X,
   Zap,
 } from 'lucide-react'
+
+/** Standard scraped fields shared across vendors (long-tail nested keys are opt-in). */
+const COMMON_VENDOR_INFO_KEYS = new Set(
+  [
+    'contact',
+    'delivery',
+    'location',
+    'price',
+    'product_description',
+    'product_image',
+    'vendor_name',
+    'availability',
+    'shipping',
+    'rating',
+    'source_urls',
+  ].map((k) => k.toLowerCase())
+)
+
+function isCommonVendorInfoField(flatKey: string): boolean {
+  const n = flatKey.trim().toLowerCase()
+  if (!n) return false
+  if (COMMON_VENDOR_INFO_KEYS.has(n)) return true
+  const leaf = n.includes('.') ? n.slice(n.lastIndexOf('.') + 1) : n
+  return COMMON_VENDOR_INFO_KEYS.has(leaf)
+}
+
+function extractRowDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '').toLowerCase()
+  } catch {
+    return String(url ?? '').trim().toLowerCase()
+  }
+}
 
 export type CompareDecisionRow = {
   id: string
@@ -37,6 +73,8 @@ export type CompareDecisionRow = {
   delivery: string
   location: string
   contact: string
+  /** Product image from scraped source data when available. */
+  imageUrl?: string | null
   rawData: Record<string, unknown>
 }
 
@@ -93,6 +131,8 @@ type Props = {
   activeFileId?: number | null
   onSelectFile?: (fileId: number) => void
   onRemoveFile?: (fileId: number) => void
+  /** Domains shared across ≥2 selected parts — used by “Common vendors”. */
+  commonVendorDomains?: string[]
 }
 
 function money(n: number | null, fallback: string): string {
@@ -154,6 +194,49 @@ function DeliveryDot({ row }: { row: CompareDecisionRow }) {
   return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} />
 }
 
+function VendorThumb({
+  imageUrl,
+  vendor,
+  size = 'sm',
+}: {
+  imageUrl?: string | null
+  vendor: string
+  size?: 'sm' | 'md'
+}) {
+  const [broken, setBroken] = useState(false)
+  const src =
+    typeof imageUrl === 'string' &&
+    imageUrl.trim().length > 0 &&
+    imageUrl.trim().length <= 2048 &&
+    /^https?:\/\//i.test(imageUrl.trim())
+      ? imageUrl.trim()
+      : null
+  const dim = size === 'md' ? 'h-12 w-12' : 'h-7 w-7'
+  const letter = vendor.trim()[0]?.toUpperCase() ?? '?'
+
+  if (!src || broken) {
+    return (
+      <div
+        className={`flex ${dim} shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-100 text-[11px] font-bold text-slate-500`}
+        aria-hidden
+      >
+        {letter}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setBroken(true)}
+      className={`${dim} shrink-0 rounded border border-slate-200 bg-white object-cover`}
+    />
+  )
+}
+
 export function CompareDecisionWorkspace({
   partLabel,
   partCategory,
@@ -189,13 +272,17 @@ export function CompareDecisionWorkspace({
   activeFileId: activeWorkspaceFileId,
   onSelectFile,
   onRemoveFile,
+  commonVendorDomains = [],
 }: Props) {
   const isEmpty = rows.length === 0
 
   const [showParts, setShowParts] = useState(true)
+  const [sparkAiOpen, setSparkAiOpen] = useState(false)
   const [partQ, setPartQ] = useState('')
   const [vendorSearch, setVendorSearch] = useState('')
   const [shipsToday, setShipsToday] = useState(false)
+  const [commonVendorsOnly, setCommonVendorsOnly] = useState(false)
+  const [commonInfoOnly, setCommonInfoOnly] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [sortKey, setSortKey] = useState<string | null>('price')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -212,11 +299,35 @@ export function CompareDecisionWorkspace({
         .filter((f, i, arr) => arr.indexOf(f) === i),
     [availableFields]
   )
+  const commonFields = useMemo(
+    () => allFields.filter((f) => isCommonVendorInfoField(f)),
+    [allFields]
+  )
   useEffect(() => {
     const trimmedAll = new Set(allFields.map((f) => f.trim()).filter(Boolean))
     const cleaned = selectedFields.filter((f) => trimmedAll.has(f.trim()))
     if (cleaned.length !== selectedFields.length) onSelectedFieldsChange(cleaned)
   }, [allFields, selectedFields, onSelectedFieldsChange])
+
+  useEffect(() => {
+    if (!commonInfoOnly) return
+    const next = commonFields.length > 0 ? commonFields : allFields
+    const same =
+      next.length === selectedFields.length && next.every((f, i) => f === selectedFields[i])
+    if (!same) onSelectedFieldsChange(next)
+  }, [commonInfoOnly, commonFields, allFields, selectedFields, onSelectedFieldsChange])
+
+  const commonDomainSet = useMemo(() => {
+    return new Set(
+      commonVendorDomains
+        .map((d) => d.trim().toLowerCase().replace(/^www\./i, ''))
+        .filter(Boolean)
+    )
+  }, [commonVendorDomains])
+
+  useEffect(() => {
+    if (commonDomainSet.size === 0 && commonVendorsOnly) setCommonVendorsOnly(false)
+  }, [commonDomainSet, commonVendorsOnly])
 
   useEffect(() => {
     function onDocumentClick(e: MouseEvent) {
@@ -239,8 +350,11 @@ export function CompareDecisionWorkspace({
         return d.includes('today') || d.includes('same day')
       })
     }
+    if (commonVendorsOnly && commonDomainSet.size > 0) {
+      result = result.filter((r) => commonDomainSet.has(extractRowDomain(r.url)))
+    }
     return result
-  }, [filteredRows, vendorSearch, shipsToday])
+  }, [filteredRows, vendorSearch, shipsToday, commonVendorsOnly, commonDomainSet])
 
   const sortedRows = useMemo(() => {
     const arr = [...displayRows]
@@ -450,6 +564,15 @@ export function CompareDecisionWorkspace({
               {filtParts.length} parts · {selectedChipCount} selected
             </span>
             <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setSparkAiOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-900 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-slate-800"
+              aria-label="Open Spark AI"
+            >
+              <Sparkles className="h-3 w-3" strokeWidth={2} aria-hidden />
+              Spark AI
+            </button>
             <div className="flex items-center gap-1 rounded-[5px] border border-slate-200 bg-slate-50 px-2 py-1">
               <Search className="h-2.5 w-2.5 text-slate-400" strokeWidth={2} />
               <input
@@ -525,6 +648,14 @@ export function CompareDecisionWorkspace({
             Select parts above with research results, or run Research to collect vendor pricing.
           </p>
         </div>
+        <CompareSparkAiPanel
+          open={sparkAiOpen}
+          onClose={() => setSparkAiOpen(false)}
+          partLabel={partLabel}
+          rows={filteredRows}
+          partChips={partChips}
+          activePartId={activePartId}
+        />
       </div>
     )
   }
@@ -558,6 +689,15 @@ export function CompareDecisionWorkspace({
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setSparkAiOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          aria-label="Open Spark AI"
+        >
+          <Sparkles className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.75} />
+          Spark AI
+        </button>
+        <button
+          type="button"
           className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
         >
           <Heart className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -577,8 +717,15 @@ export function CompareDecisionWorkspace({
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 md:grid-cols-4">
         <div className="bg-white px-4 py-3.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Best price</p>
-          <p className="truncate font-mono text-xl font-bold text-emerald-600">{money(bestPrice, '—')}</p>
-          <p className="truncate text-[11px] text-slate-400">{bestRow?.vendor ?? '—'}</p>
+          <div className="mt-1 flex items-center gap-2.5">
+            {bestRow && (
+              <VendorThumb imageUrl={bestRow.imageUrl} vendor={bestRow.vendor} size="md" />
+            )}
+            <div className="min-w-0">
+              <p className="truncate font-mono text-xl font-bold text-emerald-600">{money(bestPrice, '—')}</p>
+              <p className="truncate text-[11px] text-slate-400">{bestRow?.vendor ?? '—'}</p>
+            </div>
+          </div>
         </div>
         <div className="bg-white px-4 py-3.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Avg price</p>
@@ -662,6 +809,54 @@ export function CompareDecisionWorkspace({
           </button>
           <button
             type="button"
+            onClick={() => {
+              if (commonDomainSet.size === 0) return
+              setCommonVendorsOnly((v) => !v)
+            }}
+            disabled={commonDomainSet.size === 0}
+            title={
+              commonDomainSet.size > 0
+                ? `Show only vendors shared across selected parts (${commonDomainSet.size})`
+                : 'Select 2+ parts that share vendors to enable this filter'
+            }
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
+              commonDomainSet.size === 0
+                ? 'cursor-not-allowed text-slate-400 opacity-60'
+                : commonVendorsOnly
+                  ? 'bg-slate-100 text-slate-900'
+                  : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Layers className="h-3 w-3" strokeWidth={1.75} />
+            Common vendors
+            {commonDomainSet.size > 0 ? ` (${commonDomainSet.size})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCommonInfoOnly((v) => {
+                const next = !v
+                if (next) {
+                  onSelectedFieldsChange(commonFields.length > 0 ? commonFields : allFields)
+                } else {
+                  onSelectedFieldsChange(allFields)
+                }
+                return next
+              })
+            }}
+            title={
+              commonFields.length > 0
+                ? `Show only shared field columns (${commonFields.length})`
+                : 'Show only shared field columns (price, delivery, contact, …)'
+            }
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
+              commonInfoOnly ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Common info
+          </button>
+          <button
+            type="button"
             onClick={() => setShowFilters((f) => !f)}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
               showFilters ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
@@ -688,10 +883,24 @@ export function CompareDecisionWorkspace({
                   className="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                 />
                 <div className="mb-2 flex justify-between px-1 text-[11px] text-slate-500">
-                  <button type="button" onClick={() => onSelectedFieldsChange(allFields)} className="hover:text-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommonInfoOnly(false)
+                      onSelectedFieldsChange(allFields)
+                    }}
+                    className="hover:text-slate-700"
+                  >
                     Select all
                   </button>
-                  <button type="button" onClick={() => onSelectedFieldsChange([])} className="hover:text-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommonInfoOnly(false)
+                      onSelectedFieldsChange([])
+                    }}
+                    className="hover:text-slate-700"
+                  >
                     Clear
                   </button>
                 </div>
@@ -705,13 +914,14 @@ export function CompareDecisionWorkspace({
                         <input
                           type="checkbox"
                           checked={selectedFields.includes(field)}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setCommonInfoOnly(false)
                             onSelectedFieldsChange(
                               e.target.checked
                                 ? [...selectedFields, field]
                                 : selectedFields.filter((v) => v !== field)
                             )
-                          }
+                          }}
                           className="rounded border-slate-300 text-blue-600"
                         />
                         <span className="truncate text-slate-700">{field}</span>
@@ -751,6 +961,9 @@ export function CompareDecisionWorkspace({
               onClick={() => {
                 onOnlyAvailableChange(false)
                 setShipsToday(false)
+                setCommonVendorsOnly(false)
+                setCommonInfoOnly(false)
+                onSelectedFieldsChange(allFields)
                 onPriceRangeChange([minPrice, maxPrice])
                 setVendorSearch('')
               }}
@@ -862,6 +1075,7 @@ export function CompareDecisionWorkspace({
                   const score = getScore(row)
                   const d = (row.delivery || '').toLowerCase()
                   const shipsTodayRow = d.includes('today') || d.includes('same day')
+                  const isCommonVendor = commonDomainSet.has(extractRowDomain(row.url))
 
                   return (
                     <tr
@@ -883,14 +1097,15 @@ export function CompareDecisionWorkspace({
                       </td>
                       <td className="h-11 px-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-100 text-[11px] font-bold text-slate-500">
-                            {row.vendor[0]?.toUpperCase() ?? '?'}
-                          </div>
+                          <VendorThumb imageUrl={row.imageUrl} vendor={row.vendor} />
                           <div className="min-w-0">
-                            <div className="mb-0.5 flex items-center gap-1.5">
+                            <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
                               <span className="truncate text-sm font-medium text-slate-800">{row.vendor}</span>
                               {isBest && <Tag variant="green">Best price</Tag>}
                               {shipsTodayRow && <Tag variant="blue">Ships today</Tag>}
+                              {isCommonVendor && commonDomainSet.size > 0 && (
+                                <Tag variant="yellow">Shared</Tag>
+                              )}
                             </div>
                             <span className="text-[11px] text-slate-400">{getDeliverySub(row)}</span>
                           </div>
@@ -1014,6 +1229,14 @@ export function CompareDecisionWorkspace({
         </div>
       </div>
       </div>
+      <CompareSparkAiPanel
+        open={sparkAiOpen}
+        onClose={() => setSparkAiOpen(false)}
+        partLabel={partLabel}
+        rows={filteredRows}
+        partChips={partChips}
+        activePartId={activePartId}
+      />
     </div>
   )
 }

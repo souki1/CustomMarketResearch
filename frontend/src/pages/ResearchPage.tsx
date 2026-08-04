@@ -5,13 +5,18 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Copy,
   EyeOff,
   Filter,
+  FolderInput,
+  FolderOpen,
   GitCompare,
+  History,
   LayoutGrid,
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Table2,
   Trash2,
   X,
@@ -19,14 +24,21 @@ import {
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken, workspaceStorageKey } from '@/lib/auth'
 import {
+  aiGroqChat,
+  getResearchState,
   getWorkspaceFileContent,
+  listActiveResearchJobs,
   listResearchGridSummary,
   listResearchUrls,
   listWorkspaceItems,
   researchMoreSource,
   saveDataSheetSelection,
   searchSelectionAndStoreUrls,
+  transferResearchUrls,
   updateWorkspaceFileContent,
+  uploadWorkspaceCsv,
+  upsertResearchState,
+  type ResearchFieldChange,
   type ResearchGridSummaryRow,
   type ScrapedDataItem,
 } from '@/lib/api'
@@ -39,6 +51,7 @@ import { ResearchSheetFilterBuilder } from '@/components/research/ResearchSheetF
 import { ResearchTabs } from '@/components/research/ResearchTabs'
 import {
   RESEARCH_AI_SHEET_INSTRUCTIONS,
+  parseSheetUpdatesFromAssistantMessage,
   type SheetColumnUpdate,
 } from '@/lib/researchSheetUpdates'
 import {
@@ -89,6 +102,195 @@ function serializeToCsv(data: string[][]): string {
         .join(',')
     )
     .join('\n')
+}
+
+type SelectionBlock = {
+  headers: string[]
+  /** Parallel to headers — original column indices in the source sheet */
+  colIndices: number[]
+  /** 0-based data-row indices (content row = index + 1) */
+  rowIndices: number[]
+  rows: string[][]
+}
+
+function sheetHeaderLabel(headerRow: string[], colIdx: number): string {
+  const raw = String(headerRow[colIdx] ?? '').trim()
+  return raw || `Column ${colIdx + 1}`
+}
+
+/** Selected rows × selected columns block (headers + cell values). */
+function buildSelectionBlock(
+  content: string[][],
+  selectedRows: Set<number>,
+  selectedColumns: Set<number>
+): SelectionBlock | null {
+  if (!content[0]?.length || selectedRows.size === 0 || selectedColumns.size === 0) return null
+  const colIndices = Array.from(selectedColumns)
+    .filter((i) => i >= 0 && i < content[0].length)
+    .sort((a, b) => a - b)
+  const rowIndices = Array.from(selectedRows)
+    .filter((i) => i >= 0 && i + 1 < content.length)
+    .sort((a, b) => a - b)
+  if (colIndices.length === 0 || rowIndices.length === 0) return null
+  const headers = colIndices.map((i) => sheetHeaderLabel(content[0], i))
+  const rows = rowIndices.map((rowIdx) => {
+    const row = content[rowIdx + 1] ?? []
+    return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+  })
+  return { headers, colIndices, rowIndices, rows }
+}
+
+function sheetRowHasData(row: string[] | undefined): boolean {
+  if (!row?.length) return false
+  return row.some((c) => String(c ?? '').trim().length > 0)
+}
+
+function isPlaceholderHeader(label: string): boolean {
+  return !label.trim() || /^column\s+\d+$/i.test(label.trim())
+}
+
+function ensureSheetWidth(next: string[][], headerRow: string[], minWidth: number) {
+  while (headerRow.length < minWidth) headerRow.push('')
+  for (let r = 1; r < next.length; r++) {
+    while (next[r]!.length < headerRow.length) next[r]!.push('')
+  }
+}
+
+type SheetMergeResult = {
+  sheet: string[][]
+  /** Maps each transferred source data-row index → destination data-row index (0-based). */
+  rowMap: Array<{ source: number; dest: number }>
+}
+
+/**
+ * Merge a selection block into a target sheet.
+ * - Maps columns by name, otherwise into the next blank header (leftmost), else appends.
+ * - Writes into the first stretch of rows where those target cells are empty,
+ *   merging cell-by-cell so extra columns land beside existing data (not far right / new rows).
+ */
+function mergeBlockIntoSheet(target: string[][], block: SelectionBlock): SheetMergeResult {
+  if (!block.headers.length) {
+    return { sheet: target.map((row) => [...row]), rowMap: [] }
+  }
+
+  if (!target.length || !target[0]?.length) {
+    const sheet = [block.headers.map((h) => h), ...block.rows.map((r) => [...r])]
+    const rowMap = block.rowIndices.map((source, i) => ({ source, dest: i }))
+    return { sheet, rowMap }
+  }
+
+  const next = target.map((row) => [...row])
+  const headerRow = [...(next[0] ?? [])]
+  const norm = (s: string) => s.trim().toLowerCase()
+  const colMap: number[] = []
+  const usedTargetCols = new Set<number>()
+  const targetHeadersAllBlank = headerRow.every((h) => !String(h ?? '').trim())
+
+  const claimBlankHeader = (): number => {
+    let idx = headerRow.findIndex(
+      (h, hi) => !usedTargetCols.has(hi) && !String(h ?? '').trim()
+    )
+    if (idx < 0) {
+      idx = headerRow.length
+      ensureSheetWidth(next, headerRow, idx + 1)
+    }
+    return idx
+  }
+
+  if (targetHeadersAllBlank) {
+    // New / unnamed sheets: write into the leftmost columns so data is visible immediately.
+    for (let i = 0; i < block.headers.length; i++) {
+      ensureSheetWidth(next, headerRow, i + 1)
+      const label = block.headers[i]!
+      headerRow[i] = isPlaceholderHeader(label) ? '' : label
+      colMap.push(i)
+      usedTargetCols.add(i)
+    }
+  } else {
+    for (const label of block.headers) {
+      let idx = -1
+      if (!isPlaceholderHeader(label)) {
+        const key = norm(label)
+        idx = headerRow.findIndex(
+          (h, hi) =>
+            !usedTargetCols.has(hi) &&
+            !isPlaceholderHeader(String(h ?? '')) &&
+            norm(String(h ?? '')) === key
+        )
+      }
+      if (idx < 0) {
+        idx = claimBlankHeader()
+        if (!isPlaceholderHeader(label)) {
+          headerRow[idx] = label
+        }
+      }
+      colMap.push(idx)
+      usedTargetCols.add(idx)
+    }
+  }
+
+  next[0] = headerRow
+  ensureSheetWidth(next, headerRow, headerRow.length)
+
+  const targetColsEmptyAt = (rowIdx: number): boolean => {
+    const row = next[rowIdx] ?? []
+    return colMap.every((ci) => !String(row[ci] ?? '').trim())
+  }
+
+  // Prefer filling beside existing values (empty cells in the mapped columns),
+  // instead of always appending below the last non-empty row.
+  let writeAt = 1
+  const lastDataRow = (() => {
+    for (let r = next.length - 1; r >= 1; r--) {
+      if (sheetRowHasData(next[r])) return r
+    }
+    return 0
+  })()
+  let found = false
+  for (let r = 1; r <= Math.max(1, lastDataRow); r++) {
+    if (targetColsEmptyAt(r)) {
+      writeAt = r
+      found = true
+      break
+    }
+  }
+  if (!found) {
+    writeAt = lastDataRow > 0 ? lastDataRow + 1 : 1
+  }
+
+  const rowMap: Array<{ source: number; dest: number }> = []
+  for (let bi = 0; bi < block.rows.length; bi++) {
+    const blockRow = block.rows[bi]!
+    while (writeAt >= next.length) {
+      next.push(Array.from({ length: headerRow.length }, () => ''))
+    }
+    const row = [...(next[writeAt] ?? [])]
+    while (row.length < headerRow.length) row.push('')
+    for (let i = 0; i < colMap.length; i++) {
+      row[colMap[i]!] = String(blockRow[i] ?? '')
+    }
+    next[writeAt] = row
+    const source = block.rowIndices[bi]
+    if (source != null) {
+      rowMap.push({ source, dest: writeAt - 1 })
+    }
+    writeAt += 1
+  }
+  return { sheet: next, rowMap }
+}
+
+/** Clear selected block cells in the source sheet (keep row structure). */
+function clearSelectionBlockInSheet(content: string[][], block: SelectionBlock): string[][] {
+  const next = content.map((row) => [...row])
+  for (const rowIdx of block.rowIndices) {
+    const r = rowIdx + 1
+    if (!next[r]) continue
+    next[r] = [...next[r]]
+    for (const colIdx of block.colIndices) {
+      if (colIdx < next[r].length) next[r][colIdx] = ''
+    }
+  }
+  return next
 }
 
 function isImageUrl(val: unknown): boolean {
@@ -171,6 +373,173 @@ function structuredFieldEditText(val: unknown): string {
     return val.map((v) => (v == null ? '' : String(v))).join('\n')
   }
   return scalarEditText(val)
+}
+
+function formatTrackValue(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string') {
+    const t = v.trim()
+    return t.length > 120 ? `${t.slice(0, 117)}…` : t || '—'
+  }
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  try {
+    const s = JSON.stringify(v)
+    return s.length > 120 ? `${s.slice(0, 117)}…` : s
+  } catch {
+    return String(v)
+  }
+}
+
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  const diffSec = Math.round((Date.now() - date.getTime()) / 1000)
+  if (diffSec < 45) return 'just now'
+  const diffMin = Math.round(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.round(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.round(diffHr / 24)
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function FieldChangeChip({ change }: { change: ResearchFieldChange }) {
+  const isAdded = change.kind === 'added'
+  return (
+    <li className="flex items-start gap-2 text-xs text-slate-800">
+      <span
+        className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none ${
+          isAdded ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+        }`}
+        aria-hidden
+      >
+        {isAdded ? '+' : '~'}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="font-medium text-slate-700">{change.field.replace(/_/g, ' ')}</span>
+        <span className="mx-1.5 text-slate-300">·</span>
+        {isAdded ? (
+          <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-900">
+              {formatTrackValue(change.after)}
+            </span>
+            <span className="rounded bg-emerald-200/70 px-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-900">
+              new
+            </span>
+          </span>
+        ) : (
+          <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+            <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-500 line-through decoration-slate-400">
+              {formatTrackValue(change.before)}
+            </span>
+            <span className="text-slate-400" aria-hidden>
+              →
+            </span>
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-900">
+              {formatTrackValue(change.after)}
+            </span>
+          </span>
+        )}
+      </span>
+    </li>
+  )
+}
+
+function FieldChangeTracking({
+  changes,
+  changeLog,
+}: {
+  changes?: ResearchFieldChange[] | null
+  changeLog?: ScrapedDataItem['change_log']
+}) {
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const latest = (changes && changes.length > 0 ? changes : changeLog?.[0]?.changes) ?? []
+  const history = (changeLog ?? []).slice(1)
+  if (latest.length === 0 && history.length === 0) return null
+
+  const updatedCount = latest.filter((c) => c.kind === 'updated').length
+  const addedCount = latest.filter((c) => c.kind === 'added').length
+  const latestAt = changeLog?.[0]?.at
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/70 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+          <History className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          Field tracking
+          {updatedCount > 0 && (
+            <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-bold normal-case text-amber-900">
+              {updatedCount} updated
+            </span>
+          )}
+          {addedCount > 0 && (
+            <span className="rounded-full bg-emerald-200/80 px-1.5 py-0.5 text-[10px] font-bold normal-case text-emerald-900">
+              {addedCount} new
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {latestAt && (
+            <span
+              className="text-[11px] font-normal normal-case tracking-normal text-amber-800/80"
+              title={new Date(latestAt).toLocaleString()}
+            >
+              Last research {formatRelativeTime(latestAt)}
+            </span>
+          )}
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((o) => !o)}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/70 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-white"
+              aria-expanded={historyOpen}
+            >
+              History ({history.length})
+              <ChevronDown
+                className={`h-3 w-3 shrink-0 transition-transform ${historyOpen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {latest.length > 0 && (
+        <ul className="space-y-1.5 px-3 py-2.5">
+          {latest.map((c) => (
+            <FieldChangeChip key={`${c.kind}-${c.field}`} change={c} />
+          ))}
+        </ul>
+      )}
+
+      {historyOpen && history.length > 0 && (
+        <div className="max-h-72 overflow-y-auto border-t border-amber-200/70 bg-amber-50/40 px-3 py-2.5">
+          <ol className="relative space-y-3 border-l border-amber-300/60 pl-3.5">
+            {history.map((entry, ei) => (
+              <li key={`${entry.at}-${ei}`} className="relative">
+                <span
+                  className="absolute -left-[19px] top-0.5 h-2 w-2 rounded-full border-2 border-amber-50 bg-amber-400"
+                  aria-hidden
+                />
+                <p
+                  className="text-[11px] font-semibold text-amber-900/90"
+                  title={new Date(entry.at).toLocaleString()}
+                >
+                  {formatRelativeTime(entry.at)}
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {(entry.changes ?? []).map((c) => (
+                    <FieldChangeChip key={`${entry.at}-${c.field}`} change={c} />
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function StructuredFieldCell({
@@ -586,7 +955,7 @@ function ResearchToolbarTooltip({ label }: { label: string }) {
 }
 
 function ResearchToolbarDivider() {
-  return <span className="mx-1 h-5 w-px shrink-0 bg-slate-300/80" aria-hidden />
+  return <span className="mx-2.5 h-5 w-px shrink-0 bg-slate-300/80" aria-hidden />
 }
 
 function ResearchToolbarGroup({
@@ -600,7 +969,7 @@ function ResearchToolbarGroup({
     <div
       role="group"
       aria-label={label}
-      className="flex shrink-0 items-center gap-1"
+      className="flex shrink-0 items-center gap-2"
     >
       {children}
     </div>
@@ -646,6 +1015,17 @@ type PersistedResearchState = {
   inspectorMode: 'single' | 'multi'
   inspectorMultiRowIndices: number[]
   inspectorCompareSelection: number[]
+  rowDensity?: RowDensity
+}
+
+function isRowDensity(value: unknown): value is RowDensity {
+  return value === 'compact' || value === 'default' || value === 'comfortable'
+}
+
+function isEmptyBlankSheet(tab: TabState): boolean {
+  if (tab.fileId != null) return false
+  if (!tab.data?.length) return true
+  return tab.data.every((row) => row.every((c) => !String(c ?? '').trim()))
 }
 
 export function ResearchPage() {
@@ -712,6 +1092,18 @@ export function ResearchPage() {
   const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
   const [filePickerError, setFilePickerError] = useState<string | null>(null)
+  /** null = open-as-tab; duplicate/move = transfer selection block to picked file */
+  const [transferPickerMode, setTransferPickerMode] = useState<'duplicate' | 'move' | null>(null)
+  const [transferBusy, setTransferBusy] = useState(false)
+  const [transferFiles, setTransferFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
+  const [transferFilesLoading, setTransferFilesLoading] = useState(false)
+  const [transferFilesError, setTransferFilesError] = useState<string | null>(null)
+  const [transferNewSheetName, setTransferNewSheetName] = useState('')
+  const [newSheetModalOpen, setNewSheetModalOpen] = useState(false)
+  const [newSheetNameDraft, setNewSheetNameDraft] = useState('')
+  const [newSheetCreating, setNewSheetCreating] = useState(false)
+  const newSheetInputRef = useRef<HTMLInputElement>(null)
+  const transferNewSheetInputRef = useRef<HTMLInputElement>(null)
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
@@ -737,6 +1129,10 @@ export function ResearchPage() {
   const [researchAiQueryInput, setResearchAiQueryInput] = useState(
     'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
   )
+  const [cellFillPopupOpen, setCellFillPopupOpen] = useState(false)
+  const [cellFillPrompt, setCellFillPrompt] = useState('')
+  const [cellFillMode, setCellFillMode] = useState<'internal' | 'external'>('internal')
+  const [cellFillLoading, setCellFillLoading] = useState(false)
   const [researchMoreOpen, setResearchMoreOpen] = useState(false)
   const [researchMorePrompt, setResearchMorePrompt] = useState('')
   const [addStructuredColumnOpen, setAddStructuredColumnOpen] = useState(false)
@@ -746,6 +1142,10 @@ export function ResearchPage() {
   const [researchProgress, setResearchProgress] = useState(0)
   const [researchingRowIndices, setResearchingRowIndices] = useState<Set<number>>(new Set())
   const researchProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** Tracks a remote/local research job id so other browsers can clear when it finishes. */
+  const syncedResearchJobIdRef = useRef<number | null>(null)
+  /** True while this browser's own searchSelectionAndStoreUrls request is in flight. */
+  const localResearchInFlightRef = useRef(false)
   const [researchVersion, setResearchVersion] = useState(0)
   const [previewScrapedData, setPreviewScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [previewResearchUrlId, setPreviewResearchUrlId] = useState<number | null>(null)
@@ -824,12 +1224,61 @@ export function ResearchPage() {
   }, [comparePreviewModalOpen])
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
+  const hasHydratedResearchStateRef = useRef(false)
+  const researchPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPersistedFileTabCountRef = useRef(0)
+  const [researchSessionReady, setResearchSessionReady] = useState(false)
+  const tabsRef = useRef(tabs)
+  const activeTabIdRef = useRef(activeTabId)
+  tabsRef.current = tabs
+  activeTabIdRef.current = activeTabId
   const userHasEditedRef = useRef(false)
   const saveImmediatelyRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Bumped on local writes so in-flight GET sync responses are ignored (stale overwrite guard). */
+  const sheetSyncGenerationRef = useRef<Map<number, number>>(new Map())
+  const sheetSyncSuppressUntilRef = useRef<Map<number, number>>(new Map())
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
+
+  const bumpSheetSyncGeneration = useCallback((fileId: number, suppressMs = 2500) => {
+    const prev = sheetSyncGenerationRef.current.get(fileId) ?? 0
+    sheetSyncGenerationRef.current.set(fileId, prev + 1)
+    sheetSyncSuppressUntilRef.current.set(fileId, Date.now() + suppressMs)
+  }, [])
+
+  /**
+   * Pull latest CSV from Mongo for a file-backed tab.
+   * Skips when this browser has unsaved local edits so we don't clobber them.
+   */
+  const reloadFileTabFromServer = useCallback(async (fileId: number) => {
+    if (!Number.isFinite(fileId) || fileId <= 0) return
+    if (userHasEditedRef.current) return
+    const suppressUntil = sheetSyncSuppressUntilRef.current.get(fileId) ?? 0
+    if (Date.now() < suppressUntil) return
+    const token = getToken()
+    if (!token) return
+
+    const generation = sheetSyncGenerationRef.current.get(fileId) ?? 0
+    try {
+      const text = await getWorkspaceFileContent(fileId, token)
+      if (userHasEditedRef.current) return
+      if ((sheetSyncGenerationRef.current.get(fileId) ?? 0) !== generation) return
+      if (Date.now() < (sheetSyncSuppressUntilRef.current.get(fileId) ?? 0)) return
+      const parsed = parseCsv(text)
+      const nextData = parsed.length > 0 ? parsed : [['']]
+      const nextCsv = serializeToCsv(nextData)
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.fileId === fileId)
+        if (idx < 0) return prev
+        if (serializeToCsv(prev[idx].data) === nextCsv) return prev
+        return prev.map((t, i) => (i === idx ? { ...t, data: nextData } : t))
+      })
+    } catch {
+      // Soft-fail: keep local cache if the network/API blips during background sync.
+    }
+  }, [])
 
   const clearResearchProgressTicker = useCallback(() => {
     if (researchProgressIntervalRef.current) {
@@ -883,6 +1332,7 @@ export function ResearchPage() {
       startResearchProgressTicker()
       setResearchFieldsPopupOpen(false)
       setResearchMoreOpen(false)
+      localResearchInFlightRef.current = true
 
       try {
         setResearchProgress(20)
@@ -907,6 +1357,8 @@ export function ResearchPage() {
       } catch (e) {
         showToast(e instanceof Error ? e.message : 'Failed to save or search')
       } finally {
+        localResearchInFlightRef.current = false
+        syncedResearchJobIdRef.current = null
         clearResearchProgressTicker()
         setStoreSelectionLoading(false)
         setResearchingRowIndices(new Set())
@@ -1034,6 +1486,7 @@ export function ResearchPage() {
       if (Array.isArray(data.inspectorCompareSelection)) {
         setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
       }
+      if (isRowDensity(data.rowDensity)) setRowDensity(data.rowDensity)
     } catch {
       // ignore parse errors
     }
@@ -1056,6 +1509,7 @@ export function ResearchPage() {
         inspectorMode,
         inspectorMultiRowIndices,
         inspectorCompareSelection: Array.from(inspectorCompareSelection),
+        rowDensity,
       }
       localStorage.setItem(workspaceStorageKey(RESEARCH_PAGE_STATE_KEY), JSON.stringify(data))
     } catch {
@@ -1074,6 +1528,7 @@ export function ResearchPage() {
     inspectorMode,
     inspectorMultiRowIndices,
     inspectorCompareSelection,
+    rowDensity,
   ])
 
   useEffect(() => {
@@ -1084,6 +1539,246 @@ export function ResearchPage() {
 
   const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
   const skipSelectionResetRef = useRef(false)
+
+  // Cross-browser: restore open file-backed sheets + chrome from Mongo for this user.
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      hasHydratedResearchStateRef.current = true
+      if (!hasRestoredPageStateRef.current) hasRestoredPageStateRef.current = true
+      setResearchSessionReady(true)
+      return
+    }
+
+    const routeFileId =
+      fileIdParam && Number.isFinite(Number(fileIdParam)) && Number(fileIdParam) > 0
+        ? Number(fileIdParam)
+        : null
+    const st = location.state as
+      | { restoreResearchSelection?: unknown; restoreInspector?: unknown }
+      | undefined
+    const hasCompareRestore = Boolean(st?.restoreResearchSelection || st?.restoreInspector)
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const state = await getResearchState(token)
+        if (cancelled) return
+
+        const openTabs = Array.isArray(state?.open_tabs) ? state!.open_tabs : []
+        const needsFileFetch = openTabs.length > 0 || routeFileId != null
+        if (needsFileFetch) setLoading(true)
+        const loaded: TabState[] = []
+        for (const entry of openTabs) {
+          const fid = Number(entry.file_id)
+          if (!Number.isFinite(fid) || fid <= 0) continue
+          if (loaded.some((t) => t.fileId === fid)) continue
+          try {
+            const text = await getWorkspaceFileContent(fid, token)
+            if (cancelled) return
+            const parsed = parseCsv(text)
+            loaded.push({
+              id: crypto.randomUUID(),
+              name: typeof entry.name === 'string' && entry.name.trim() ? entry.name : `File ${fid}`,
+              data: parsed.length > 0 ? parsed : [['']],
+              fileId: fid,
+              folderPath: entry.folder_path ?? null,
+            })
+          } catch {
+            // File may have been deleted — skip.
+          }
+        }
+
+        if (routeFileId != null && !loaded.some((t) => t.fileId === routeFileId)) {
+          try {
+            const text = await getWorkspaceFileContent(routeFileId, token)
+            if (cancelled) return
+            const parsed = parseCsv(text)
+            loaded.unshift({
+              id: crypto.randomUUID(),
+              name: nameFromUrl?.trim() || `File ${routeFileId}`,
+              data: parsed.length > 0 ? parsed : [['']],
+              fileId: routeFileId,
+              folderPath: folderFromUrl,
+            })
+          } catch {
+            // Keep going; route effect can surface the error.
+          }
+        }
+
+        if (loaded.length > 0) {
+          lastPersistedFileTabCountRef.current = loaded.length
+          setTabs((prev) => {
+            const keepLocalOnly = prev.filter((t) => t.fileId == null && !isEmptyBlankSheet(t))
+            return [...loaded, ...keepLocalOnly]
+          })
+
+          const preferFileId =
+            routeFileId ??
+            (typeof state?.active_file_id === 'number' ? state.active_file_id : null) ??
+            loaded[0]!.fileId
+          const active =
+            loaded.find((t) => t.fileId === preferFileId) ?? loaded[0]!
+          skipSelectionResetRef.current = true
+          setActiveTabId(active.id)
+          setError(null)
+
+          if (!hasCompareRestore && state?.page_state && typeof state.page_state === 'object') {
+            const ps = state.page_state as Partial<PersistedResearchState> & Record<string, unknown>
+            if (Array.isArray(ps.selectedRows)) setSelectedRows(new Set(ps.selectedRows as number[]))
+            if (Array.isArray(ps.selectedColumns)) {
+              setSelectedColumns(new Set(ps.selectedColumns as number[]))
+            }
+            if (typeof ps.rowsPerPage === 'number') setRowsPerPage(ps.rowsPerPage)
+            if (typeof ps.page === 'number') setPage(ps.page)
+            if (ps.selectedRowIndex !== undefined) {
+              setSelectedRowIndex(ps.selectedRowIndex as number | null)
+            }
+            if (typeof ps.isInspectorOpen === 'boolean') {
+              setIsInspectorOpen(ps.isInspectorOpen)
+              if (ps.isInspectorOpen) setCollapseSidebarForInspector(true)
+            }
+            if (typeof ps.inspectorMaximized === 'boolean') {
+              setInspectorMaximized(ps.inspectorMaximized)
+            }
+            if (
+              typeof ps.inspectorWidth === 'number' &&
+              ps.inspectorWidth >= INSPECTOR_MIN_WIDTH &&
+              ps.inspectorWidth <= INSPECTOR_MAX_WIDTH
+            ) {
+              setInspectorWidth(ps.inspectorWidth)
+            }
+            if (ps.inspectorMode === 'single' || ps.inspectorMode === 'multi') {
+              setInspectorMode(ps.inspectorMode)
+            }
+            if (Array.isArray(ps.inspectorMultiRowIndices)) {
+              setInspectorMultiRowIndices(ps.inspectorMultiRowIndices as number[])
+            }
+            if (Array.isArray(ps.inspectorCompareSelection)) {
+              setInspectorCompareSelection(new Set(ps.inspectorCompareSelection as number[]))
+            }
+            if (isRowDensity(ps.rowDensity)) setRowDensity(ps.rowDensity)
+          }
+
+          if (routeFileId == null && active.fileId != null) {
+            const params = new URLSearchParams()
+            params.set('fileId', String(active.fileId))
+            params.set('name', active.name)
+            if (active.folderPath) params.set('folder', active.folderPath)
+            setSearchParams(params, { replace: true })
+          }
+        } else if (openTabs.length === 0) {
+          // Server has no session yet — seed it from this browser's local file-backed tabs.
+          const localFileTabs = tabsRef.current.filter(
+            (t): t is TabState & { fileId: number } => t.fileId != null && t.fileId > 0
+          )
+          if (localFileTabs.length > 0) {
+            const activeLocal =
+              localFileTabs.find((t) => t.id === activeTabIdRef.current) ?? localFileTabs[0]!
+            try {
+              await upsertResearchState(
+                {
+                  open_tabs: localFileTabs.map((t) => ({
+                    file_id: t.fileId,
+                    name: t.name,
+                    folder_path: t.folderPath ?? null,
+                  })),
+                  active_file_id: activeLocal.fileId,
+                  page_state: {},
+                },
+                token
+              )
+              lastPersistedFileTabCountRef.current = localFileTabs.length
+            } catch {
+              // ignore seed failure; debounced persist may retry
+            }
+          }
+        }
+      } catch {
+        // Keep localStorage tabs if server hydrate fails.
+      } finally {
+        if (!cancelled) {
+          hasHydratedResearchStateRef.current = true
+          hasRestoredPageStateRef.current = true
+          setResearchSessionReady(true)
+          setLoading(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // Mount-only hydrate (route fileId / compare handoff snapshotted from first render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist open file tabs + UI chrome to Mongo so a new browser can resume.
+  // Depends on researchSessionReady so the first save runs after hydrate (not before).
+  useEffect(() => {
+    if (!researchSessionReady || !hasHydratedResearchStateRef.current) return
+    if (researchPersistTimerRef.current) clearTimeout(researchPersistTimerRef.current)
+    researchPersistTimerRef.current = setTimeout(() => {
+      const token = getToken()
+      if (!token) return
+      const open_tabs = tabs
+        .filter((t): t is TabState & { fileId: number } => t.fileId != null && t.fileId > 0)
+        .map((t) => ({
+          file_id: t.fileId,
+          name: t.name,
+          folder_path: t.folderPath ?? null,
+        }))
+      // Avoid wiping another browser's session with an empty blank sheet on first paint.
+      // Still allow clearing when this browser previously had file tabs open.
+      if (open_tabs.length === 0 && lastPersistedFileTabCountRef.current === 0) return
+      const active =
+        tabs.find((t) => t.id === activeTabId) ?? tabs.find((t) => t.fileId != null) ?? null
+      void upsertResearchState(
+        {
+          open_tabs,
+          active_file_id: active?.fileId ?? null,
+          page_state: {
+            selectedRows: Array.from(selectedRows),
+            selectedColumns: Array.from(selectedColumns),
+            rowsPerPage,
+            page,
+            selectedRowIndex,
+            isInspectorOpen,
+            inspectorMaximized,
+            inspectorWidth,
+            inspectorMode,
+            inspectorMultiRowIndices,
+            inspectorCompareSelection: Array.from(inspectorCompareSelection),
+            rowDensity,
+          },
+        },
+        token
+      )
+        .then(() => {
+          lastPersistedFileTabCountRef.current = open_tabs.length
+        })
+        .catch(() => {})
+    }, 600)
+    return () => {
+      if (researchPersistTimerRef.current) clearTimeout(researchPersistTimerRef.current)
+    }
+  }, [
+    researchSessionReady,
+    tabs,
+    activeTabId,
+    selectedRows,
+    selectedColumns,
+    rowsPerPage,
+    page,
+    selectedRowIndex,
+    isInspectorOpen,
+    inspectorMaximized,
+    inspectorWidth,
+    inspectorMode,
+    inspectorMultiRowIndices,
+    inspectorCompareSelection,
+    rowDensity,
+  ])
   useEffect(() => {
     if (prevEffectiveTabIdRef.current === effectiveTabId) return
     prevEffectiveTabIdRef.current = effectiveTabId
@@ -1101,7 +1796,6 @@ export function ResearchPage() {
     setGroupByCol(null)
     setSortCol(null)
     setSortDir('asc')
-    setRowDensity('default')
     setHideFieldsOpen(false)
     setGroupMenuOpen(false)
     setSortMenuOpen(false)
@@ -1116,7 +1810,7 @@ export function ResearchPage() {
     setCollapseSidebarForInspector(false)
   }, [effectiveTabId, setCollapseSidebarForInspector])
 
-  // Fetch all workspace files when file picker opens
+  // Fetch all workspace files when "Open file" picker opens
   useEffect(() => {
     if (!filePickerOpen) return
     const token = getToken()
@@ -1145,6 +1839,44 @@ export function ResearchPage() {
       .catch((err) => setFilePickerError(err instanceof Error ? err.message : 'Failed to load files'))
       .finally(() => setFilePickerLoading(false))
   }, [filePickerOpen])
+
+  // Fetch destination files when Move/Duplicate destination dialog opens
+  useEffect(() => {
+    if (transferPickerMode == null) return
+    const token = getToken()
+    if (!token) {
+      setTransferFilesError('Sign in to choose a destination.')
+      return
+    }
+    setTransferFilesLoading(true)
+    setTransferFilesError(null)
+    const excludeFileId = activeTab?.fileId ?? null
+    type FileEntry = { id: number; name: string; folderPath: string | null }
+    async function collectFiles(parentId: number | null, pathPrefix: string): Promise<FileEntry[]> {
+      const items = await listWorkspaceItems(parentId, token!)
+      const result: FileEntry[] = []
+      for (const item of items) {
+        if (item.is_folder) {
+          const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
+          result.push(...(await collectFiles(item.id, nextPrefix)))
+        } else if (isSpreadsheetWorkspaceFile(item)) {
+          if (excludeFileId != null && item.id === excludeFileId) continue
+          result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
+        }
+      }
+      return result
+    }
+    collectFiles(null, '')
+      .then(setTransferFiles)
+      .catch((err) => setTransferFilesError(err instanceof Error ? err.message : 'Failed to load files'))
+      .finally(() => setTransferFilesLoading(false))
+  }, [transferPickerMode, activeTab?.fileId])
+
+  useEffect(() => {
+    if (transferPickerMode == null) return
+    const t = window.setTimeout(() => transferNewSheetInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [transferPickerMode])
 
   // Fetch research URLs for the selected row from MongoDB when preview is open
   useEffect(() => {
@@ -1231,6 +1963,108 @@ export function ResearchPage() {
     }
   }, [activeTab?.fileId, effectiveTabId, researchVersion])
 
+  // Cross-browser sync: poll active research jobs + refresh "N found" counts.
+  // Same user opening Research in another browser should see in-progress rows and badges.
+  useEffect(() => {
+    const fileId = activeTab?.fileId ?? null
+    const tabId = fileId ? null : effectiveTabId
+    if (!fileId && !tabId) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const refreshGridSummary = async (token: string) => {
+      try {
+        const rows = await listResearchGridSummary(token, {
+          fileId: fileId ?? undefined,
+          tabId: tabId ?? undefined,
+        })
+        if (cancelled) return
+        const next = new Map<number, ResearchGridSummaryRow>()
+        for (const r of rows) {
+          const idx = Number(r.table_row_index)
+          if (!Number.isFinite(idx)) continue
+          next.set(idx, { ...r, table_row_index: idx })
+        }
+        setResearchRowSummaryByIndex(next)
+      } catch {
+        // Soft-fail; next poll retries.
+      }
+    }
+
+    const applyRemoteJobClear = () => {
+      if (localResearchInFlightRef.current) return
+      clearResearchProgressTicker()
+      setStoreSelectionLoading(false)
+      setResearchingRowIndices(new Set())
+      window.setTimeout(() => {
+        if (!localResearchInFlightRef.current) setResearchProgress(0)
+      }, 400)
+      setResearchVersion((v) => v + 1)
+    }
+
+    const tick = async () => {
+      const token = getToken()
+      if (!token || cancelled) return
+      try {
+        const jobs = await listActiveResearchJobs(token, {
+          fileId: fileId ?? undefined,
+          tabId: tabId ?? undefined,
+        })
+        if (cancelled) return
+        const job = jobs.find((j) => j.status === 'running') ?? null
+
+        if (job) {
+          syncedResearchJobIdRef.current = job.id
+          const indices = (job.table_row_indices ?? []).filter((n) => Number.isFinite(n))
+          setResearchingRowIndices(new Set(indices))
+          setStoreSelectionLoading(true)
+          setToolbarActive('selected')
+          if (job.total_rows > 0) {
+            const pct = Math.min(
+              95,
+              Math.max(8, Math.round((job.completed_rows / job.total_rows) * 100))
+            )
+            setResearchProgress(pct)
+            // Prefer server progress over the local cosmetic ticker.
+            clearResearchProgressTicker()
+          }
+          await refreshGridSummary(token)
+        } else if (syncedResearchJobIdRef.current != null) {
+          syncedResearchJobIdRef.current = null
+          applyRemoteJobClear()
+          await refreshGridSummary(token)
+        } else if (!localResearchInFlightRef.current) {
+          // Keep badges current even when no job is running (other browser finished earlier).
+          await refreshGridSummary(token)
+        }
+      } catch {
+        // Soft-fail; next poll retries.
+      }
+
+      if (!cancelled) {
+        const hasJob = syncedResearchJobIdRef.current != null || localResearchInFlightRef.current
+        timer = window.setTimeout(() => {
+          void tick()
+        }, hasJob ? 2500 : 6000)
+      }
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    void tick()
+
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [activeTab?.fileId, clearResearchProgressTicker, effectiveTabId])
+
   // Show loading in preview while research is running (until all rows scraped)
   useEffect(() => {
     if (storeSelectionLoading && isInspectorOpen && selectedRowIndex != null) {
@@ -1239,6 +2073,7 @@ export function ResearchPage() {
   }, [storeSelectionLoading, isInspectorOpen, selectedRowIndex])
 
   useEffect(() => {
+    if (!researchSessionReady) return
     if (!fileIdParam) return
     const token = getToken()
     if (!token) {
@@ -1258,6 +2093,8 @@ export function ResearchPage() {
     if (existing) {
       setActiveTabId(existing.id)
       setError(null)
+      // Tab exists in this browser's cache — still refresh from server for multi-browser sync.
+      void reloadFileTabFromServer(numericId)
       return
     }
     setLoading(true)
@@ -1265,20 +2102,22 @@ export function ResearchPage() {
     getWorkspaceFileContent(numericId, token)
       .then((text) => {
         const data = parseCsv(text)
+        const nextData = data.length > 0 ? data : [['']]
         const name = nameFromUrl ?? `File ${fileIdParam}`
         const newTab: TabState = {
           id: crypto.randomUUID(),
           name,
-          data: data.length > 0 ? data : [['']],
+          data: nextData,
           fileId: numericId,
           folderPath: folderFromUrl,
         }
         setTabs((prev) => {
-          // If a tab for this fileId was created while we were loading, reuse it.
+          // If a tab for this fileId was created while we were loading, reuse it and refresh data.
           const existingTab = prev.find((t) => t.fileId === numericId)
           if (existingTab) {
             setActiveTabId(existingTab.id)
-            return prev
+            if (serializeToCsv(existingTab.data) === serializeToCsv(nextData)) return prev
+            return prev.map((t) => (t.fileId === numericId ? { ...t, data: nextData } : t))
           }
           setActiveTabId(newTab.id)
           return [...prev, newTab]
@@ -1288,15 +2127,91 @@ export function ResearchPage() {
         setError(err instanceof Error ? err.message : 'Failed to load file')
       })
       .finally(() => setLoading(false))
-  }, [fileIdParam, nameFromUrl, folderFromUrl, tabs, setSearchParams])
+  }, [
+    researchSessionReady,
+    fileIdParam,
+    nameFromUrl,
+    folderFromUrl,
+    tabs,
+    setSearchParams,
+    reloadFileTabFromServer,
+  ])
+
+  // Keep file-backed sheets in sync across browsers for the same user.
+  useEffect(() => {
+    const fileId = activeTab?.fileId ?? null
+    if (fileId == null) return
+
+    void reloadFileTabFromServer(fileId)
+
+    const onVisibleOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void reloadFileTabFromServer(fileId)
+    }
+    document.addEventListener('visibilitychange', onVisibleOrFocus)
+    window.addEventListener('focus', onVisibleOrFocus)
+
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void reloadFileTabFromServer(fileId)
+    }, 15000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibleOrFocus)
+      window.removeEventListener('focus', onVisibleOrFocus)
+      window.clearInterval(pollId)
+    }
+  }, [activeTab?.fileId, reloadFileTabFromServer])
 
   const addNewTab = useCallback(() => {
-    const tab = newBlankSheet()
-    setTabs((prev) => [...prev, tab])
-    setActiveTabId(tab.id)
-    setSearchParams({}, { replace: true })
+    setNewSheetNameDraft('')
+    setNewSheetModalOpen(true)
     setError(null)
-  }, [setSearchParams])
+  }, [])
+
+  useEffect(() => {
+    if (!newSheetModalOpen) return
+    const t = window.setTimeout(() => newSheetInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [newSheetModalOpen])
+
+  const commitNewSheetFile = useCallback(async () => {
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to create a workspace file')
+      return
+    }
+    const raw = newSheetNameDraft.trim() || 'New sheet'
+    const fileName = /\.csv$/i.test(raw) ? raw : `${raw}.csv`
+    const blank = newBlankSheet()
+    const csv = serializeToCsv(blank.data)
+    const file = new File([csv], fileName, { type: 'text/csv;charset=utf-8' })
+
+    setNewSheetCreating(true)
+    try {
+      const created = await uploadWorkspaceCsv(file, null, token)
+      const tab: TabState = {
+        id: crypto.randomUUID(),
+        name: created.name,
+        data: blank.data,
+        fileId: created.id,
+        folderPath: null,
+      }
+      setTabs((prev) => [...prev, tab])
+      setActiveTabId(tab.id)
+      const params = new URLSearchParams()
+      params.set('fileId', String(created.id))
+      params.set('name', created.name)
+      setSearchParams(params, { replace: true })
+      setNewSheetModalOpen(false)
+      setNewSheetNameDraft('')
+      showToast(`Created “${created.name}”`)
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to create file')
+    } finally {
+      setNewSheetCreating(false)
+    }
+  }, [newSheetNameDraft, setSearchParams, showToast])
 
   const closeTab = useCallback(
     (e: React.MouseEvent, id: string) => {
@@ -1368,7 +2283,9 @@ export function ResearchPage() {
         saveTimeoutRef.current = null
       }
       try {
+        bumpSheetSyncGeneration(fileId)
         await updateWorkspaceFileContent(fileId, serializeToCsv(nextData), token)
+        bumpSheetSyncGeneration(fileId)
         userHasEditedRef.current = false
         saveImmediatelyRef.current = false
         return true
@@ -1377,7 +2294,265 @@ export function ResearchPage() {
         return false
       }
     },
-    [activeTab?.fileId, showToast]
+    [activeTab?.fileId, bumpSheetSyncGeneration, showToast]
+  )
+
+  const closeTransferPicker = useCallback(() => {
+    setTransferPickerMode(null)
+    setTransferNewSheetName('')
+    setTransferBusy(false)
+  }, [])
+
+  const openTransferPicker = useCallback(
+    (mode: 'duplicate' | 'move') => {
+      if (!content || selectedRows.size === 0 || selectedColumns.size === 0) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      if (!buildSelectionBlock(content, selectedRows, selectedColumns)) {
+        showToast('Nothing to transfer from the current selection')
+        return
+      }
+      setTransferNewSheetName('')
+      setTransferPickerMode(mode)
+    },
+    [content, selectedColumns, selectedRows, showToast]
+  )
+
+  const finishTransferToSheet = useCallback(
+    async (args: {
+      mode: 'duplicate' | 'move'
+      block: SelectionBlock
+      merged: string[][]
+      rowMap: Array<{ source: number; dest: number }>
+      targetFileId: number
+      targetName: string
+      targetFolder: string | null
+      targetTabId: string
+    }) => {
+      const { mode, block, merged, rowMap, targetFileId, targetName, targetFolder, targetTabId } =
+        args
+
+      bumpSheetSyncGeneration(targetFileId)
+      setTabs((prev) => {
+        if (prev.some((t) => t.fileId === targetFileId)) {
+          return prev.map((t) => (t.fileId === targetFileId ? { ...t, data: merged } : t))
+        }
+        return [
+          ...prev,
+          {
+            id: targetTabId,
+            name: targetName,
+            data: merged,
+            fileId: targetFileId,
+            folderPath: targetFolder,
+          },
+        ]
+      })
+
+      if (mode === 'move' && content) {
+        const cleared = clearSelectionBlockInSheet(content, block)
+        userHasEditedRef.current = true
+        saveImmediatelyRef.current = true
+        setActiveTabData(() => cleared)
+        if (activeTab?.fileId != null) {
+          bumpSheetSyncGeneration(activeTab.fileId)
+          await persistSheetContent(cleared)
+        }
+      }
+
+      // Move/copy found research (“N found”) with the transferred rows.
+      if (rowMap.length > 0) {
+        const token = getToken()
+        const sourceFileId = activeTab?.fileId ?? null
+        const sourceTabId = sourceFileId == null ? effectiveTabId ?? null : null
+        if (token && (sourceFileId != null || sourceTabId)) {
+          try {
+            await transferResearchUrls(token, {
+              mode,
+              source_file_id: sourceFileId,
+              source_tab_id: sourceTabId,
+              dest_file_id: targetFileId,
+              dest_tab_id: targetTabId,
+              row_map: rowMap.map((m) => ({
+                source_table_row_index: m.source,
+                dest_table_row_index: m.dest,
+              })),
+            })
+            setResearchVersion((v) => v + 1)
+          } catch {
+            showToast('Sheet transferred, but research results could not be moved')
+          }
+        }
+      }
+
+      setSelectedRows(new Set())
+      setSelectedColumns(new Set())
+      skipSelectionResetRef.current = true
+      setPage(1)
+      setActiveTabId(targetTabId)
+      const params = new URLSearchParams()
+      params.set('fileId', String(targetFileId))
+      params.set('name', targetName)
+      if (targetFolder) params.set('folder', targetFolder)
+      setSearchParams(params, { replace: true })
+      showToast(
+        mode === 'move'
+          ? `Moved selection & research to “${targetName}” and saved`
+          : `Duplicated selection & research to “${targetName}” and saved`
+      )
+      closeTransferPicker()
+    },
+    [
+      activeTab?.fileId,
+      bumpSheetSyncGeneration,
+      closeTransferPicker,
+      content,
+      effectiveTabId,
+      persistSheetContent,
+      setActiveTabData,
+      setSearchParams,
+      showToast,
+    ]
+  )
+
+  const transferSelectionToFile = useCallback(
+    async (targetFileId: number, mode: 'duplicate' | 'move') => {
+      if (!content) return
+      const block = buildSelectionBlock(content, selectedRows, selectedColumns)
+      if (!block) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      if (activeTab?.fileId != null && targetFileId === activeTab.fileId) {
+        showToast('Pick a different file than the current sheet')
+        return
+      }
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to transfer to a file')
+        return
+      }
+
+      const nonEmptyCells = block.rows.reduce(
+        (n, row) => n + row.filter((c) => String(c ?? '').trim().length > 0).length,
+        0
+      )
+      if (nonEmptyCells === 0) {
+        showToast('Selected cells are empty — nothing to transfer')
+        return
+      }
+
+      setTransferBusy(true)
+      try {
+        const openTarget = tabs.find((t) => t.fileId === targetFileId)
+        let targetData: string[][]
+        if (openTarget?.data?.length) {
+          targetData = openTarget.data.map((row) => [...row])
+        } else {
+          try {
+            const text = await getWorkspaceFileContent(targetFileId, token)
+            const parsed = parseCsv(text)
+            targetData = parsed.length > 0 ? parsed : [['']]
+          } catch {
+            targetData = [['']]
+          }
+        }
+
+        const { sheet: merged, rowMap } = mergeBlockIntoSheet(targetData, block)
+        bumpSheetSyncGeneration(targetFileId)
+        await updateWorkspaceFileContent(targetFileId, serializeToCsv(merged), token)
+        bumpSheetSyncGeneration(targetFileId)
+
+        const picked = transferFiles.find((f) => f.id === targetFileId)
+        await finishTransferToSheet({
+          mode,
+          block,
+          merged,
+          rowMap,
+          targetFileId,
+          targetName: picked?.name ?? openTarget?.name ?? `File ${targetFileId}`,
+          targetFolder: picked?.folderPath ?? openTarget?.folderPath ?? null,
+          targetTabId: openTarget?.id ?? crypto.randomUUID(),
+        })
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to transfer selection')
+      } finally {
+        setTransferBusy(false)
+      }
+    },
+    [
+      activeTab?.fileId,
+      bumpSheetSyncGeneration,
+      content,
+      finishTransferToSheet,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      tabs,
+      transferFiles,
+    ]
+  )
+
+  const transferSelectionToNewSheet = useCallback(
+    async (mode: 'duplicate' | 'move') => {
+      if (!content) return
+      const block = buildSelectionBlock(content, selectedRows, selectedColumns)
+      if (!block) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to create a destination sheet')
+        return
+      }
+      const nonEmptyCells = block.rows.reduce(
+        (n, row) => n + row.filter((c) => String(c ?? '').trim().length > 0).length,
+        0
+      )
+      if (nonEmptyCells === 0) {
+        showToast('Selected cells are empty — nothing to transfer')
+        return
+      }
+
+      const raw =
+        transferNewSheetName.trim() ||
+        (mode === 'move' ? 'Moved selection' : 'Duplicated selection')
+      const fileName = /\.csv$/i.test(raw) ? raw : `${raw}.csv`
+      const blank = newBlankSheet().data
+      const { sheet: merged, rowMap } = mergeBlockIntoSheet(blank, block)
+      const file = new File([serializeToCsv(merged)], fileName, { type: 'text/csv;charset=utf-8' })
+
+      setTransferBusy(true)
+      try {
+        const created = await uploadWorkspaceCsv(file, null, token)
+        bumpSheetSyncGeneration(created.id)
+        await finishTransferToSheet({
+          mode,
+          block,
+          merged,
+          rowMap,
+          targetFileId: created.id,
+          targetName: created.name,
+          targetFolder: null,
+          targetTabId: crypto.randomUUID(),
+        })
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to create destination sheet')
+      } finally {
+        setTransferBusy(false)
+      }
+    },
+    [
+      bumpSheetSyncGeneration,
+      content,
+      finishTransferToSheet,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      transferNewSheetName,
+    ]
   )
 
   const updateCell = useCallback(
@@ -1397,8 +2572,9 @@ export function ResearchPage() {
   )
 
   const applySheetColumnUpdates = useCallback(
-    (updates: SheetColumnUpdate[]) => {
-      if (!updates.length || selectedRowIndex == null || !content?.length) {
+    (updates: SheetColumnUpdate[], targetDataRowIndex?: number) => {
+      const rowIdx0 = targetDataRowIndex ?? selectedRowIndex
+      if (!updates.length || rowIdx0 == null || !content?.length) {
         showToast('Select a row before applying sheet updates')
         return
       }
@@ -1407,7 +2583,7 @@ export function ResearchPage() {
 
       userHasEditedRef.current = true
       saveImmediatelyRef.current = true
-      const dataRowIndex = selectedRowIndex + 1
+      const dataRowIndex = rowIdx0 + 1
       setActiveTabData((prev) => {
         if (!prev.length) return prev
         const next = prev.map((row) => [...row])
@@ -1422,7 +2598,7 @@ export function ResearchPage() {
             colIdx = headerRow.length
             headerRow.push(name)
             for (let r = 1; r < next.length; r++) {
-              while (next[r].length < headerRow.length) next[r].push('')
+              while (next[r]!.length < headerRow.length) next[r]!.push('')
             }
           }
           while (row.length < headerRow.length) row.push('')
@@ -1433,10 +2609,246 @@ export function ResearchPage() {
         next[dataRowIndex] = row
         return next
       })
-      showToast(`Updated ${validUpdates.length} column${validUpdates.length === 1 ? '' : 's'} on this row`)
+      if (targetDataRowIndex == null) {
+        showToast(`Updated ${validUpdates.length} column${validUpdates.length === 1 ? '' : 's'} on this row`)
+      }
     },
     [content, selectedRowIndex, setActiveTabData, showToast]
   )
+
+  const parseCellFillUpdates = useCallback(
+    (assistantContent: string, targetColumns: string[]): SheetColumnUpdate[] => {
+      const updates = parseSheetUpdatesFromAssistantMessage(assistantContent).filter((u) =>
+        targetColumns.some((c) => c.trim().toLowerCase() === u.column.trim().toLowerCase())
+      )
+      let toApply = updates
+      if (toApply.length === 0) {
+        const jsonMatch = assistantContent.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          try {
+            const obj = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+            const nested =
+              obj.updates && Array.isArray(obj.updates)
+                ? (obj.updates as unknown[])
+                : null
+            if (nested) {
+              toApply = nested
+                .map((row) => {
+                  if (!row || typeof row !== 'object') return null
+                  const column = String((row as { column?: unknown }).column ?? '').trim()
+                  const value = String((row as { value?: unknown }).value ?? '').trim()
+                  if (!column) return null
+                  const match = targetColumns.find((c) => c.toLowerCase() === column.toLowerCase())
+                  return match ? { column: match, value } : null
+                })
+                .filter((x): x is SheetColumnUpdate => x != null && Boolean(x.value))
+            } else {
+              toApply = targetColumns
+                .map((col) => {
+                  const key = Object.keys(obj).find((k) => k.trim().toLowerCase() === col.toLowerCase())
+                  if (!key) return null
+                  return { column: col, value: String(obj[key] ?? '').trim() }
+                })
+                .filter((x): x is SheetColumnUpdate => x != null && Boolean(x.value))
+            }
+          } catch {
+            toApply = []
+          }
+        }
+      }
+      if (toApply.length === 0 && targetColumns.length === 1) {
+        const prose = assistantContent
+          .replace(/```[\s\S]*?```/g, '')
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l && !l.startsWith('#') && l.length < 500)
+        if (prose) toApply = [{ column: targetColumns[0]!, value: prose }]
+      }
+      return toApply
+    },
+    []
+  )
+
+  const runCellFillResearch = useCallback(async () => {
+    if (!content?.[0]) return
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to research cells')
+      return
+    }
+    if (selectedColumns.size === 0 || selectedRows.size === 0) {
+      showToast('Select at least one column and one row first')
+      return
+    }
+    const prompt = cellFillPrompt.trim()
+    if (!prompt) {
+      showToast('Enter a research prompt for the selected cells')
+      return
+    }
+
+    const colIndices = Array.from(selectedColumns)
+      .filter((i) => i >= 0 && i < content[0]!.length)
+      .sort((a, b) => a - b)
+    const rowIndices = Array.from(selectedRows)
+      .filter((i) => i >= 0 && i + 1 < content.length)
+      .sort((a, b) => a - b)
+    if (colIndices.length === 0 || rowIndices.length === 0) {
+      showToast('Select at least one column and one row first')
+      return
+    }
+
+    const targetColumns = colIndices.map((i) => sheetHeaderLabel(content[0]!, i))
+    const headerRow = content[0] ?? []
+    const mode = cellFillMode
+
+    setCellFillLoading(true)
+    setResearchingRowIndices(new Set(rowIndices))
+    setCellFillPopupOpen(false)
+    let filled = 0
+    let failed = 0
+    let skippedNoInternal = 0
+
+    try {
+      for (const rowIdx of rowIndices) {
+        const row = content[rowIdx + 1] ?? []
+        let scraped: ScrapedDataItem[] | null = null
+
+        const targetColSet = new Set(colIndices)
+
+        if (mode === 'external') {
+          // Search using other non-empty row values (exclude target cells so old values
+          // do not bias a re-research / overwrite run).
+          const searchHeaders: string[] = []
+          const searchValues: string[] = []
+          for (let i = 0; i < headerRow.length; i++) {
+            if (targetColSet.has(i)) continue
+            const val = String(row[i] ?? '').trim()
+            if (!val) continue
+            searchHeaders.push(sheetHeaderLabel(headerRow, i))
+            searchValues.push(val)
+          }
+          if (searchValues.length === 0) {
+            failed += 1
+            continue
+          }
+          // Bias the web search toward the user’s ask.
+          searchHeaders.push('focus')
+          searchValues.push(prompt)
+
+          try {
+            const saved = await saveDataSheetSelection(
+              {
+                headers: searchHeaders,
+                rows: [searchValues],
+                row_indices: [rowIdx],
+                sheet_name: activeTab?.name ?? null,
+                file_id: activeTab?.fileId ?? null,
+                tab_id: effectiveTabId ?? null,
+              },
+              token
+            )
+            const extractionQuery = [
+              `Extract values needed to answer: ${prompt}`,
+              `Prefer fields matching these sheet columns: ${targetColumns.join(', ')}.`,
+              'Return structured JSON with clear keys and short cell-ready values.',
+            ].join(' ')
+            await searchSelectionAndStoreUrls(saved.id, token, extractionQuery)
+            setResearchVersion((v) => v + 1)
+          } catch {
+            failed += 1
+            continue
+          }
+        }
+
+        try {
+          const urls = await listResearchUrls(token, {
+            fileId: activeTab?.fileId ?? undefined,
+            tabId: activeTab?.fileId == null ? effectiveTabId ?? undefined : undefined,
+            tableRowIndex: rowIdx,
+            fast: mode === 'internal',
+          })
+          scraped = urls[0]?.scraped_data ?? null
+        } catch {
+          scraped = null
+        }
+
+        if (mode === 'internal' && (!scraped || scraped.length === 0)) {
+          skippedNoInternal += 1
+          continue
+        }
+
+        // Blank target columns in AI context so existing cell text is not echoed back
+        // on re-research; applySheetColumnUpdates always overwrites those cells.
+        const rowForContext = [...row]
+        for (const ci of colIndices) {
+          while (rowForContext.length <= ci) rowForContext.push('')
+          rowForContext[ci] = ''
+        }
+        const context = buildResearchInspectorContext(headerRow, rowForContext, scraped)
+        const message = [
+          mode === 'internal'
+            ? 'INTERNAL research only: use the provided scraped_sources / sheet_row. Do not invent web facts.'
+            : 'EXTERNAL research: use the newly scraped_sources from web research plus sheet_row.',
+          `OVERWRITE these sheet columns (replace any previous value): ${targetColumns.map((c) => `"${c}"`).join(', ')}.`,
+          'Always return fresh values for those columns even if they already had data. Do not keep or reuse the old cell text.',
+          `User prompt: ${prompt}`,
+          'Return short cell-ready values (not essays). If unknown, use an empty string.',
+          RESEARCH_AI_SHEET_INSTRUCTIONS,
+        ].join('\n')
+
+        try {
+          const res = await aiGroqChat(token, {
+            mode: 'chat',
+            message,
+            context,
+            session_label: `Fill cell · ${mode} · row ${rowIdx + 1}`,
+            source: mode === 'internal' ? 'research_cell_fill_internal' : 'research_cell_fill_external',
+          })
+          const toApply = parseCellFillUpdates(res.content, targetColumns)
+          if (toApply.length > 0) {
+            applySheetColumnUpdates(toApply, rowIdx)
+            filled += 1
+          } else {
+            failed += 1
+          }
+        } catch {
+          failed += 1
+        }
+      }
+
+      if (filled > 0) {
+        const extra: string[] = []
+        if (failed > 0) extra.push(`${failed} failed`)
+        if (skippedNoInternal > 0) {
+          extra.push(`${skippedNoInternal} had no found results (use External)`)
+        }
+        showToast(
+          extra.length > 0
+            ? `Filled ${filled} row${filled === 1 ? '' : 's'}; ${extra.join('; ')}`
+            : `Filled selected cells on ${filled} row${filled === 1 ? '' : 's'}`
+        )
+      } else if (skippedNoInternal > 0 && failed === 0) {
+        showToast('No found research results for these rows — switch to External research')
+      } else {
+        showToast('Could not fill cells — try a clearer prompt or External research')
+      }
+    } finally {
+      setCellFillLoading(false)
+      setResearchingRowIndices(new Set())
+    }
+  }, [
+    activeTab?.fileId,
+    activeTab?.name,
+    applySheetColumnUpdates,
+    cellFillMode,
+    cellFillPrompt,
+    content,
+    effectiveTabId,
+    parseCellFillUpdates,
+    selectedColumns,
+    selectedRows,
+    showToast,
+  ])
 
   const toggleInspectorSourceAi = useCallback((sourceIndex: number) => {
     setInspectorSourceAiOpen((prev) => {
@@ -1537,7 +2949,14 @@ export function ResearchPage() {
         if (!prev) return prev
         return prev.map((item, i) =>
           i === sourceIndex
-            ? { ...item, id: result.scraped_id, url: result.url, data: result.data }
+            ? {
+                ...item,
+                id: result.scraped_id,
+                url: result.url,
+                data: result.data,
+                last_field_changes: result.field_changes ?? [],
+                change_log: result.change_log ?? item.change_log ?? [],
+              }
             : item
         )
       })
@@ -1550,7 +2969,7 @@ export function ResearchPage() {
       }
       showToast(
         bits.length
-          ? `Source ${sourceIndex + 1}: ${bits.join(', ')}`
+          ? `Source ${sourceIndex + 1}: ${bits.join(', ')} — see before → current below`
           : `Source ${sourceIndex + 1}: no field changes`
       )
       setResearchMoreOpen(false)
@@ -2200,9 +3619,9 @@ export function ResearchPage() {
       <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
         <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
         <p className="max-w-sm text-sm text-gray-500">
-          Open a file from Home or start with a new sheet.
+          Open a workspace file, or start with a new sheet.
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <Link
             to="/"
             className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
@@ -2211,12 +3630,97 @@ export function ResearchPage() {
           </Link>
           <button
             type="button"
+            onClick={() => setFilePickerOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            <FolderOpen className="h-4 w-4" aria-hidden />
+            Open existing
+          </button>
+          <button
+            type="button"
             onClick={addNewTab}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
           >
             + New tab
           </button>
         </div>
+        {filePickerOpen &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+              onClick={() => setFilePickerOpen(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="empty-file-picker-title"
+            >
+              <div
+                className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                  <h3 id="empty-file-picker-title" className="text-base font-semibold text-gray-900">
+                    Open existing file
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setFilePickerOpen(false)}
+                    className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {filePickerLoading && (
+                    <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
+                  )}
+                  {filePickerError && (
+                    <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
+                  )}
+                  {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
+                    <p className="py-8 text-center text-sm text-gray-500">
+                      No spreadsheet files in your workspace yet.
+                    </p>
+                  )}
+                  {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {filePickerFiles.map((file) => (
+                        <li key={file.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const params = new URLSearchParams()
+                              params.set('fileId', String(file.id))
+                              params.set('name', file.name)
+                              if (file.folderPath) params.set('folder', file.folderPath)
+                              setSearchParams(params, { replace: true })
+                              setFilePickerOpen(false)
+                            }}
+                            className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
+                          >
+                            <span className="w-full truncate font-medium">{file.name}</span>
+                            {file.folderPath && (
+                              <span className="w-full truncate text-xs text-gray-500">{file.folderPath}</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="border-t border-gray-200 px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setFilePickerOpen(false)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     )
   }
@@ -2247,6 +3751,179 @@ export function ResearchPage() {
     <div
       className={`bg-[#f8f9fb] text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
+      {newSheetModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-sheet-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !newSheetCreating) setNewSheetModalOpen(false)
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="new-sheet-title" className="text-sm font-semibold text-gray-900">
+              New sheet
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Name the file to create it in your workspace.
+            </p>
+            <input
+              ref={newSheetInputRef}
+              type="text"
+              value={newSheetNameDraft}
+              onChange={(e) => setNewSheetNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void commitNewSheetFile()
+                }
+                if (e.key === 'Escape' && !newSheetCreating) setNewSheetModalOpen(false)
+              }}
+              placeholder="New sheet"
+              disabled={newSheetCreating}
+              className="mt-3 w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+            />
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={newSheetCreating}
+                onClick={() => setNewSheetModalOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={newSheetCreating}
+                onClick={() => void commitNewSheetFile()}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {newSheetCreating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {transferPickerMode != null && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="transfer-dest-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !transferBusy) closeTransferPicker()
+          }}
+        >
+          <div
+            className="flex max-h-[min(85vh,560px)] w-full max-w-lg flex-col rounded-xl border border-gray-200 bg-white shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-gray-100 px-4 py-3">
+              <h2 id="transfer-dest-title" className="text-sm font-semibold text-gray-900">
+                Where do you want to place this?
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {transferPickerMode === 'move'
+                  ? 'Move the selected rows and columns into another sheet (saved to your workspace).'
+                  : 'Duplicate the selected rows and columns into another sheet (saved to your workspace).'}
+              </p>
+            </div>
+
+            <div className="shrink-0 space-y-2 border-b border-gray-100 px-4 py-3">
+              <label htmlFor="transfer-new-sheet-name" className="text-xs font-medium text-gray-700">
+                Create a new sheet
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="transfer-new-sheet-name"
+                  ref={transferNewSheetInputRef}
+                  type="text"
+                  value={transferNewSheetName}
+                  onChange={(e) => setTransferNewSheetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void transferSelectionToNewSheet(transferPickerMode)
+                    }
+                    if (e.key === 'Escape' && !transferBusy) closeTransferPicker()
+                  }}
+                  placeholder={transferPickerMode === 'move' ? 'Moved selection' : 'Duplicated selection'}
+                  disabled={transferBusy}
+                  className="min-w-0 flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  disabled={transferBusy}
+                  onClick={() => void transferSelectionToNewSheet(transferPickerMode)}
+                  className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {transferBusy ? 'Working…' : 'Create & place'}
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                Or choose an existing sheet
+              </p>
+              {transferBusy && (
+                <p className="px-2 py-4 text-center text-sm text-gray-500">Saving…</p>
+              )}
+              {!transferBusy && transferFilesLoading && (
+                <p className="px-2 py-4 text-center text-sm text-gray-500">Loading sheets…</p>
+              )}
+              {!transferBusy && transferFilesError && (
+                <p className="px-2 py-4 text-center text-sm text-red-600">{transferFilesError}</p>
+              )}
+              {!transferBusy &&
+                !transferFilesLoading &&
+                !transferFilesError &&
+                transferFiles.length === 0 && (
+                  <p className="px-2 py-4 text-center text-sm text-gray-500">
+                    No other sheets yet — create a new one above.
+                  </p>
+                )}
+              {!transferBusy &&
+                !transferFilesLoading &&
+                !transferFilesError &&
+                transferFiles.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {transferFiles.map((file) => (
+                      <li key={file.id}>
+                        <button
+                          type="button"
+                          disabled={transferBusy}
+                          onClick={() => void transferSelectionToFile(file.id, transferPickerMode)}
+                          className="flex w-full flex-col rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <span className="truncate text-sm font-medium text-gray-900">{file.name}</span>
+                          {file.folderPath ? (
+                            <span className="truncate text-xs text-gray-500">{file.folderPath}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </div>
+
+            <div className="shrink-0 border-t border-gray-100 px-4 py-3 text-right">
+              <button
+                type="button"
+                disabled={transferBusy}
+                onClick={closeTransferPicker}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {deleteConfirm != null && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -2678,6 +4355,117 @@ export function ResearchPage() {
           </div>
         </div>
       )}
+      {cellFillPopupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cell-fill-title"
+          onClick={(e) => e.target === e.currentTarget && !cellFillLoading && setCellFillPopupOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="cell-fill-title" className="text-sm font-semibold text-gray-900">
+              Research & fill selected cells
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Choose how to research, then describe what to put in the selected cells. Running again
+              replaces any existing values in those cells.
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillMode('internal')}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  cellFillMode === 'internal'
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="block text-xs font-semibold">Internal</span>
+                <span className="mt-0.5 block text-[11px] leading-snug opacity-80">
+                  Use already found research results for this row
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillMode('external')}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  cellFillMode === 'external'
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="block text-xs font-semibold">External</span>
+                <span className="mt-0.5 block text-[11px] leading-snug opacity-80">
+                  Search the web, scrape sources, then fill the cell
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <p>
+                <span className="font-semibold text-slate-800">Columns:</span>{' '}
+                {content?.[0]
+                  ? Array.from(selectedColumns)
+                      .sort((a, b) => a - b)
+                      .map((i) => sheetHeaderLabel(content[0]!, i))
+                      .join(', ') || '—'
+                  : '—'}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-800">Rows:</span>{' '}
+                {Array.from(selectedRows)
+                  .sort((a, b) => a - b)
+                  .map((i) => i + 1)
+                  .join(', ') || '—'}
+              </p>
+            </div>
+            <textarea
+              value={cellFillPrompt}
+              onChange={(e) => setCellFillPrompt(e.target.value)}
+              placeholder={
+                cellFillMode === 'internal'
+                  ? 'e.g. "Pull alternate part numbers from the found sources"'
+                  : 'e.g. "Find related / additional part numbers online"'
+              }
+              rows={4}
+              disabled={cellFillLoading}
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-60"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillPopupOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={cellFillLoading || !cellFillPrompt.trim()}
+                onClick={() => void runCellFillResearch()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {cellFillLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
+                {cellFillLoading
+                  ? cellFillMode === 'external'
+                    ? 'Searching…'
+                    : 'Filling…'
+                  : cellFillMode === 'external'
+                    ? 'External research & fill'
+                    : 'Internal research & fill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {addRowPopover.open && (
         <div
           data-add-row-popover
@@ -2776,7 +4564,7 @@ export function ResearchPage() {
       )}
 
       {/* Toolbar */}
-      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-3 overflow-visible border-t border-gray-200 bg-[#f8f9fb] px-4 py-2">
+      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-4 overflow-visible border-t border-gray-200 bg-[#f8f9fb] px-4 py-2.5">
         <ResearchToolbarGroup label="View">
           <button
             ref={hideFieldsBtnRef}
@@ -3262,17 +5050,16 @@ export function ResearchPage() {
               selectedRows.size === 0 ||
               storeSelectionLoading
             }
-            className={`${researchToolbarBtnClass(
-              toolbarActive === 'selected' && selectedColumns.size > 0 && selectedRows.size > 0,
-              !content ||
-                selectedColumns.size === 0 ||
-                selectedRows.size === 0 ||
-                storeSelectionLoading
-            )} ${
-              toolbarActive === 'selected' && selectedColumns.size > 0 && selectedRows.size > 0
-                ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700'
-                : ''
-            }`}
+            className={
+              storeSelectionLoading
+                ? 'group relative inline-flex h-8 w-8 shrink-0 cursor-wait items-center justify-center rounded-[5px] border border-blue-600 bg-blue-600 text-white disabled:opacity-100'
+                : researchToolbarBtnClass(
+                    toolbarActive === 'selected' &&
+                      selectedColumns.size > 0 &&
+                      selectedRows.size > 0,
+                    !content || selectedColumns.size === 0 || selectedRows.size === 0
+                  )
+            }
             aria-label={
               storeSelectionLoading
                 ? `Researching… ${researchProgress}%`
@@ -3287,9 +5074,7 @@ export function ResearchPage() {
                 aria-hidden
               >
                 <span
-                  className={`absolute inset-y-0 left-0 transition-[width] duration-300 ease-out ${
-                    toolbarActive === 'selected' ? 'bg-white/25' : 'bg-blue-500/20'
-                  }`}
+                  className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-300 ease-out"
                   style={{ width: `${researchProgress}%` }}
                 />
               </span>
@@ -3308,6 +5093,68 @@ export function ResearchPage() {
                   : selectedColumns.size === 0 || selectedRows.size === 0
                     ? 'Select column(s) and row(s) first'
                     : 'Research Selected'
+              }
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!content || selectedColumns.size === 0 || selectedRows.size === 0) {
+                showToast(
+                  selectedColumns.size === 0 && selectedRows.size === 0
+                    ? 'Select at least one column and one row first'
+                    : selectedColumns.size === 0
+                      ? 'Select the column(s) to fill first'
+                      : 'Select the row(s) to fill first'
+                )
+                return
+              }
+              const cols = Array.from(selectedColumns)
+                .sort((a, b) => a - b)
+                .map((i) => sheetHeaderLabel(content[0]!, i))
+              setCellFillPrompt(
+                cols.length === 1
+                  ? `Find and fill a value for “${cols[0]}” based on this row.`
+                  : `Find and fill values for: ${cols.join(', ')}.`
+              )
+              setCellFillPopupOpen(true)
+            }}
+            disabled={
+              !content ||
+              selectedColumns.size === 0 ||
+              selectedRows.size === 0 ||
+              cellFillLoading ||
+              storeSelectionLoading
+            }
+            className={researchToolbarBtnClass(
+              cellFillPopupOpen || cellFillLoading,
+              !content ||
+                selectedColumns.size === 0 ||
+                selectedRows.size === 0 ||
+                cellFillLoading ||
+                storeSelectionLoading
+            )}
+            aria-label={
+              cellFillLoading
+                ? 'Filling cells…'
+                : selectedColumns.size === 0 || selectedRows.size === 0
+                  ? 'Select column(s) and row(s) first'
+                  : 'Research & fill cells'
+            }
+          >
+            {cellFillLoading ? (
+              <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            <ResearchToolbarTooltip
+              label={
+                cellFillLoading
+                  ? 'Filling cells…'
+                  : selectedColumns.size === 0 || selectedRows.size === 0
+                    ? 'Check column(s) and row(s) to fill'
+                    : 'Research & fill cells'
               }
             />
           </button>
@@ -3379,6 +5226,54 @@ export function ResearchPage() {
               label={selectedRows.size === 0 ? 'Select rows first' : 'Compare Selected'}
             />
           </button>
+
+          <button
+            type="button"
+            onClick={() => openTransferPicker('duplicate')}
+            disabled={!content || transferBusy}
+            className={researchToolbarBtnClass(
+              selectedRows.size > 0 && selectedColumns.size > 0,
+              !content || transferBusy
+            )}
+            aria-label={
+              selectedRows.size === 0 || selectedColumns.size === 0
+                ? 'Select column checkboxes and row checkboxes first'
+                : 'Duplicate to file'
+            }
+          >
+            <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedRows.size === 0 || selectedColumns.size === 0
+                  ? 'Check row(s) and column header checkbox(es) first'
+                  : 'Duplicate to file'
+              }
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openTransferPicker('move')}
+            disabled={!content || transferBusy}
+            className={researchToolbarBtnClass(
+              selectedRows.size > 0 && selectedColumns.size > 0,
+              !content || transferBusy
+            )}
+            aria-label={
+              selectedRows.size === 0 || selectedColumns.size === 0
+                ? 'Select column checkboxes and row checkboxes first'
+                : 'Move to file'
+            }
+          >
+            <FolderInput className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedRows.size === 0 || selectedColumns.size === 0
+                  ? 'Check row(s) and column header checkbox(es) first'
+                  : 'Move to file'
+              }
+            />
+          </button>
         </ResearchToolbarGroup>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
@@ -3439,12 +5334,19 @@ export function ResearchPage() {
                   </th>
                   {visibleColIndices.map((i) => {
                     const cell = content[0][i] ?? ''
+                    const colSelected = selectedColumns.has(i)
                     return (
-                      <th key={i} scope="col" className={`border-r border-slate-200 last:border-r-0 ${rd.th}`}>
+                      <th
+                        key={i}
+                        scope="col"
+                        className={`border-r border-slate-200 last:border-r-0 ${rd.th} ${
+                          colSelected ? 'bg-blue-50' : ''
+                        }`}
+                      >
                         <div className="flex items-center gap-1.5">
                           <input
                             type="checkbox"
-                            checked={selectedColumns.has(i)}
+                            checked={colSelected}
                             onChange={() =>
                               setSelectedColumns((prev) => {
                                 const next = new Set(prev)
@@ -3453,7 +5355,7 @@ export function ResearchPage() {
                                 return next
                               })
                             }
-                            className="mt-0.5 rounded border-slate-300"
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300"
                             title="Select column"
                             aria-label={`Select column ${cell || i + 1}`}
                           />
@@ -3508,26 +5410,30 @@ export function ResearchPage() {
                       </td>
                       <td className={`w-8 border-r border-slate-200 align-middle ${rd.tdCb}`}>
                         <div className="flex items-center justify-center">
-                          {isRowBeingResearched ? (
-                            <LoaderIcon className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <input
-                              type="checkbox"
-                              checked={selectedRows.has(dataRowIndex)}
-                              onChange={() => toggleRowSelection(dataRowIndex)}
-                              className="rounded border-slate-300"
-                            />
-                          )}
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(dataRowIndex)}
+                            onChange={() => toggleRowSelection(dataRowIndex)}
+                            className="rounded border-slate-300"
+                          />
                         </div>
                       </td>
                       <td
                         className={`w-[80px] shrink-0 cursor-pointer border-r border-slate-200 align-middle transition-colors ${rd.tdResearch} ${
-                          hasStructuredData ? 'hover:bg-blue-100/80' : 'hover:bg-slate-100'
+                          hasStructuredData || isRowBeingResearched
+                            ? 'hover:bg-blue-100/80'
+                            : 'hover:bg-slate-100'
                         }`}
-                        title="Open inspector for this row"
+                        title={
+                          isRowBeingResearched ? 'Researching this row…' : 'Open inspector for this row'
+                        }
                         onClick={() => handleCellClick(dataRowIndex)}
                       >
-                        {hasStructuredData && rowResearchSummary ? (
+                        {isRowBeingResearched ? (
+                          <div className="flex h-full w-full items-center justify-center text-emerald-600" aria-label="Researching">
+                            <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+                          </div>
+                        ) : hasStructuredData && rowResearchSummary ? (
                           <ResearchFoundBadge
                             count={rowResearchSummary.structured_sources_count}
                             onClick={() => handleCellClick(dataRowIndex)}
@@ -3539,7 +5445,9 @@ export function ResearchPage() {
                       {visibleColIndices.map((colIndex, vi) => (
                         <td
                           key={colIndex}
-                          className={`cursor-pointer border-r border-slate-200 p-0 ${vi === visibleColIndices.length - 1 ? 'last:border-r-0' : ''} ${rd.tdCell}`}
+                          className={`cursor-pointer border-r border-slate-200 p-0 ${
+                            vi === visibleColIndices.length - 1 ? 'last:border-r-0' : ''
+                          } ${rd.tdCell} ${selectedColumns.has(colIndex) ? 'bg-blue-50/70' : ''}`}
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
@@ -3550,7 +5458,7 @@ export function ResearchPage() {
                               vi === 0 || /part|internal|mfr/i.test((headers[colIndex] ?? '').trim())
                                 ? 'font-mono font-medium text-blue-700'
                                 : ''
-                            }`}
+                            } ${selectedColumns.has(colIndex) ? 'bg-transparent' : ''}`}
                           />
                         </td>
                       ))}
@@ -4265,12 +6173,42 @@ export function ResearchPage() {
                                 {structuredDataViewType === 'row' ? (
                                   <table className="min-w-full text-sm">
                                     <tbody className="divide-y divide-gray-200">
-                                      {Object.entries(item.data).map(([key, val]) => (
-                                          <tr key={key}>
+                                      {Object.entries(item.data).map(([key, val]) => {
+                                        const changed = (item.last_field_changes ?? []).find(
+                                          (c) => c.field === key
+                                        )
+                                        return (
+                                          <tr
+                                            key={key}
+                                            className={
+                                              changed
+                                                ? changed.kind === 'added'
+                                                  ? 'bg-emerald-50/80'
+                                                  : 'bg-amber-50/70'
+                                                : undefined
+                                            }
+                                          >
                                             <td className="py-1 pr-4 font-medium text-gray-500 align-top">
-                                              {key.replace(/_/g, ' ')}
+                                              <span className="inline-flex items-center gap-1">
+                                                {key.replace(/_/g, ' ')}
+                                                {changed?.kind === 'updated' && (
+                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
+                                                    updated
+                                                  </span>
+                                                )}
+                                                {changed?.kind === 'added' && (
+                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
+                                                    new
+                                                  </span>
+                                                )}
+                                              </span>
                                             </td>
                                             <td className="py-1 text-gray-900">
+                                              {changed?.kind === 'updated' && (
+                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
+                                                  {formatTrackValue(changed.before)}
+                                                </p>
+                                              )}
                                               <StructuredFieldCell
                                                 fieldKey={key}
                                                 val={val}
@@ -4279,24 +6217,69 @@ export function ResearchPage() {
                                               />
                                             </td>
                                           </tr>
-                                        ))}
+                                        )
+                                      })}
                                     </tbody>
                                   </table>
                                 ) : (
                                   <table className="min-w-full text-sm">
                                     <thead>
                                       <tr className="divide-x divide-gray-200">
-                                        {Object.keys(item.data).map((key) => (
-                                          <th key={key} className="px-3 py-1.5 text-left font-medium text-gray-500">
-                                            {key.replace(/_/g, ' ')}
-                                          </th>
-                                        ))}
+                                        {Object.keys(item.data).map((key) => {
+                                          const changed = (item.last_field_changes ?? []).find(
+                                            (c) => c.field === key
+                                          )
+                                          return (
+                                            <th
+                                              key={key}
+                                              className={`px-3 py-1.5 text-left font-medium text-gray-500 ${
+                                                changed
+                                                  ? changed.kind === 'added'
+                                                    ? 'bg-emerald-50/80'
+                                                    : 'bg-amber-50/70'
+                                                  : ''
+                                              }`}
+                                            >
+                                              <span className="inline-flex items-center gap-1">
+                                                {key.replace(/_/g, ' ')}
+                                                {changed?.kind === 'updated' && (
+                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
+                                                    updated
+                                                  </span>
+                                                )}
+                                                {changed?.kind === 'added' && (
+                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
+                                                    new
+                                                  </span>
+                                                )}
+                                              </span>
+                                            </th>
+                                          )
+                                        })}
                                       </tr>
                                     </thead>
                                     <tbody>
                                       <tr className="divide-x divide-gray-200">
-                                        {Object.entries(item.data).map(([key, val]) => (
-                                            <td key={key} className="px-3 py-1.5 text-gray-900 align-top">
+                                        {Object.entries(item.data).map(([key, val]) => {
+                                          const changed = (item.last_field_changes ?? []).find(
+                                            (c) => c.field === key
+                                          )
+                                          return (
+                                            <td
+                                              key={key}
+                                              className={`px-3 py-1.5 text-gray-900 align-top ${
+                                                changed
+                                                  ? changed.kind === 'added'
+                                                    ? 'bg-emerald-50/80'
+                                                    : 'bg-amber-50/70'
+                                                  : ''
+                                              }`}
+                                            >
+                                              {changed?.kind === 'updated' && (
+                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
+                                                  {formatTrackValue(changed.before)}
+                                                </p>
+                                              )}
                                               <StructuredFieldCell
                                                 fieldKey={key}
                                                 val={val}
@@ -4304,12 +6287,17 @@ export function ResearchPage() {
                                                 onChange={(next) => updateScrapedField(idx, key, next)}
                                               />
                                             </td>
-                                          ))}
+                                          )
+                                        })}
                                       </tr>
                                     </tbody>
                                   </table>
                                 )}
                               </div>
+                              <FieldChangeTracking
+                                changes={item.last_field_changes}
+                                changeLog={item.change_log}
+                              />
                             </div>
                             )
                           })}

@@ -352,10 +352,24 @@ export type ResearchUrlResult = {
   position?: number
 }
 
+export type ResearchFieldChange = {
+  field: string
+  before?: unknown
+  after?: unknown
+  kind: 'updated' | 'added'
+}
+
+export type ResearchChangeLogEntry = {
+  at: string
+  changes: ResearchFieldChange[]
+}
+
 export type ScrapedDataItem = {
   id?: number | null
   url: string
   data: Record<string, unknown>
+  last_field_changes?: ResearchFieldChange[] | null
+  change_log?: ResearchChangeLogEntry[] | null
 }
 
 export type ResearchUrlItem = {
@@ -395,6 +409,39 @@ export async function listResearchUrls(
   return request<ResearchUrlItem[]>(`/datasheet/research-urls${search}`, { token })
 }
 
+export type ResearchTransferRowMap = {
+  source_table_row_index: number
+  dest_table_row_index: number
+}
+
+export type ResearchTransferRequest = {
+  mode: 'move' | 'duplicate'
+  source_file_id?: number | null
+  source_tab_id?: string | null
+  dest_file_id?: number | null
+  dest_tab_id?: string | null
+  row_map: ResearchTransferRowMap[]
+}
+
+export type ResearchTransferResponse = {
+  mode: 'move' | 'duplicate'
+  rows_matched: number
+  research_docs_touched: number
+  scraped_docs_copied: number
+}
+
+/** Move or copy research_urls (+ scraped/cleaned on duplicate) to destination sheet rows. */
+export async function transferResearchUrls(
+  token: string,
+  body: ResearchTransferRequest
+): Promise<ResearchTransferResponse> {
+  return request<ResearchTransferResponse>('/datasheet/research-urls/transfer', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
 export type ResearchMoreSourceResult = {
   research_url_id: number
   scraped_id: number
@@ -402,6 +449,8 @@ export type ResearchMoreSourceResult = {
   data: Record<string, unknown>
   updated_fields: string[]
   new_fields: string[]
+  field_changes?: ResearchFieldChange[]
+  change_log?: ResearchChangeLogEntry[]
 }
 
 /** Re-scrape one existing source URL with a prompt; merges updated/new fields into that source only. */
@@ -549,6 +598,67 @@ export async function upsertCompareState(
     token,
     body: JSON.stringify(payload),
   })
+}
+
+export type ResearchOpenTabPayload = {
+  file_id: number
+  name: string
+  folder_path?: string | null
+}
+
+export type ResearchStatePayload = {
+  open_tabs: ResearchOpenTabPayload[]
+  active_file_id: number | null
+  page_state: Record<string, unknown>
+}
+
+export type ResearchStateResponse = ResearchStatePayload & {
+  owner_id: number
+  created_at: string
+  updated_at: string
+}
+
+export async function getResearchState(token: string): Promise<ResearchStateResponse | null> {
+  return request<ResearchStateResponse | null>('/research/state', { token })
+}
+
+export async function upsertResearchState(
+  payload: ResearchStatePayload,
+  token: string
+): Promise<ResearchStateResponse> {
+  return request<ResearchStateResponse>('/research/state', {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export type ResearchJobStatus = 'running' | 'done' | 'failed'
+
+export type ResearchJob = {
+  id: number
+  status: ResearchJobStatus
+  selection_id?: number | null
+  file_id?: number | null
+  tab_id?: string | null
+  table_row_indices: number[]
+  completed_rows: number
+  total_rows: number
+  total_urls: number
+  error?: string | null
+  started_at: string
+  updated_at: string
+}
+
+export async function listActiveResearchJobs(
+  token: string,
+  options?: { fileId?: number | null; tabId?: string | null }
+): Promise<ResearchJob[]> {
+  const params = new URLSearchParams()
+  if (options?.fileId != null) params.set('file_id', String(options.fileId))
+  if (options?.tabId != null) params.set('tab_id', options.tabId)
+  const search = params.toString() ? `?${params}` : ''
+  return request<ResearchJob[]>(`/research/jobs/active${search}`, { token })
 }
 
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {

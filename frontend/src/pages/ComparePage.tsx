@@ -62,6 +62,33 @@ function isImageKey(key: string): boolean {
   return /image|img|photo|picture|thumbnail/.test(k)
 }
 
+/** First usable product image URL from scraped vendor data (nested + arrays). */
+function extractImageFromScrapedData(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (Array.isArray(v)) {
+      const hit = v.find((x): x is string => typeof x === 'string' && isImageUrl(x))
+      if (hit && (isImageKey(k) || isImageUrl(hit))) return hit.trim()
+      continue
+    }
+    if (typeof v === 'string' && isImageUrl(v) && (isImageKey(k) || /image|photo|thumbnail/i.test(k))) {
+      return v.trim()
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const nested = extractImageFromScrapedData(v as Record<string, unknown>)
+      if (nested) return nested
+    }
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && isImageUrl(v) && isImageKey(k)) return v.trim()
+  }
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'string' && isImageUrl(v)) return v.trim()
+  }
+  return null
+}
+
 /** Flatten nested object keys for display (e.g. { a: { b: 1 } } -> ["a.b"]) */
 function flattenObjectKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   const keys: string[] = []
@@ -1354,6 +1381,7 @@ export function ComparePage() {
       const priceNumber = parseMoneyValue(priceRaw)
       const shippingNumber = parseMoneyValue(shippingRaw)
       const ratingNumber = ratingRaw ? Number(ratingRaw.replace(/[^\d.]/g, '')) : null
+      const imageUrl = extractImageFromScrapedData(data)
       return {
         id: `${item.url}-${idx}`,
         url: item.url,
@@ -1368,6 +1396,7 @@ export function ComparePage() {
         delivery,
         location,
         contact,
+        imageUrl,
         rawData: data,
       }
     })
@@ -1665,14 +1694,24 @@ export function ComparePage() {
   )
 
   const handleClearPartSelection = useCallback(() => {
-    updateActiveTabData((d) => {
-      const clearedRows: Record<number, number[]> = {}
-      for (const key of Object.keys(d.selectedFileRows)) {
-        clearedRows[Number(key)] = []
-      }
-      return { ...d, selectedFileRows: clearedRows, selectedRowForScraped: null }
-    })
-  }, [updateActiveTabData])
+    const tabId = activeTab?.id
+    if (tabId) {
+      setExternalItemsByTab((prev) => {
+        if ((prev[tabId] ?? []).length === 0) return prev
+        return { ...prev, [tabId]: [] }
+      })
+    }
+    updateActiveTabData((d) => ({
+      ...d,
+      selectedFileRows: {},
+      selectedRowForScraped: null,
+    }))
+    openWithItems([])
+    setStructuredPartView('all')
+    setDecisionSelectedIds(new Set())
+    setDecisionVendorFilter('all')
+    setScrapedVendorFilter('all')
+  }, [activeTab?.id, updateActiveTabData, openWithItems])
 
   /** Parse file-{fileId}-{rowIdx} to get fileId and rowIdx for scraped data lookup */
   function parseFileItemId(itemId: string): { fileId: number; rowIdx: number } | null {
@@ -1772,6 +1811,7 @@ export function ComparePage() {
                 setDecisionVendorFilter(domain)
                 setScrapedVendorFilter(domain)
               }}
+              commonVendorDomains={commonVendorDomains}
               partChips={comparePartChips}
               activePartId={selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? null}
               onActivePartChange={handleStructuredPartViewChange}

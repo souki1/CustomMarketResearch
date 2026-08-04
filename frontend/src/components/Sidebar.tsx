@@ -38,13 +38,6 @@ function ReportsIcon({ className }: { className?: string }) {
     </svg>
   )
 }
-function PurchaseOrderIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  )
-}
 function AiIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -92,7 +85,6 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
   const isBucket = location.pathname === BUCKET_PATH
-  const isPurchaseOrder = location.pathname === '/purchase-order'
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
   const isWishlist = location.pathname === WISHLIST_PATH
@@ -132,9 +124,6 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             </Link>
             <Link to={WISHLIST_PATH} className={collapsedLinkClass(isWishlist)} title="Wishlist">
               <Heart className={iconClass} />
-            </Link>
-            <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase order board">
-              <PurchaseOrderIcon className={iconClass} />
             </Link>
             <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
               <SettingsIcon className={iconClass} />
@@ -195,10 +184,6 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
           <Link to={WISHLIST_PATH} className={linkClass(isWishlist)} title="Wishlist">
             <Heart className={iconClass} />
             <span>Wishlist</span>
-          </Link>
-          <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase order board">
-            <PurchaseOrderIcon className={iconClass} />
-            <span>Purchase order board</span>
           </Link>
           <Link to="/settings" className={linkClass(isSettings)} title="Settings">
             <SettingsIcon className={iconClass} />

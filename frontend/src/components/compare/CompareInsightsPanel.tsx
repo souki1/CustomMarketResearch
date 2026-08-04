@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Info, Clock, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import { type CompareDecisionRow } from './CompareDecisionWorkspace'
 
@@ -18,7 +18,7 @@ function computeMedian(sorted: number[]): number {
   const n = sorted.length
   if (n === 0) return 0
   const mid = Math.floor(n / 2)
-  return n % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  return n % 2 !== 0 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
 }
 
 function scoreBarColor(score: number): string {
@@ -48,13 +48,21 @@ const DONUT_STROKE = 10
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS
 
 export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBucket }: Props) {
+  const [focusedVendorId, setFocusedVendorId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (focusedVendorId && !rows.some((r) => r.id === focusedVendorId)) {
+      setFocusedVendorId(null)
+    }
+  }, [rows, focusedVendorId])
+
   const analytics = useMemo(() => {
     const prices = rows
       .filter((r) => r.price != null)
       .map((r) => r.price!)
       .sort((a, b) => a - b)
-    const minP = prices.length > 0 ? prices[0] : 0
-    const maxP = prices.length > 0 ? prices[prices.length - 1] : 0
+    const minP = prices.length > 0 ? prices[0]! : 0
+    const maxP = prices.length > 0 ? prices[prices.length - 1]! : 0
     const avgP = prices.length > 0 ? prices.reduce((s, p) => s + p, 0) / prices.length : 0
     const medianP = computeMedian(prices)
 
@@ -88,7 +96,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
     const scoredRows = [...rows]
       .filter((r) => r.rating != null)
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-    const topRecommendation = scoredRows.length > 0 ? scoredRows[0] : bestRow
+    const topRecommendation = scoredRows.length > 0 ? scoredRows[0]! : bestRow
 
     const bucketCount = 4
     const bucketSize = spread > 0 ? Math.ceil(spread / bucketCount) : 1
@@ -173,7 +181,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
         detail: bestShipsToday
           ? ` If lead time is critical, ${bestShipsToday.vendor} is the only best-price option with same-day fulfillment.`
           : count > 0
-            ? ` Consider ${shipsTodayRows[0].vendor} if lead time is critical.`
+            ? ` Consider ${shipsTodayRows[0]!.vendor} if lead time is critical.`
             : ' No vendors offer same-day shipping for this part.',
       })
     }
@@ -195,7 +203,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
     if (realFreeShip.length > 0) {
       const cheapestFree = [...realFreeShip].sort(
         (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity)
-      )[0]
+      )[0]!
       items.push({
         icon: 'check',
         bold: `${cheapestFree.vendor} offers free shipping`,
@@ -234,22 +242,34 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
     medianP,
     q1,
     q3,
+    bestRow,
   } = analytics
 
-  const topTags: { label: string; accent?: boolean }[] = []
-  if (topRecommendation) {
-    const d = (topRecommendation.delivery || '').toLowerCase()
+  const focusedRow =
+    (focusedVendorId ? rows.find((r) => r.id === focusedVendorId) : null) ?? topRecommendation
+
+  const focusTags: { label: string; accent?: boolean }[] = []
+  if (focusedRow) {
+    const d = (focusedRow.delivery || '').toLowerCase()
     if (d.includes('today') || d.includes('same day'))
-      topTags.push({ label: 'Ships today', accent: true })
-    if (topRecommendation.price === minP) topTags.push({ label: 'Best price' })
-    if (topRecommendation.rating != null)
-      topTags.push({ label: `Score ${Math.round(topRecommendation.rating)}` })
+      focusTags.push({ label: 'Ships today', accent: true })
+    if (bestRow && focusedRow.id === bestRow.id) focusTags.push({ label: 'Best price' })
+    if (focusedRow.rating != null)
+      focusTags.push({ label: `Score ${Math.round(focusedRow.rating)}` })
+    if (focusedRow.availability && focusedRow.availability !== '—')
+      focusTags.push({ label: focusedRow.availability })
   }
 
-  const topSavings =
-    topRecommendation?.price != null && avgP > 0
-      ? Math.round(((avgP - topRecommendation.price) / avgP) * 100)
+  const focusSavings =
+    focusedRow?.price != null && avgP > 0
+      ? Math.round(((avgP - focusedRow.price) / avgP) * 100)
       : null
+
+  const isManualFocus = Boolean(focusedVendorId && focusedRow && focusedVendorId === focusedRow.id)
+
+  function selectVendor(row: CompareDecisionRow) {
+    setFocusedVendorId((prev) => (prev === row.id ? null : row.id))
+  }
 
   function handleExport() {
     const headers = ['Vendor', 'Price', 'VS Avg', 'Contact', 'Delivery', 'Score', 'In Stock']
@@ -319,16 +339,30 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
         ))}
       </div>
 
-      {topRecommendation && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <span className="mb-3 inline-block rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Top recommendation
-          </span>
+      {focusedRow && (
+        <div
+          key={focusedRow.id}
+          className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 transition-all duration-200"
+        >
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="inline-block rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              {isManualFocus ? 'Selected vendor' : 'Top recommendation'}
+            </span>
+            {isManualFocus && (
+              <button
+                type="button"
+                onClick={() => setFocusedVendorId(null)}
+                className="text-[10px] font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+              >
+                Back to recommendation
+              </button>
+            )}
+          </div>
           <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h4 className="text-sm font-bold text-slate-900">{topRecommendation.vendor}</h4>
+              <h4 className="text-sm font-bold text-slate-900">{focusedRow.vendor}</h4>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {topTags.map((tag, i) => (
+                {focusTags.map((tag, i) => (
                   <span
                     key={i}
                     className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -342,20 +376,38 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                   </span>
                 ))}
               </div>
+              {(focusedRow.delivery && focusedRow.delivery !== '—') ||
+              (focusedRow.location && focusedRow.location !== '—') ? (
+                <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+                  {[
+                    focusedRow.delivery !== '—' ? focusedRow.delivery : null,
+                    focusedRow.location !== '—' ? focusedRow.location : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              ) : null}
             </div>
             <div className="text-right">
-              <p className="text-xl font-bold text-emerald-600">{fmt(topRecommendation.price)}</p>
+              <p className="text-xl font-bold text-emerald-600">{fmt(focusedRow.price)}</p>
               <p className="text-xs text-slate-500">
-                {topSavings != null && topSavings > 0 ? `${topSavings}% below avg` : ''}
-                {topRecommendation.contact && topSavings != null && topSavings > 0 ? ' · ' : ''}
-                {topRecommendation.contact || ''}
+                {focusSavings != null && focusSavings !== 0
+                  ? `${focusSavings > 0 ? focusSavings : Math.abs(focusSavings)}% ${focusSavings > 0 ? 'below' : 'above'} avg`
+                  : ''}
+                {focusedRow.contact &&
+                focusedRow.contact !== '—' &&
+                focusSavings != null &&
+                focusSavings !== 0
+                  ? ' · '
+                  : ''}
+                {focusedRow.contact && focusedRow.contact !== '—' ? focusedRow.contact : ''}
               </p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => onAddToBucket(topRecommendation.id)}
+              onClick={() => onAddToBucket(focusedRow.id)}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
             >
               Add to bucket
@@ -364,7 +416,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
             <button
               type="button"
               onClick={() =>
-                topRecommendation.url && window.open(topRecommendation.url, '_blank', 'noopener')
+                focusedRow.url && window.open(focusedRow.url, '_blank', 'noopener')
               }
               className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
             >
@@ -380,25 +432,41 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
           <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Price Comparison
           </h4>
+          <p className="mb-2 text-[11px] text-slate-400">Click a vendor to show their details above</p>
           <div className="space-y-2">
-            {byPrice.map((row, i) => (
-              <div key={row.id} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 truncate text-xs text-slate-700" title={row.vendor}>
-                  {row.vendor}
-                </span>
-                <div className="flex-1">
-                  <div
-                    className="flex h-5 items-center rounded px-2 text-[10px] font-semibold text-white"
-                    style={{
-                      width: `${Math.max(18, ((row.price ?? 0) / maxP) * 100)}%`,
-                      backgroundColor: priceBarColor(i, byPrice.length),
-                    }}
+            {byPrice.map((row, i) => {
+              const active = focusedVendorId === row.id
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => selectVendor(row)}
+                  className={`flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors ${
+                    active ? 'bg-slate-100 ring-1 ring-slate-300' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <span
+                    className={`w-28 shrink-0 truncate text-xs ${
+                      active ? 'font-semibold text-slate-900' : 'text-slate-700'
+                    }`}
+                    title={row.vendor}
                   >
-                    {fmt(row.price)}
+                    {row.vendor}
+                  </span>
+                  <div className="flex-1">
+                    <div
+                      className="flex h-5 items-center rounded px-2 text-[10px] font-semibold text-white transition-[width] duration-200"
+                      style={{
+                        width: `${Math.max(18, ((row.price ?? 0) / Math.max(maxP, 0.01)) * 100)}%`,
+                        backgroundColor: priceBarColor(i, byPrice.length),
+                      }}
+                    >
+                      {fmt(row.price)}
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -410,9 +478,22 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
             <div className="space-y-2">
               {byScore.map((row) => {
                 const score = Math.round(row.rating ?? 0)
+                const active = focusedVendorId === row.id
                 return (
-                  <div key={row.id} className="flex items-center gap-2">
-                    <span className="w-28 shrink-0 truncate text-xs text-slate-700" title={row.vendor}>
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => selectVendor(row)}
+                    className={`flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors ${
+                      active ? 'bg-slate-100 ring-1 ring-slate-300' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`w-28 shrink-0 truncate text-xs ${
+                        active ? 'font-semibold text-slate-900' : 'text-slate-700'
+                      }`}
+                      title={row.vendor}
+                    >
                       {row.vendor}
                     </span>
                     <div className="flex flex-1 items-center gap-2">
@@ -427,7 +508,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                       </div>
                       <span className="w-6 text-right text-xs font-semibold text-slate-700">{score}</span>
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>

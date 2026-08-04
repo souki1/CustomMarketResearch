@@ -132,11 +132,46 @@ class ResearchSearchBody(BaseModel):
     ai_query: str | None = None
 
 
+class ResearchTransferRowMap(BaseModel):
+    source_table_row_index: int = Field(..., ge=0)
+    dest_table_row_index: int = Field(..., ge=0)
+
+
+class ResearchTransferRequest(BaseModel):
+    """Move or duplicate research results when sheet rows are transferred."""
+
+    mode: Literal["move", "duplicate"]
+    source_file_id: int | None = None
+    source_tab_id: str | None = None
+    dest_file_id: int | None = None
+    dest_tab_id: str | None = None
+    row_map: list[ResearchTransferRowMap] = Field(default_factory=list, max_length=500)
+
+
+class ResearchTransferResponse(BaseModel):
+    mode: Literal["move", "duplicate"]
+    rows_matched: int
+    research_docs_touched: int
+    scraped_docs_copied: int = 0
+
+
 class ResearchMoreSourceBody(BaseModel):
     """Re-scrape one existing source URL with a custom extraction prompt."""
 
     scraped_id: int
     ai_query: str
+
+
+class ResearchFieldChange(BaseModel):
+    field: str
+    before: Any | None = None
+    after: Any | None = None
+    kind: Literal["updated", "added"] = "updated"
+
+
+class ResearchChangeLogEntry(BaseModel):
+    at: str
+    changes: list[ResearchFieldChange] = Field(default_factory=list)
 
 
 class ResearchMoreSourceResponse(BaseModel):
@@ -146,6 +181,8 @@ class ResearchMoreSourceResponse(BaseModel):
     data: dict
     updated_fields: list[str] = []
     new_fields: list[str] = []
+    field_changes: list[ResearchFieldChange] = Field(default_factory=list)
+    change_log: list[ResearchChangeLogEntry] = Field(default_factory=list)
 
 
 class PortfolioItemResponse(BaseModel):
@@ -254,6 +291,37 @@ class CompareStateUpsert(BaseModel):
 class CompareStateResponse(CompareStateUpsert):
     owner_id: int
     created_at: datetime
+    updated_at: datetime
+
+
+class ResearchStateUpsert(BaseModel):
+    """Cross-browser Research page session (file-backed open tabs + UI chrome)."""
+
+    open_tabs: list[dict[str, Any]] = Field(default_factory=list)
+    active_file_id: int | None = None
+    page_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResearchStateResponse(ResearchStateUpsert):
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResearchJobResponse(BaseModel):
+    """Cross-browser research run status for the same user."""
+
+    id: int
+    status: Literal["running", "done", "failed"]
+    selection_id: int | None = None
+    file_id: int | None = None
+    tab_id: str | None = None
+    table_row_indices: list[int] = Field(default_factory=list)
+    completed_rows: int = 0
+    total_rows: int = 0
+    total_urls: int = 0
+    error: str | None = None
+    started_at: datetime
     updated_at: datetime
 
 
