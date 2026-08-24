@@ -1,19 +1,32 @@
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getToken, workspaceStorageKey } from '@/lib/auth'
 import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import {
   CompareDecisionWorkspace,
+  ComparePartDecisionsPanel,
+  buildApprovedRfqBlocks,
+  buildDecisionSummary,
+  coerceCompareWizardStep,
+  COMPARE_WIZARD_STEPS,
+  recommendedPicksFromRows,
+  rowsFromScrapedSources,
+  type CompareDecisionLens,
   type CompareDecisionRow,
+  type CompareDecisionView,
   type ComparePartChip,
+  type CompareWizardStep,
 } from '@/components/compare/CompareDecisionWorkspace'
 import { CompareVendorMindMap } from '@/components/compare/CompareVendorMindMap'
 import { CompareVendorOverview, collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
 import { primaryTextFromDataRow } from '@/components/compare/dataRow'
 import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
 import {
+  createReport,
+  exportReportPdf,
   getCompareState,
   getWorkspaceFileContent,
   listDataSheetSelections,
@@ -392,6 +405,8 @@ type StructuredScrapedRow = ScrapedDataItem & {
 
 export function ComparePage() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { items, openWithItems } = useComparison()
   const { addItem: addBucketItem, showToast: showBucketToast } = useBucket()
   const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
@@ -460,6 +475,64 @@ export function ComparePage() {
       rowIndex,
       sourceIndices,
     } satisfies ResearchCompareRequestState
+  }, [location.state])
+
+  const routeRfqFlow = Boolean(
+    searchParams.get('flow') === 'rfq' ||
+      (location.state as { rfqFlow?: unknown } | null)?.rfqFlow === true
+  )
+  const wizardStep = coerceCompareWizardStep(searchParams.get('step'))
+  const wizardIndex = COMPARE_WIZARD_STEPS.findIndex((s) => s.id === wizardStep)
+  const safeWizardIndex = wizardIndex >= 0 ? wizardIndex : 0
+
+  const setWizardStep = useCallback(
+    (next: CompareWizardStep) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.set('flow', 'rfq')
+          p.set('step', next)
+          return p
+        },
+        { replace: false, state: location.state }
+      )
+    },
+    [location.state, setSearchParams]
+  )
+
+  useEffect(() => {
+    if (!routeRfqFlow) return
+    if (searchParams.get('flow') === 'rfq' && searchParams.get('step')) return
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        p.set('flow', 'rfq')
+        if (!p.get('step')) p.set('step', 'compare')
+        return p
+      },
+      { replace: true, state: location.state }
+    )
+  }, [location.state, routeRfqFlow, searchParams, setSearchParams])
+
+  const routeResearchPartRefs = useMemo(() => {
+    const raw = (location.state as { researchPartRefs?: unknown } | null)?.researchPartRefs
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const row = item as Record<string, unknown>
+        const rowIndex = Number(row.rowIndex)
+        if (!Number.isFinite(rowIndex) || rowIndex < 0) return null
+        if (typeof row.id !== 'string' || !row.id.trim()) return null
+        return {
+          id: row.id,
+          title: typeof row.title === 'string' ? row.title : '',
+          fileId: row.fileId == null ? null : Number(row.fileId),
+          tabId: typeof row.tabId === 'string' ? row.tabId : null,
+          rowIndex,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
   }, [location.state])
 
   const activeTab =
@@ -940,6 +1013,42 @@ export function ComparePage() {
     }
   }, [compareMode, fileBackedItems])
 
+  useEffect(() => {
+    if (fileBackedItems.length >= 2) return
+    if (routeResearchPartRefs.length < 2) return
+    const token = getToken()
+    if (!token) return
+    let cancelled = false
+    setCommonVendorsLoading(true)
+    Promise.all(
+      routeResearchPartRefs.map(async (ref) => {
+        try {
+          const res = await listResearchUrls(token, {
+            fileId: ref.fileId ?? undefined,
+            tabId: ref.fileId ? undefined : ref.tabId ?? undefined,
+            tableRowIndex: ref.rowIndex,
+            fast: true,
+          })
+          return { itemId: ref.id, scraped: res[0]?.scraped_data ?? [] }
+        } catch {
+          return { itemId: ref.id, scraped: [] as ScrapedDataItem[] }
+        }
+      })
+    )
+      .then((all) => {
+        if (cancelled) return
+        const map: Record<string, ScrapedDataItem[]> = {}
+        for (const x of all) map[x.itemId] = x.scraped
+        setScrapedDataByPart(map)
+      })
+      .finally(() => {
+        if (!cancelled) setCommonVendorsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fileBackedItems.length, routeResearchPartRefs])
+
   /**
    * Vendor-driven part filtering for "different-same-vendor".
    * When a specific vendor is selected, only parts that contain that vendor stay in the Part dropdown and
@@ -998,6 +1107,11 @@ export function ComparePage() {
       }))
     }
   }, [compareMode, effectiveVendorFilteredParts, updateActiveTabData])
+
+  useEffect(() => {
+    if (!routeRfqFlow) return
+    if (effectiveVendorFilteredParts.length > 1) setStructuredPartView('all')
+  }, [routeRfqFlow, effectiveVendorFilteredParts.length])
 
   useEffect(() => {
     if (compareMode !== 'different-same-vendor') {
@@ -1093,7 +1207,9 @@ export function ComparePage() {
 
   /** Bar + table summary + mind map: vendors per part, overlap, prices from scraped numeric/price fields */
   const vendorOverviewPayload = useMemo(() => {
-    if (!selectedRowForScraped) return null
+    if (!selectedRowForScraped && fileBackedItems.length === 0 && routeResearchPartRefs.length === 0) {
+      return null
+    }
     const MAX_MAP_VENDORS = 32
     const fmtUsd = (n: number) =>
       new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
@@ -1210,7 +1326,7 @@ export function ComparePage() {
       const minP = prices.length ? Math.min(...prices) : null
       const maxP = prices.length ? Math.max(...prices) : null
       const avgP = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null
-      const partLabel = (selectedRowForScraped.partLabel || 'Selected part').trim() || 'Selected part'
+      const partLabel = (selectedRowForScraped?.partLabel || 'Selected part').trim() || 'Selected part'
       const mindMap = {
         rootLabel: partLabel,
         parts: [
@@ -1250,6 +1366,8 @@ export function ComparePage() {
     commonVendorsLoading,
     scrapedData,
     scrapedDataLoading,
+    fileBackedItems.length,
+    routeResearchPartRefs.length,
   ])
 
   // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
@@ -1300,13 +1418,13 @@ export function ComparePage() {
     const effectiveFilter = scrapedVendorFilter === 'all' ? null : scrapedVendorFilter
 
     if (compareMode === 'different-same-vendor') {
-      // Decision workspace / multi-part tabs: show ALL vendors for the active part.
-      // Fall back to structured part view (including "all") when no active part is set.
-      const activeId = selectedPartItemId
-      const sourceParts = activeId
-        ? effectiveVendorFilteredParts.filter((item) => item.id === activeId)
-        : showingAllStructuredParts
-          ? effectiveVendorFilteredParts
+      // Multi-part: "All" shows every vendor across selected parts. A part tab filters to that part.
+      const showAllParts = showingAllStructuredParts
+      const activeId = showAllParts ? null : selectedPartItemId
+      const sourceParts = showAllParts
+        ? effectiveVendorFilteredParts
+        : activeId
+          ? effectiveVendorFilteredParts.filter((item) => item.id === activeId)
           : effectiveVendorFilteredParts.filter((item) => item.id === structuredPartSelectValue)
 
       let baseRows = sourceParts.flatMap((part) =>
@@ -1398,15 +1516,43 @@ export function ComparePage() {
         contact,
         imageUrl,
         rawData: data,
+        partId: item.partId,
+        partLabel: item.partLabel,
       }
     })
   }, [scrapedTableRows])
+
+  const allPartsDecisionRows = useMemo<CompareDecisionRow[]>(() => {
+    if (fileBackedItems.length >= 2) {
+      const mapped = fileBackedItems.flatMap((part) =>
+        rowsFromScrapedSources(scrapedDataByPart[part.id] ?? [], {
+          id: part.id,
+          label: (part.title || '—').trim() || '—',
+        })
+      )
+      if (mapped.length > 0) return mapped
+    }
+    const refMapped = routeResearchPartRefs.flatMap((ref) =>
+      rowsFromScrapedSources(scrapedDataByPart[ref.id] ?? [], {
+        id: ref.id,
+        label: (ref.title || '—').trim() || '—',
+      })
+    )
+    if (refMapped.length > 0) return refMapped
+    const fromMap = Object.entries(scrapedDataByPart).flatMap(([id, scraped]) =>
+      rowsFromScrapedSources(scraped, {
+        id,
+        label: items.find((i) => i.id === id)?.title || id,
+      })
+    )
+    return fromMap.length > 0 ? fromMap : decisionRows
+  }, [fileBackedItems, scrapedDataByPart, decisionRows, routeResearchPartRefs, items])
 
   const [decisionVendorFilter, setDecisionVendorFilter] = useState('all')
   const [decisionOnlyAvailable, setDecisionOnlyAvailable] = useState(false)
   const [decisionPriceRange, setDecisionPriceRange] = useState<[number, number]>([0, 0])
   const [decisionSelectedIds, setDecisionSelectedIds] = useState<Set<string>>(new Set())
-  const [decisionView, setDecisionView] = useState<'table' | 'insights' | 'mindmap'>('table')
+  const [decisionView, setDecisionView] = useState<CompareDecisionView>('table')
 
   const decisionVendors = useMemo(
     () => Array.from(new Set(decisionRows.map((r) => r.vendor).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
@@ -1730,7 +1876,8 @@ export function ComparePage() {
   }, [])
 
   const handleAddDecisionRowToBucket = useCallback((id: string) => {
-    const row = decisionRows.find((r) => r.id === id)
+    const row =
+      decisionRows.find((r) => r.id === id) ?? allPartsDecisionRows.find((r) => r.id === id)
     if (!row) return
     const result = addBucketItem({
       id: `compare-source-${encodeURIComponent(row.url)}`,
@@ -1742,7 +1889,7 @@ export function ComparePage() {
     })
     if (result.added) showBucketToast('Source added to Bucket')
     else showBucketToast('Source already exists in Bucket')
-  }, [decisionRows, addBucketItem, showBucketToast])
+  }, [decisionRows, allPartsDecisionRows, addBucketItem, showBucketToast])
 
   const handleAddSelectedDecisionRowsToBucket = useCallback(() => {
     const targets = decisionFilteredRows.filter((r) => decisionSelectedIds.has(r.id))
@@ -1765,12 +1912,168 @@ export function ComparePage() {
     showBucketToast(added > 0 ? `Added ${added} source${added === 1 ? '' : 's'} to Bucket` : 'Selected sources are already in Bucket')
   }, [decisionFilteredRows, decisionSelectedIds, addBucketItem, showBucketToast])
 
+  const [decisionPicks, setDecisionPicks] = useState<Record<CompareDecisionLens, string | null>>({
+    pricing: null,
+    leadTime: null,
+    vendor: null,
+  })
+  const handleDecisionPicksChange = useCallback((picks: Record<CompareDecisionLens, string | null>) => {
+    setDecisionPicks(picks)
+  }, [])
+  const [rfqBusy, setRfqBusy] = useState(false)
+  const [rfqError, setRfqError] = useState<string | null>(null)
+
+  const goWizardBack = useCallback(() => {
+    switch (wizardStep) {
+      case 'compare': {
+        const st = location.state as { returnTo?: unknown } | null
+        const returnTo = typeof st?.returnTo === 'string' && st.returnTo.startsWith('/') ? st.returnTo : '/research'
+        navigate(returnTo, { state: location.state })
+        return
+      }
+      case 'decide':
+        setWizardStep('compare')
+        return
+      case 'rfq':
+        setWizardStep('decide')
+        return
+      default: {
+        const _exhaustive: never = wizardStep
+        return _exhaustive
+      }
+    }
+  }, [wizardStep, location.state, navigate, setWizardStep])
+
+  const goWizardNext = useCallback(() => {
+    switch (wizardStep) {
+      case 'compare':
+        setWizardStep('decide')
+        return
+      case 'decide':
+        setWizardStep('rfq')
+        return
+      case 'rfq':
+        return
+      default: {
+        const _exhaustive: never = wizardStep
+        return _exhaustive
+      }
+    }
+  }, [wizardStep, setWizardStep])
+
+  const createApprovedRfqAndOpenReports = useCallback(async () => {
+    const token = getToken()
+    if (!token) {
+      setRfqError('Sign in to create an RFQ report.')
+      return
+    }
+    const boardRows = allPartsDecisionRows
+    const picks =
+      decisionPicks.pricing || decisionPicks.leadTime || decisionPicks.vendor
+        ? decisionPicks
+        : recommendedPicksFromRows(boardRows)
+    const summary = buildDecisionSummary(boardRows, picks)
+    if (summary.length === 0) {
+      setRfqError('Record at least one decision before creating the RFQ.')
+      return
+    }
+    setRfqBusy(true)
+    setRfqError(null)
+    try {
+      const partTitles =
+        items.length > 0
+          ? items.map((item) => item.title.trim() || 'Untitled part')
+          : routeResearchPartRefs.map((ref) => ref.title.trim() || 'Untitled part')
+      const title = `RFQ Approved — ${partTitles.filter(Boolean).join(' vs ') || 'parts'}`
+      const created = await createReport(token, {
+        title,
+        blocks: buildApprovedRfqBlocks({
+          partTitles,
+          summary,
+          rows: boardRows,
+        }),
+      })
+      await exportReportPdf(token, created.id)
+      showBucketToast('Approved RFQ PDF saved to Reports')
+      navigate(`/reports?edit=${created.id}`)
+    } catch (e) {
+      setRfqError(e instanceof Error ? e.message : 'Could not create the RFQ report')
+    } finally {
+      setRfqBusy(false)
+    }
+  }, [allPartsDecisionRows, decisionPicks, items, navigate, routeResearchPartRefs, showBucketToast])
+
   return (
     <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-slate-50 text-slate-900`}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 sm:px-6">
-
-      <div ref={comparisonSectionRef}>
+          {routeRfqFlow && (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  Sourcing flow
+                </p>
+                <h1 className="text-base font-semibold tracking-tight text-slate-900">
+                  Compare, decide, then create RFQ
+                </h1>
+              </div>
+              <ol className="flex items-center gap-1" aria-label="Wizard steps">
+                {COMPARE_WIZARD_STEPS.map((step, idx) => {
+                  const done = idx < safeWizardIndex
+                  const active = step.id === wizardStep
+                  return (
+                    <li key={step.id} className="flex items-center gap-1">
+                      {idx > 0 && (
+                        <span className="px-1 text-slate-300" aria-hidden>
+                          →
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep(step.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          active
+                            ? 'bg-slate-900 text-white'
+                            : done
+                              ? 'bg-emerald-50 text-emerald-800'
+                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        <span className="font-mono">{step.n}</span>
+                        {step.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+          )}
+          <div
+            className={`min-h-0 w-full flex-1 bg-slate-50 ${
+              routeRfqFlow ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain px-4 sm:px-6'
+            }`}
+          >
+            <div className={routeRfqFlow ? 'h-full min-h-0 overflow-hidden' : undefined}>
+              <div
+                className={
+                  routeRfqFlow
+                    ? 'flex h-full min-h-0 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]'
+                    : undefined
+                }
+                style={
+                  routeRfqFlow
+                    ? {
+                        width: '300%',
+                        transform: `translateX(-${safeWizardIndex * (100 / 3)}%)`,
+                      }
+                    : undefined
+                }
+              >
+                <div
+                  className={
+                    routeRfqFlow ? 'h-full min-h-0 w-1/3 overflow-y-auto overscroll-contain px-4 sm:px-6' : undefined
+                  }
+                >
+                  <div ref={comparisonSectionRef}>
             <CompareDecisionWorkspace
               partLabel={currentComparedPartLabel}
               partCategory={
@@ -1812,8 +2115,14 @@ export function ComparePage() {
                 setScrapedVendorFilter(domain)
               }}
               commonVendorDomains={commonVendorDomains}
+              hideDecisionsTab={routeRfqFlow}
+              decisionBoardRows={allPartsDecisionRows}
               partChips={comparePartChips}
-              activePartId={selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? null}
+              activePartId={
+                showingAllStructuredParts
+                  ? 'all'
+                  : (selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? null)
+              }
               onActivePartChange={handleStructuredPartViewChange}
               onPartChipToggle={handlePartChipToggle}
               onClearPartSelection={handleClearPartSelection}
@@ -1835,8 +2144,9 @@ export function ComparePage() {
           </div>
         )}
 
-        {/* Scraped vendor data (field matrix when no vendor rows yet) */}
-        {decisionRows.length === 0 && (compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
+        {/* Scraped vendor data — all sources and field-level comparison */}
+        {(routeRfqFlow || decisionRows.length === 0) &&
+          (compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
           <div className={items.length > 0 ? 'mt-6' : 'mt-5'}>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
               <div>
@@ -2001,7 +2311,6 @@ export function ComparePage() {
               </div>
             </div>
             {vendorOverviewPayload &&
-              selectedRowForScraped &&
               !scrapedDataLoading &&
               !(compareMode === 'different-same-vendor' && commonVendorsLoading) && (
                 <div className="space-y-2">
@@ -2069,7 +2378,7 @@ export function ComparePage() {
                   )}
                 </div>
               )}
-            {!selectedRowForScraped ? (
+            {!selectedRowForScraped && scrapedTableRows.length === 0 && !commonVendorsLoading ? (
               <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-xs text-slate-600 ring-1 ring-slate-950/5">
                 Select a part row in the workspace list to load scraped vendor fields.
               </p>
@@ -2080,14 +2389,17 @@ export function ComparePage() {
                 </svg>
                 <span>Loading scraped data…</span>
               </div>
-            ) : compareMode === 'different-same-vendor' && commonVendorDomains.length === 0 ? (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-xs text-amber-900 ring-1 ring-amber-100">
-                {effectiveVendorFilteredParts.length > 1
-                  ? 'No vendor domain appears on more than one selected part yet. Add overlapping research sources or pick parts that share suppliers.'
-                  : 'No scraped vendors for this part yet. Run Research to collect sources.'}
-              </p>
             ) : scrapedTableRows.length > 0 ? (
-              (() => {
+              <>
+                {compareMode === 'different-same-vendor' &&
+                  commonVendorDomains.length === 0 &&
+                  effectiveVendorFilteredParts.length > 1 && (
+                    <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                      No vendor is shared across these parts yet. All sources are listed below — use Common
+                      vendors once overlap appears.
+                    </p>
+                  )}
+              {(() => {
                 const colOrder =
                   scrapedColumnOrder.length === scrapedTableRows.length
                     ? scrapedColumnOrder
@@ -2537,7 +2849,8 @@ export function ComparePage() {
                   </div>
                   </div>
                 )
-              })()
+              })()}
+              </>
             ) : (
               <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
                 No scraped data for this part. Run Research on the Research page to collect vendor data.
@@ -2545,23 +2858,167 @@ export function ComparePage() {
             )}
           </div>
         )}
-      </div>
-
-
-
-
-
-      <CompareFilePickerModal
-        open={filePickerOpen}
-        filePickerLoading={filePickerLoading}
-        filePickerError={filePickerError}
-        filePickerFiles={filePickerFiles}
-        selectedFilesData={selectedFilesData}
-        fileContentLoading={fileContentLoading}
-        onClose={() => setFilePickerOpen(false)}
-        onFileClick={handleFilePickerFileClick}
-      />
+                  </div>
+                </div>
+                {routeRfqFlow && (
+                  <>
+                    <div className="h-full min-h-0 w-1/3 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+                      <div className="mx-auto max-w-6xl">
+                        {commonVendorsLoading && allPartsDecisionRows.length === 0 ? (
+                          <p className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
+                            Loading vendor pricing, lead times, and sources…
+                          </p>
+                        ) : (
+                          <ComparePartDecisionsPanel
+                            rows={allPartsDecisionRows}
+                            onPicksChange={handleDecisionPicksChange}
+                            onAddToBucket={handleAddDecisionRowToBucket}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <div className="h-full min-h-0 w-1/3 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+                      {(() => {
+                        const picks =
+                          decisionPicks.pricing || decisionPicks.leadTime || decisionPicks.vendor
+                            ? decisionPicks
+                            : recommendedPicksFromRows(allPartsDecisionRows)
+                        const summary = buildDecisionSummary(allPartsDecisionRows, picks)
+                        const vendorLine = summary.find((s) => s.lens === 'vendor')
+                        const partTitles =
+                          items.length > 0
+                            ? items.map((item) => item.title.trim() || 'Untitled part')
+                            : routeResearchPartRefs.map((ref) => ref.title.trim() || 'Untitled part')
+                        return (
+                          <div className="mx-auto max-w-3xl space-y-4">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                                Step 3 · RFQ
+                              </p>
+                              <h3 className="mt-0.5 text-lg font-semibold tracking-tight text-slate-900">
+                                Create approved RFQ
+                              </h3>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Confirm the award below. Creating the RFQ saves an approved PDF in Reports.
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                Compared parts
+                              </p>
+                              <p className="mt-1 text-sm font-medium text-slate-800">
+                                {partTitles.filter(Boolean).join(' vs ') || '—'}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                                Awarded vendor
+                              </p>
+                              <p className="mt-1 font-mono text-base font-semibold text-slate-900">
+                                {vendorLine?.vendor ?? vendorLine?.winnerLabel ?? '—'}
+                              </p>
+                            </div>
+                            <ol className="space-y-3">
+                              {summary.map((line, idx) => (
+                                <li
+                                  key={line.lens}
+                                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                                >
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    Decision {idx + 1} · {line.title}
+                                  </p>
+                                  <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+                                    {line.winnerLabel}
+                                    <span className="ml-2 text-emerald-700">{line.metric}</span>
+                                  </p>
+                                  <p className="mt-1 text-xs leading-relaxed text-slate-600">{line.why}</p>
+                                </li>
+                              ))}
+                            </ol>
+                            {rfqError && (
+                              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {rfqError}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
+          {routeRfqFlow && (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+              <p className="text-xs text-slate-500">
+                {(() => {
+                  switch (wizardStep) {
+                    case 'compare':
+                      return 'Review the full comparison, then continue to decisions.'
+                    case 'decide':
+                      return 'Pick a winner for pricing, lead time, and vendor.'
+                    case 'rfq':
+                      return 'Create the approved RFQ PDF in Reports.'
+                    default: {
+                      const _exhaustive: never = wizardStep
+                      return _exhaustive
+                    }
+                  }
+                })()}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={goWizardBack}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                  Back
+                </button>
+                {wizardStep === 'rfq' ? (
+                  <button
+                    type="button"
+                    disabled={rfqBusy}
+                    onClick={() => void createApprovedRfqAndOpenReports()}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {rfqBusy ? (
+                      <>
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        Creating RFQ…
+                      </>
+                    ) : (
+                      <>
+                        Create approved RFQ
+                        <FileText className="h-4 w-4 opacity-90" aria-hidden />
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={wizardStep === 'decide' && commonVendorsLoading && allPartsDecisionRows.length === 0}
+                    onClick={goWizardNext}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 opacity-90" aria-hidden />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          <CompareFilePickerModal
+            open={filePickerOpen}
+            filePickerLoading={filePickerLoading}
+            filePickerError={filePickerError}
+            filePickerFiles={filePickerFiles}
+            selectedFilesData={selectedFilesData}
+            fileContentLoading={fileContentLoading}
+            onClose={() => setFilePickerOpen(false)}
+            onFileClick={handleFilePickerFileClick}
+          />
         </div>
     </div>
   )

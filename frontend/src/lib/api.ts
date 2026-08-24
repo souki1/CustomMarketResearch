@@ -329,12 +329,27 @@ export type ResearchSearchResult = {
   research_url_ids: number[]
 }
 
+export type ResearchSearchLocation = {
+  zipCode?: string | null
+  address?: string | null
+  location?: string | null
+}
+
 export async function searchSelectionAndStoreUrls(
   selectionId: number,
   token: string,
-  aiQuery?: string | null
+  aiQuery?: string | null,
+  searchLocation?: ResearchSearchLocation | null
 ): Promise<ResearchSearchResult> {
-  const body = aiQuery?.trim() ? { ai_query: aiQuery.trim() } : {}
+  const body: Record<string, string> = {}
+  const query = aiQuery?.trim() ?? ''
+  if (query) body.ai_query = query
+  const zip = searchLocation?.zipCode?.trim() ?? ''
+  const address = searchLocation?.address?.trim() ?? ''
+  const location = searchLocation?.location?.trim() ?? ''
+  if (zip) body.zip_code = zip.slice(0, 20)
+  if (address) body.address = address.slice(0, 300)
+  if (location) body.location = location.slice(0, 300)
   return request<ResearchSearchResult>(
     `/datasheet/selections/${selectionId}/search`,
     {

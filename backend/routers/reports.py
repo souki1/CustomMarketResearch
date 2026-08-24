@@ -35,9 +35,20 @@ _EXPORT_BLOBS = "report_export_blobs"
 
 
 def _attachment_filename(title: str, ext: str) -> str:
+    """ASCII-only download name — HTTP Content-Disposition is latin-1."""
     base = (title[:80] if title else "report").strip() or "report"
+    for src, dst in (
+        ("\u2014", "-"),
+        ("\u2013", "-"),
+        ("\u2012", "-"),
+        ("\u2212", "-"),
+        ("\u00a0", " "),
+    ):
+        base = base.replace(src, dst)
     for ch in '<>:"/\\|?*\x00\r\n':
         base = base.replace(ch, "_")
+    base = "".join(c if ord(c) < 128 else "_" for c in base)
+    base = base.strip(" ._") or "report"
     return f"{base}.{ext}"
 
 

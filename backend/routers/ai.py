@@ -21,7 +21,7 @@ from schemas import (
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 AI_COLLECTION = "ai_interactions"
-REPORT_GENERATION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+REPORT_GENERATION_MODEL = "openai/gpt-oss-120b"
 
 
 def _require_mongo_db() -> AsyncIOMotorDatabase:

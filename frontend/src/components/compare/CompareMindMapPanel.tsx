@@ -5,7 +5,7 @@ import { type CompareDecisionRow } from './CompareDecisionWorkspace'
 type Props = {
   partLabel: string
   rows: CompareDecisionRow[]
-  onViewChange: (v: 'table' | 'insights' | 'mindmap') => void
+  onViewChange: (v: 'table' | 'insights' | 'mindmap' | 'decisions') => void
   onAddToBucket?: (id: string) => void
 }
 
@@ -182,7 +182,7 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
       </div>
 
       <div className="flex border-b border-[#e0ddd4] bg-white px-4">
-        {(['table', 'insights', 'mindmap'] as const).map((tab) => (
+        {(['decisions', 'table', 'insights', 'mindmap'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -193,7 +193,13 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
                 : 'border-b-2 border-transparent text-[#73726c] hover:text-slate-700'
             }`}
           >
-            {tab === 'table' ? 'Table' : tab === 'insights' ? 'Insights' : 'Mind map'}
+            {tab === 'decisions'
+              ? 'Decisions'
+              : tab === 'table'
+                ? 'Table'
+                : tab === 'insights'
+                  ? 'Insights'
+                  : 'Mind map'}
           </button>
         ))}
       </div>

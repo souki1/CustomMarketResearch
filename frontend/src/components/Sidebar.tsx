@@ -1,6 +1,12 @@
-import { Heart, ShoppingCart } from 'lucide-react'
+import { Heart, Package, ShoppingCart } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { BUCKET_PATH, FILES_PATH, RESEARCH_COMPARE_PATH, WISHLIST_PATH } from '@/lib/paths'
+import {
+  BUCKET_PATH,
+  FILES_PATH,
+  PARTS_CATALOG_PATH,
+  RESEARCH_COMPARE_PATH,
+  WISHLIST_PATH,
+} from '@/lib/paths'
 import { useBucket } from '@/contexts/BucketContext'
 
 function DashboardIcon({ className }: { className?: string }) {
@@ -82,6 +88,7 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const isDashboard = location.pathname === '/'
   const isFiles = location.pathname === FILES_PATH
   const isResearch = location.pathname === '/research'
+  const isPartsCatalog = location.pathname === PARTS_CATALOG_PATH
   const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
   const isBucket = location.pathname === BUCKET_PATH
@@ -106,6 +113,13 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             </Link>
             <Link to="/research" className={collapsedLinkClass(isResearch)} title="Research">
               <ResearchIcon className={iconClass} />
+            </Link>
+            <Link
+              to={PARTS_CATALOG_PATH}
+              className={collapsedLinkClass(isPartsCatalog)}
+              title="Parts Catalog"
+            >
+              <Package className={iconClass} />
             </Link>
             <Link to={RESEARCH_COMPARE_PATH} className={collapsedLinkClass(isCompare)} title="Compare">
               <CompareIcon className={iconClass} />
@@ -153,6 +167,10 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
           <Link to="/research" className={linkClass(isResearch)} title="Research">
             <ResearchIcon className={iconClass} />
             <span>Research</span>
+          </Link>
+          <Link to={PARTS_CATALOG_PATH} className={linkClass(isPartsCatalog)} title="Parts Catalog">
+            <Package className={iconClass} />
+            <span>Parts Catalog</span>
           </Link>
           <Link to={RESEARCH_COMPARE_PATH} className={linkClass(isCompare)} title="Compare">
             <CompareIcon className={iconClass} />

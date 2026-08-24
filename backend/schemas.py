@@ -129,7 +129,10 @@ class ResearchSearchResponse(BaseModel):
 class ResearchSearchBody(BaseModel):
     """Optional body for search endpoint to enable scraping."""
 
-    ai_query: str | None = None
+    ai_query: str | None = Field(default=None, max_length=4000)
+    zip_code: str | None = Field(default=None, max_length=20)
+    address: str | None = Field(default=None, max_length=300)
+    location: str | None = Field(default=None, max_length=300)
 
 
 class ResearchTransferRowMap(BaseModel):
