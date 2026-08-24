@@ -1,13 +1,23 @@
-import { useEffect, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import { CommandPalette, Navbar, Sidebar } from '@/components'
 import { BucketProvider } from '@/contexts/BucketContext'
 import { ComparisonProvider } from '@/contexts/ComparisonContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
+import { getCurrentUserEmail, syncWorkspaceOwner } from '@/lib/auth'
 
 const SIDEBAR_OPEN_KEY = 'sidebar-open'
 
+const OpenCommandPaletteContext = createContext<(() => void) | null>(null)
+
+/** Opens the global command palette (Ctrl+K). Only available under MainLayout. */
+export function useOpenCommandPalette(): (() => void) | null {
+  return useContext(OpenCommandPaletteContext)
+}
+
 function MainLayoutContent() {
+  const location = useLocation()
+  const prevPathnameRef = useRef<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_OPEN_KEY) !== 'false'
@@ -17,7 +27,24 @@ function MainLayoutContent() {
   })
   const [sidebarOpenBeforeInspector, setSidebarOpenBeforeInspector] = useState<boolean | null>(null)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const { collapseSidebarForInspector, setCollapseSidebarForInspector } = useLayout()
+
+  // Bind / scrub workspace caches for the active account (drops legacy unscoped keys).
+  useEffect(() => {
+    syncWorkspaceOwner(getCurrentUserEmail())
+  }, [])
+
+  // When leaving Research (e.g. Home, AI, Compare), undo inspector collapse and show the full sidebar again.
+  useEffect(() => {
+    const prev = prevPathnameRef.current
+    prevPathnameRef.current = location.pathname
+    if (prev === '/research' && location.pathname !== '/research') {
+      setCollapseSidebarForInspector(false)
+      setSidebarOpenBeforeInspector(null)
+      setSidebarOpen(true)
+    }
+  }, [location.pathname, setCollapseSidebarForInspector])
 
   useEffect(() => {
     try {
@@ -51,35 +78,37 @@ function MainLayoutContent() {
   }
 
   return (
-    <BucketProvider>
-      <ComparisonProvider>
-        <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
-        <Navbar
-        sidebarOpen={showSidebar}
-        onSidebarToggle={handleSidebarToggle}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-      />
-      <div className="flex">
-        <div
-          className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
-        >
-          <div className="h-full w-full overflow-hidden">
-            <Sidebar open={showSidebar} collapsed={showCollapsedStrip} />
+    <OpenCommandPaletteContext.Provider value={openCommandPalette}>
+      <BucketProvider>
+        <ComparisonProvider>
+          <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          <Navbar
+            sidebarOpen={showSidebar}
+            onSidebarToggle={handleSidebarToggle}
+            onOpenCommandPalette={openCommandPalette}
+          />
+          <div className="flex">
+            <div
+              className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
+            >
+              <div className="h-full w-full overflow-hidden">
+                <Sidebar open={showSidebar} collapsed={showCollapsedStrip} />
+              </div>
+            </div>
+            <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
+              <Outlet />
+            </main>
           </div>
-        </div>
-        <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
-          <Outlet />
-        </main>
-      </div>
-      </ComparisonProvider>
-    </BucketProvider>
+        </ComparisonProvider>
+      </BucketProvider>
+    </OpenCommandPaletteContext.Provider>
   )
 }
 
 /**
  * Renders Navbar and Sidebar once. Only the <Outlet /> (main content) updates
  * when the route or page content changes — sidebar and navbar do not re-mount or re-render.
- * Sidebar can be collapsed by the Research inspector via LayoutContext.
+ * Sidebar can be collapsed by the Research inspector on /research; other routes expand it again.
  */
 export function MainLayout() {
   return (

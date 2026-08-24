@@ -10,11 +10,12 @@ type AllFilesViewProps = {
   breadcrumbPath: BreadcrumbSegment[]
   onOpenFolder: (folderId: string) => void
   onGoToFolder: (folderId: string | null) => void
-  onOpenFile?: (fileId: string, fileName?: string) => void
+  onOpenFile?: (fileId: string, fileName?: string, access?: string, linkedReportId?: number) => void
   onDelete?: (row: FileTableRow) => void
   onNewFolderClick: () => void
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
+  onNewReportClick?: () => void
   onImportCsvClick?: () => void
   onUploadFileClick?: () => void
   onMoveClick?: (row: FileTableRow) => void
@@ -30,6 +31,7 @@ export function AllFilesView({
   onNewFolderClick,
   onNewFileClick,
   onNewResearchClick,
+  onNewReportClick,
   onImportCsvClick,
   onUploadFileClick,
   onMoveClick,
@@ -94,6 +96,7 @@ export function AllFilesView({
             onFolderClick={onNewFolderClick}
             onFileClick={onNewFileClick}
             onNewResearchClick={onNewResearchClick}
+            onNewReportClick={onNewReportClick}
             onImportCsvClick={onImportCsvClick ?? onNewFileClick}
             onUploadFileClick={onUploadFileClick ?? onNewFileClick}
           />

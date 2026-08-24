@@ -2,9 +2,11 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react'
+import { WORKSPACE_RESET_EVENT } from '@/lib/auth'
 
 export type ComparisonSpec = {
   label: string
@@ -51,6 +53,13 @@ export function ComparisonProvider({ children }: { children: ReactNode }) {
 
   const closeAndClear = useCallback(() => {
     setItems([])
+  }, [])
+
+  // Clear in-memory comparison when the signed-in account changes.
+  useEffect(() => {
+    const sync = () => setItems([])
+    window.addEventListener(WORKSPACE_RESET_EVENT, sync)
+    return () => window.removeEventListener(WORKSPACE_RESET_EVENT, sync)
   }, [])
 
   const value: ComparisonContextValue = {

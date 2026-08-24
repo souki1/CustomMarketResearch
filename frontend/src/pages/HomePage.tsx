@@ -9,7 +9,19 @@ import {
   CreateFolderModal,
 } from '@/components'
 import { getCurrentUserName, getToken } from '@/lib/auth'
-import { createWorkspaceFile, createWorkspaceFolder, deleteWorkspaceItem, listWorkspaceItems, moveWorkspaceItem, uploadWorkspaceCsv, uploadWorkspaceImage } from '@/lib/api'
+import {
+  createWorkspaceFile,
+  createWorkspaceFolder,
+  deleteReport,
+  deleteWorkspaceItem,
+  listReports,
+  listWorkspaceItems,
+  moveWorkspaceItem,
+  uploadWorkspaceCsv,
+  uploadWorkspaceImage,
+  uploadWorkspaceDocx,
+  importReportFromDocx,
+} from '@/lib/api'
 import type { FileTableRow } from '@/types'
 
 /** Convert an Excel file to a CSV File so we can upload it via the existing CSV endpoint. */
@@ -33,7 +45,7 @@ const FEATURE_CARDS = [
     title: 'Upload Image',
     description: 'Upload images from your device or drag and drop.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-emerald-50 to-emerald-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-emerald-50 to-emerald-100/90`}>
         <svg className="h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
@@ -45,7 +57,7 @@ const FEATURE_CARDS = [
     title: 'Import data',
     description: 'Import your existing list from CRM or CSV.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-violet-50 to-violet-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-violet-50 to-violet-100/90`}>
         <svg className="h-8 w-8 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
         </svg>
@@ -57,7 +69,7 @@ const FEATURE_CARDS = [
     title: 'Start from template',
     description: 'Choose from pre-built workflows to get started.',
     icon: (
-      <div className={`${icon3DClass} bg-gradient-to-br from-blue-50 to-blue-100/90`}>
+      <div className={`${icon3DClass} bg-linear-to-br from-blue-50 to-blue-100/90`}>
         <svg className="h-8 w-8 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
         </svg>
@@ -91,6 +103,7 @@ export function HomePage() {
   const [createFileOpen, setCreateFileOpen] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadFileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadTargetFolderId, setUploadTargetFolderId] = useState<string | null>(null)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
@@ -116,8 +129,8 @@ export function HomePage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listWorkspaceItems(parentNumeric, token)
-      .then((items) => {
+    Promise.all([listWorkspaceItems(parentNumeric, token), listReports(token)])
+      .then(([items, reports]) => {
         if (cancelled) return
         const mapped: FileTableRow[] = items.map((item) => {
           const created = new Date(item.created_at)
@@ -143,9 +156,44 @@ export function HomePage() {
             owner: item.owner_display_name ?? (getCurrentUserName() ?? 'You'),
             access: item.access,
             parentId: item.parent_id != null ? String(item.parent_id) : null,
+            linkedReportId: item.report_id ?? undefined,
           }
         })
-        setRows(mapped)
+
+        const inFolder = reports.filter((r) => (r.workspace_parent_id ?? null) === parentNumeric)
+        const ownerLabel = getCurrentUserName() ?? 'You'
+        const reportRows: FileTableRow[] = inFolder.map((r) => {
+          const created = new Date(r.created_at)
+          const updated = new Date(r.updated_at)
+          const createdAt = created.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          const lastOpened = updated.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+          return {
+            id: `report:${r.id}`,
+            name: r.title,
+            isFolder: false,
+            rowKind: 'report' as const,
+            reportId: r.id,
+            favorite: false,
+            createdAt,
+            lastOpened,
+            owner: ownerLabel,
+            access: 'Edit',
+            parentId: currentFolderId,
+          }
+        })
+
+        const merged = [...mapped, ...reportRows].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+        )
+        setRows(merged)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -291,7 +339,11 @@ export function HomePage() {
     }
     try {
       setError(null)
-      await deleteWorkspaceItem(Number(row.id), token)
+      if (row.rowKind === 'report' && row.reportId != null) {
+        await deleteReport(token, row.reportId)
+      } else {
+        await deleteWorkspaceItem(Number(row.id), token)
+      }
       setRows((prev) => prev.filter((r) => r.id !== row.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete item')
@@ -301,6 +353,10 @@ export function HomePage() {
   const handleUploadCsvClick = (folderId?: string | null) => {
     setUploadTargetFolderId(folderId ?? currentFolderId)
     fileInputRef.current?.click()
+  }
+
+  const handleUploadFileClick = () => {
+    uploadFileInputRef.current?.click()
   }
 
   const handleUploadImageClick = () => {
@@ -440,14 +496,115 @@ export function HomePage() {
         parentId: created.parent_id != null ? String(created.parent_id) : null,
       }
       setRows((prev) => [...prev, newRow])
-      // reset input so same file can be selected again later
-      event.target.value = ''
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload file')
+    }
+  }
+
+  const handleUploadFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    event.target.value = ''
+
+    if (!token) {
+      setError('You need to be signed in to upload files.')
+      return
+    }
+
+    const isDocx =
+      file.name.toLowerCase().endsWith('.docx') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    if (isDocx) {
+      try {
+        setError(null)
+        const created = await uploadWorkspaceDocx(file, token)
+        const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+        const newRow: FileTableRow = {
+          id: String(created.id),
+          name: created.name,
+          isFolder: created.is_folder,
+          favorite: created.favorite,
+          createdAt,
+          lastOpened: '—',
+          owner: created.owner_display_name ?? displayName,
+          access: created.access,
+          parentId: created.parent_id != null ? String(created.parent_id) : null,
+          linkedReportId: created.report_id ?? undefined,
+        }
+        setRows((prev) => [...prev, newRow])
+        if (created.report_id != null) {
+          navigate(`/reports?edit=${created.report_id}`)
+          return
+        }
+        if (created.parent_id != null) {
+          const reportsFolderId = String(created.parent_id)
+          setCurrentFolderId(reportsFolderId)
+          setBreadcrumbPath([{ id: reportsFolderId, name: 'Reports' }])
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to upload Word document')
+      }
+      return
+    }
+
+    const isCsv =
+      file.name.toLowerCase().endsWith('.csv') ||
+      file.type === 'text/csv' ||
+      file.type === 'application/csv'
+    const isExcel = /\.(xlsx?|xls)$/i.test(file.name)
+
+    let fileToUpload: File
+    if (isCsv) {
+      fileToUpload = file
+    } else if (isExcel) {
+      try {
+        setError(null)
+        fileToUpload = await excelFileToCsvFile(file)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to read Excel file. Try saving as CSV and uploading instead.')
+        return
+      }
+    } else {
+      setError('Unsupported file type. Upload a PDF (Reports only), CSV, or Excel file.')
+      return
+    }
+
+    try {
+      setError(null)
+      const parentNumeric = uploadTargetFolderId ? Number(uploadTargetFolderId) : null
+      const created = await uploadWorkspaceCsv(fileToUpload, parentNumeric, token)
+      const createdAt = new Date(created.created_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      const newRow: FileTableRow = {
+        id: String(created.id),
+        name: created.name,
+        isFolder: created.is_folder,
+        favorite: created.favorite,
+        createdAt,
+        lastOpened: '—',
+        owner: created.owner_display_name ?? displayName,
+        access: created.access,
+        parentId: created.parent_id != null ? String(created.parent_id) : null,
+      }
+      setRows((prev) => [...prev, newRow])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload file')
     }
   }
 
   const handleOpenMove = (row: FileTableRow) => {
+    if (row.access === 'Report') {
+      setError('Report PDFs stay in the Reports folder and cannot be moved.')
+      return
+    }
     setMoveSourceRow(row)
     setMoveTargetFolderId(row.parentId ?? null)
     setMoveDialogOpen(true)
@@ -460,8 +617,13 @@ export function HomePage() {
       setMoveDialogOpen(false)
       return
     }
-    const sourceId = Number(moveSourceRow.id)
+    if (moveSourceRow.rowKind === 'report') {
+      setMoveDialogOpen(false)
+      setMoveSourceRow(null)
+      return
+    }
     const targetNumeric = moveTargetFolderId ? Number(moveTargetFolderId) : null
+    const sourceId = Number(moveSourceRow.id)
     try {
       setError(null)
       const updated = await moveWorkspaceItem(sourceId, targetNumeric, token)
@@ -601,7 +763,23 @@ export function HomePage() {
             breadcrumbPath={breadcrumbPath}
             onOpenFolder={handleOpenFolder}
             onGoToFolder={handleGoToFolder}
-            onOpenFile={(fileId, fileName) => {
+            onOpenFile={(fileId, fileName, access, linkedReportId) => {
+              if (fileId.startsWith('report:')) {
+                const rid = Number(fileId.replace(/^report:/, ''))
+                if (Number.isFinite(rid)) navigate(`/reports?edit=${rid}`)
+                return
+              }
+              if (access === 'Report') {
+                if (linkedReportId != null) {
+                  navigate(`/reports?edit=${linkedReportId}`)
+                  return
+                }
+                if (!token) return
+                void importReportFromDocx(token, Number(fileId))
+                  .then((report) => navigate(`/reports?edit=${report.id}`))
+                  .catch(() => setError('Could not open this document for editing.'))
+                return
+              }
               const folderPath = breadcrumbPath.map((seg) => seg.name).join(' / ')
               const params = new URLSearchParams()
               params.set('fileId', fileId)
@@ -616,12 +794,13 @@ export function HomePage() {
               }
               navigate(`/research?${params.toString()}`)
             }}
+            onNewReportClick={() => navigate('/reports')}
             onDelete={handleDelete}
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={() => handleUploadCsvClick()}
             onNewResearchClick={() => navigate('/research')}
             onImportCsvClick={() => handleUploadCsvClick()}
-            onUploadFileClick={() => handleUploadCsvClick()}
+            onUploadFileClick={() => handleUploadFileClick()}
             onMoveClick={handleOpenMove}
           />
         )}
@@ -660,6 +839,13 @@ export function HomePage() {
         accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         className="hidden"
         onChange={handleCsvSelected}
+      />
+      <input
+        ref={uploadFileInputRef}
+        type="file"
+        accept=".docx,.csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="hidden"
+        onChange={handleUploadFileSelected}
       />
       <input
         ref={imageInputRef}

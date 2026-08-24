@@ -16,6 +16,18 @@ function ResearchIcon({ className }: { className?: string }) {
   )
 }
 
+function ReportDocIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 12h6m-6 4h4m2-14H9a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V8.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0013.172 3H9z"
+      />
+    </svg>
+  )
+}
+
 function CsvIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -36,6 +48,7 @@ type NewMenuProps = {
   onFolderClick: () => void
   onFileClick?: () => void
   onNewResearchClick?: () => void
+  onNewReportClick?: () => void
   onImportCsvClick?: () => void
   onUploadFileClick?: () => void
 }
@@ -44,6 +57,7 @@ export function NewMenu({
   onFolderClick,
   onFileClick,
   onNewResearchClick,
+  onNewReportClick,
   onImportCsvClick,
   onUploadFileClick,
 }: NewMenuProps) {
@@ -106,6 +120,18 @@ export function NewMenu({
           >
             <ResearchIcon className="h-5 w-5 shrink-0 text-blue-500" />
             New Research
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onNewReportClick?.()
+              setOpen(false)
+            }}
+            className={itemClass}
+            role="menuitem"
+          >
+            <ReportDocIcon className="h-5 w-5 shrink-0 text-violet-500" />
+            New Report
           </button>
           <button
             type="button"

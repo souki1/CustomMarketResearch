@@ -1,10 +1,19 @@
+import { Heart, ShoppingCart } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { BUCKET_PATH, FILES_PATH, RESEARCH_COMPARE_PATH, WISHLIST_PATH } from '@/lib/paths'
+import { useBucket } from '@/contexts/BucketContext'
 
-function HomeIcon({ className }: { className?: string }) {
+function DashboardIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+    </svg>
+  )
+}
+function FilesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
     </svg>
   )
 }
@@ -26,13 +35,6 @@ function ReportsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6m4 6V9m4 10V5M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-function PurchaseOrderIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
   )
 }
@@ -76,25 +78,31 @@ const collapsedLinkClass = (active: boolean) =>
 export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const iconClass = 'h-5 w-5 shrink-0 text-gray-500'
   const location = useLocation()
-  const isHome = location.pathname === '/'
+  const { items: bucketItems } = useBucket()
+  const isDashboard = location.pathname === '/'
+  const isFiles = location.pathname === FILES_PATH
   const isResearch = location.pathname === '/research'
   const isCompare = location.pathname === RESEARCH_COMPARE_PATH
   const isReports = location.pathname === '/reports'
-  const isPurchaseOrder = location.pathname === '/purchase-order'
+  const isBucket = location.pathname === BUCKET_PATH
   const isAi = location.pathname === '/ai'
   const isPortfolio = location.pathname === '/portfolio'
+  const isWishlist = location.pathname === WISHLIST_PATH
   const isSettings = location.pathname.startsWith('/settings')
 
   if (collapsed) {
     return (
       <aside
-        className="w-14 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)]"
+        className="h-full min-h-0 w-14 shrink-0 border-r border-gray-200 bg-white"
         aria-label="Collapsed sidebar"
       >
-        <div className="flex h-full flex-col py-4">
+        <div className="flex h-full min-h-0 flex-col py-4">
           <nav className="flex flex-col items-center gap-1 px-2">
-            <Link to="/" className={collapsedLinkClass(isHome)} title="Home">
-              <HomeIcon className={iconClass} />
+            <Link to="/" className={collapsedLinkClass(isDashboard)} title="Dashboard">
+              <DashboardIcon className={iconClass} />
+            </Link>
+            <Link to={FILES_PATH} className={collapsedLinkClass(isFiles)} title="Files">
+              <FilesIcon className={iconClass} />
             </Link>
             <Link to="/research" className={collapsedLinkClass(isResearch)} title="Research">
               <ResearchIcon className={iconClass} />
@@ -105,14 +113,17 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
               <ReportsIcon className={iconClass} />
             </Link>
+            <Link to={BUCKET_PATH} className={collapsedLinkClass(isBucket)} title="Bucket">
+              <ShoppingCart className={iconClass} />
+            </Link>
             <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
               <AiIcon className={iconClass} />
             </Link>
             <Link to="/portfolio" className={collapsedLinkClass(isPortfolio)} title="Portfolio">
               <PortfolioIcon className={iconClass} />
             </Link>
-            <Link to="/purchase-order" className={collapsedLinkClass(isPurchaseOrder)} title="Purchase Order">
-              <PurchaseOrderIcon className={iconClass} />
+            <Link to={WISHLIST_PATH} className={collapsedLinkClass(isWishlist)} title="Wishlist">
+              <Heart className={iconClass} />
             </Link>
             <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
               <SettingsIcon className={iconClass} />
@@ -125,15 +136,19 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
 
   return (
     <aside
-      className={`w-56 shrink-0 border-r border-gray-200 bg-white min-h-[calc(100vh-3.5rem)] transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`h-full min-h-0 w-56 shrink-0 border-r border-gray-200 bg-white transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
       aria-label="Sidebar"
       aria-hidden={!open}
     >
-      <div className="flex h-full flex-col py-4">
+      <div className="flex h-full min-h-0 flex-col py-4">
         <nav className="flex flex-col gap-1 px-2">
-          <Link to="/" className={linkClass(isHome)} title="Home">
-            <HomeIcon className={iconClass} />
-            <span>Home</span>
+          <Link to="/" className={linkClass(isDashboard)} title="Dashboard">
+            <DashboardIcon className={iconClass} />
+            <span>Dashboard</span>
+          </Link>
+          <Link to={FILES_PATH} className={linkClass(isFiles)} title="Files">
+            <FilesIcon className={iconClass} />
+            <span>Files</span>
           </Link>
           <Link to="/research" className={linkClass(isResearch)} title="Research">
             <ResearchIcon className={iconClass} />
@@ -147,6 +162,17 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <ReportsIcon className={iconClass} />
             <span>Reports</span>
           </Link>
+          <Link to={BUCKET_PATH} className={linkClass(isBucket)} title="Bucket">
+            <ShoppingCart className={iconClass} />
+            <span className="flex flex-1 items-center gap-2">
+              Bucket
+              {bucketItems.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-500">
+                  {bucketItems.length}
+                </span>
+              )}
+            </span>
+          </Link>
           <Link to="/ai" className={linkClass(isAi)} title="AI">
             <AiIcon className={iconClass} />
             <span>AI</span>
@@ -155,9 +181,9 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
             <PortfolioIcon className={iconClass} />
             <span>Portfolio</span>
           </Link>
-          <Link to="/purchase-order" className={linkClass(isPurchaseOrder)} title="Purchase Order">
-            <PurchaseOrderIcon className={iconClass} />
-            <span>Purchase Order</span>
+          <Link to={WISHLIST_PATH} className={linkClass(isWishlist)} title="Wishlist">
+            <Heart className={iconClass} />
+            <span>Wishlist</span>
           </Link>
           <Link to="/settings" className={linkClass(isSettings)} title="Settings">
             <SettingsIcon className={iconClass} />

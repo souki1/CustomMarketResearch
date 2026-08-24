@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+
+You must perform basic security review on any code you generate:
+- Identify common vulnerabilities (XSS, SQL injection, CSRF, SSRF, insecure deserialization)
+- Recommend secure defaults (prepared statements, input validation, sanitization)
+- Use environment variables for secrets
+- Avoid exposing API keys or credentials
+- Follow OWASP Top 10 guidelines

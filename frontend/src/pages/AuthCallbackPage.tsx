@@ -17,9 +17,10 @@ export function AuthCallbackPage() {
       return
     }
     if (token) {
-      setToken(token)
-      if (displayName) setCurrentUserName(displayName)
+      // Bind workspace owner before token so scoped storage keys never read another user's cache.
       if (email) setCurrentUserEmail(email)
+      if (displayName) setCurrentUserName(displayName)
+      setToken(token)
       // Fetch profile photo after login so navbar can show it immediately
       getMe(token)
         .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))

@@ -187,8 +187,15 @@ const iconBtn =
 
 const AI_HISTORY_OPEN_KEY = 'ir-ai-history-open'
 
-/** Matches `main` in MainLayout: navbar is `h-14` (3.5rem). */
-const AI_PAGE_MIN_H = 'min-h-[calc(100vh-3.5rem)]'
+/** Match sticky sidebar column height exactly (navbar `h-14` = 3.5rem). */
+const AI_PAGE_SHELL = 'box-border flex h-[calc(100vh-3.5rem)] w-full max-w-full flex-col overflow-hidden'
+
+const aiCollapsedSessionBtn = (active: boolean) =>
+  `flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight transition-all sm:h-9 sm:w-9 ${
+    active
+      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+      : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
+  }`
 
 export function AiPlaceholderPage() {
   const token = useMemo(() => getToken(), [])
@@ -370,40 +377,77 @@ export function AiPlaceholderPage() {
   }, [chatMessages])
 
   return (
-    <div className={`${AI_PAGE_MIN_H} bg-white text-gray-900`}>
-      <div className={`mx-auto flex ${AI_PAGE_MIN_H} w-full min-w-0 max-w-7xl items-stretch`}>
+    <div className={`${AI_PAGE_SHELL} bg-white text-gray-900`}>
+      {/* Same shell as Compare / Reports: full-width row, secondary sidebar, flex-1 main (no max-w-7xl wrapper) */}
+      <div className="flex h-full min-h-0 w-full min-w-0">
         {tab === 'chat' && !historyOpen && (
           <div
-            className={`flex ${AI_PAGE_MIN_H} w-10 shrink-0 flex-col border-r border-gray-200 bg-gray-50/90 sm:w-11`}
+            className="flex h-full w-10 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 sm:w-11"
+            aria-label="Chat history (collapsed)"
           >
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}
-              className="flex h-11 w-full shrink-0 items-center justify-center text-gray-600 transition-colors hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
-              title="Show chat history"
+              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-slate-200/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
+              title="Expand history"
               aria-label="Show chat history"
               aria-expanded={false}
             >
-              <PanelLeftOpen className="h-5 w-5" aria-hidden />
+              <PanelLeftOpen className="h-4 w-4" aria-hidden />
+            </button>
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden py-2">
+              {token &&
+                chatSessions.map((s) => {
+                  const active = chatSessionId === s.session_id
+                  const label = (s.preview || s.session_id || 'Chat').trim()
+                  const words = label.split(/\s+/).filter((w) => w.length > 0)
+                  const abbr =
+                    words.length >= 2
+                      ? (words[0]![0]! + words[1]![0]!).toUpperCase()
+                      : (words[0] ?? 'C').slice(0, 2).toUpperCase()
+                  return (
+                    <button
+                      key={s.session_id}
+                      type="button"
+                      disabled={loading || loadingSessions}
+                      onClick={() => void onSessionSelect(s.session_id)}
+                      title={label}
+                      aria-label={label}
+                      className={aiCollapsedSessionBtn(active)}
+                    >
+                      {abbr}
+                    </button>
+                  )
+                })}
+            </div>
+            <button
+              type="button"
+              onClick={() => startNewChat()}
+              disabled={!token || loading}
+              className="flex h-10 w-full shrink-0 items-center justify-center border-t border-slate-200/80 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50 disabled:opacity-40"
+              title="New chat"
+              aria-label="New chat"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
             </button>
           </div>
         )}
 
         {tab === 'chat' && historyOpen && (
           <aside
-            className={`flex ${AI_PAGE_MIN_H}  shrink-0 flex-col border-r border-gray-200 bg-gray-50/90 sm:w-52 md:w-64 lg:w-72`}
+            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 md:w-56 lg:w-60"
             aria-label="Chat history"
           >
-            <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-2 sm:px-3 sm:py-2.5">
+            <div className="flex items-center gap-1 border-b border-slate-200 px-2 py-2 sm:px-3 sm:py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <History className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
-                <h2 className="truncate text-sm font-semibold text-gray-900">History</h2>
+                <History className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                <h2 className="truncate text-sm font-semibold text-slate-900">History</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setHistoryOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-white hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                title="Hide history"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                title="Collapse history"
                 aria-label="Hide chat history"
                 aria-expanded={true}
               >
@@ -420,31 +464,32 @@ export function AiPlaceholderPage() {
                 className={`flex w-full items-center gap-1.5 rounded-xl px-2 py-2 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:opacity-40 sm:gap-2 sm:px-3 sm:py-2.5 sm:text-sm ${
                   isNewChat
                     ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-200'
-                    : 'text-gray-700 hover:bg-white hover:shadow-sm'
+                    : 'text-slate-700 hover:bg-white hover:shadow-sm'
                 }`}
               >
                 <MessageSquarePlus className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
                 <span className="min-w-0 leading-snug">New chat</span>
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-2 sm:px-2 sm:pb-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-3 pt-1 sm:px-2">
               {!token && (
-                <p className="px-2 py-2 text-xs text-gray-500">Sign in to see past chats.</p>
+                <p className="px-2 py-2 text-xs text-slate-500">Sign in to see past chats.</p>
               )}
               {token && loadingSessions && chatSessions.length === 0 && (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   Loading…
                 </div>
               )}
               {token && !loadingSessions && chatSessions.length === 0 && (
-                <p className="px-2 py-2 text-xs text-gray-500">No past conversations yet.</p>
+                <p className="px-2 py-2 text-xs text-slate-500">No past conversations yet.</p>
               )}
               <ul className="space-y-1" role="list">
                 {token &&
                   chatSessions.map((s) => {
                     const active = chatSessionId === s.session_id
                     const preview = s.preview || `${s.session_id.slice(0, 8)}…`
+                    const fromResearch = s.source === 'research_inspector'
                     return (
                       <li key={s.session_id}>
                         <button
@@ -453,12 +498,17 @@ export function AiPlaceholderPage() {
                           onClick={() => void onSessionSelect(s.session_id)}
                           className={`flex w-full flex-col gap-0.5 rounded-xl px-2 py-2 text-left text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:opacity-50 sm:px-3 sm:py-2.5 sm:text-sm ${
                             active
-                              ? 'bg-white font-medium text-gray-900 shadow-sm ring-1 ring-gray-200'
-                              : 'text-gray-700 hover:bg-white/80 hover:shadow-sm'
+                              ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200'
+                              : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
                           }`}
                         >
+                          {fromResearch && (
+                            <span className="mb-0.5 inline-flex w-fit rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">
+                              Research
+                            </span>
+                          )}
                           <span className="line-clamp-2 wrap-break-word">{preview}</span>
-                          <span className="text-xs font-normal text-gray-500">
+                          <span className="text-xs font-normal text-slate-500">
                             {formatSessionTime(s.last_at)} · {s.turn_count} turn
                             {s.turn_count === 1 ? '' : 's'}
                           </span>
@@ -471,10 +521,10 @@ export function AiPlaceholderPage() {
           </aside>
         )}
 
-        <div className={`flex ${AI_PAGE_MIN_H} min-w-0 flex-1 flex-col`}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div
-            className={`mx-auto flex w-full min-w-0 max-w-3xl flex-1 flex-col px-3 min-h-0 ${
-              hasChatThread && tab === 'chat' ? 'py-3 sm:py-4' : 'py-6 sm:py-14'
+            className={`mx-auto flex w-full min-w-0 max-w-3xl min-h-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8 ${
+              hasChatThread && tab === 'chat' ? 'sm:py-4' : 'sm:py-10'
             }`}
           >
             {!(hasChatThread && tab === 'chat') && (

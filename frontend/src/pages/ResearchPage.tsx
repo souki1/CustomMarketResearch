@@ -1,18 +1,66 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { getToken } from '@/lib/auth'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
+  ArrowUpDown,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  EyeOff,
+  Filter,
+  FolderInput,
+  FolderOpen,
+  GitCompare,
+  History,
+  LayoutGrid,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+  Table2,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { getToken, workspaceStorageKey } from '@/lib/auth'
+import {
+  aiGroqChat,
+  getResearchState,
   getWorkspaceFileContent,
+  listActiveResearchJobs,
+  listResearchGridSummary,
   listResearchUrls,
   listWorkspaceItems,
+  researchMoreSource,
   saveDataSheetSelection,
   searchSelectionAndStoreUrls,
+  transferResearchUrls,
   updateWorkspaceFileContent,
+  uploadWorkspaceCsv,
+  upsertResearchState,
+  type ResearchFieldChange,
+  type ResearchGridSummaryRow,
+  type ScrapedDataItem,
 } from '@/lib/api'
+import { isSpreadsheetWorkspaceFile } from '@/lib/workspaceFiles'
 import { useBucket } from '@/contexts/BucketContext'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
 import { useLayout } from '@/contexts/LayoutContext'
+import { ResearchRowAiChat } from '@/components/research/ResearchRowAiChat'
+import { ResearchSheetFilterBuilder } from '@/components/research/ResearchSheetFilterBuilder'
 import { ResearchTabs } from '@/components/research/ResearchTabs'
+import {
+  RESEARCH_AI_SHEET_INSTRUCTIONS,
+  parseSheetUpdatesFromAssistantMessage,
+  type SheetColumnUpdate,
+} from '@/lib/researchSheetUpdates'
+import {
+  defaultFilterBuilderItems,
+  evalFilterBuilder,
+  filterBuilderIsActive,
+  filterBuilderSummaryLabels,
+  type FilterBuilderTopItem,
+} from '@/lib/researchSheetFilter'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 
 type TabState = {
@@ -56,6 +104,195 @@ function serializeToCsv(data: string[][]): string {
     .join('\n')
 }
 
+type SelectionBlock = {
+  headers: string[]
+  /** Parallel to headers — original column indices in the source sheet */
+  colIndices: number[]
+  /** 0-based data-row indices (content row = index + 1) */
+  rowIndices: number[]
+  rows: string[][]
+}
+
+function sheetHeaderLabel(headerRow: string[], colIdx: number): string {
+  const raw = String(headerRow[colIdx] ?? '').trim()
+  return raw || `Column ${colIdx + 1}`
+}
+
+/** Selected rows × selected columns block (headers + cell values). */
+function buildSelectionBlock(
+  content: string[][],
+  selectedRows: Set<number>,
+  selectedColumns: Set<number>
+): SelectionBlock | null {
+  if (!content[0]?.length || selectedRows.size === 0 || selectedColumns.size === 0) return null
+  const colIndices = Array.from(selectedColumns)
+    .filter((i) => i >= 0 && i < content[0].length)
+    .sort((a, b) => a - b)
+  const rowIndices = Array.from(selectedRows)
+    .filter((i) => i >= 0 && i + 1 < content.length)
+    .sort((a, b) => a - b)
+  if (colIndices.length === 0 || rowIndices.length === 0) return null
+  const headers = colIndices.map((i) => sheetHeaderLabel(content[0], i))
+  const rows = rowIndices.map((rowIdx) => {
+    const row = content[rowIdx + 1] ?? []
+    return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+  })
+  return { headers, colIndices, rowIndices, rows }
+}
+
+function sheetRowHasData(row: string[] | undefined): boolean {
+  if (!row?.length) return false
+  return row.some((c) => String(c ?? '').trim().length > 0)
+}
+
+function isPlaceholderHeader(label: string): boolean {
+  return !label.trim() || /^column\s+\d+$/i.test(label.trim())
+}
+
+function ensureSheetWidth(next: string[][], headerRow: string[], minWidth: number) {
+  while (headerRow.length < minWidth) headerRow.push('')
+  for (let r = 1; r < next.length; r++) {
+    while (next[r]!.length < headerRow.length) next[r]!.push('')
+  }
+}
+
+type SheetMergeResult = {
+  sheet: string[][]
+  /** Maps each transferred source data-row index → destination data-row index (0-based). */
+  rowMap: Array<{ source: number; dest: number }>
+}
+
+/**
+ * Merge a selection block into a target sheet.
+ * - Maps columns by name, otherwise into the next blank header (leftmost), else appends.
+ * - Writes into the first stretch of rows where those target cells are empty,
+ *   merging cell-by-cell so extra columns land beside existing data (not far right / new rows).
+ */
+function mergeBlockIntoSheet(target: string[][], block: SelectionBlock): SheetMergeResult {
+  if (!block.headers.length) {
+    return { sheet: target.map((row) => [...row]), rowMap: [] }
+  }
+
+  if (!target.length || !target[0]?.length) {
+    const sheet = [block.headers.map((h) => h), ...block.rows.map((r) => [...r])]
+    const rowMap = block.rowIndices.map((source, i) => ({ source, dest: i }))
+    return { sheet, rowMap }
+  }
+
+  const next = target.map((row) => [...row])
+  const headerRow = [...(next[0] ?? [])]
+  const norm = (s: string) => s.trim().toLowerCase()
+  const colMap: number[] = []
+  const usedTargetCols = new Set<number>()
+  const targetHeadersAllBlank = headerRow.every((h) => !String(h ?? '').trim())
+
+  const claimBlankHeader = (): number => {
+    let idx = headerRow.findIndex(
+      (h, hi) => !usedTargetCols.has(hi) && !String(h ?? '').trim()
+    )
+    if (idx < 0) {
+      idx = headerRow.length
+      ensureSheetWidth(next, headerRow, idx + 1)
+    }
+    return idx
+  }
+
+  if (targetHeadersAllBlank) {
+    // New / unnamed sheets: write into the leftmost columns so data is visible immediately.
+    for (let i = 0; i < block.headers.length; i++) {
+      ensureSheetWidth(next, headerRow, i + 1)
+      const label = block.headers[i]!
+      headerRow[i] = isPlaceholderHeader(label) ? '' : label
+      colMap.push(i)
+      usedTargetCols.add(i)
+    }
+  } else {
+    for (const label of block.headers) {
+      let idx = -1
+      if (!isPlaceholderHeader(label)) {
+        const key = norm(label)
+        idx = headerRow.findIndex(
+          (h, hi) =>
+            !usedTargetCols.has(hi) &&
+            !isPlaceholderHeader(String(h ?? '')) &&
+            norm(String(h ?? '')) === key
+        )
+      }
+      if (idx < 0) {
+        idx = claimBlankHeader()
+        if (!isPlaceholderHeader(label)) {
+          headerRow[idx] = label
+        }
+      }
+      colMap.push(idx)
+      usedTargetCols.add(idx)
+    }
+  }
+
+  next[0] = headerRow
+  ensureSheetWidth(next, headerRow, headerRow.length)
+
+  const targetColsEmptyAt = (rowIdx: number): boolean => {
+    const row = next[rowIdx] ?? []
+    return colMap.every((ci) => !String(row[ci] ?? '').trim())
+  }
+
+  // Prefer filling beside existing values (empty cells in the mapped columns),
+  // instead of always appending below the last non-empty row.
+  let writeAt = 1
+  const lastDataRow = (() => {
+    for (let r = next.length - 1; r >= 1; r--) {
+      if (sheetRowHasData(next[r])) return r
+    }
+    return 0
+  })()
+  let found = false
+  for (let r = 1; r <= Math.max(1, lastDataRow); r++) {
+    if (targetColsEmptyAt(r)) {
+      writeAt = r
+      found = true
+      break
+    }
+  }
+  if (!found) {
+    writeAt = lastDataRow > 0 ? lastDataRow + 1 : 1
+  }
+
+  const rowMap: Array<{ source: number; dest: number }> = []
+  for (let bi = 0; bi < block.rows.length; bi++) {
+    const blockRow = block.rows[bi]!
+    while (writeAt >= next.length) {
+      next.push(Array.from({ length: headerRow.length }, () => ''))
+    }
+    const row = [...(next[writeAt] ?? [])]
+    while (row.length < headerRow.length) row.push('')
+    for (let i = 0; i < colMap.length; i++) {
+      row[colMap[i]!] = String(blockRow[i] ?? '')
+    }
+    next[writeAt] = row
+    const source = block.rowIndices[bi]
+    if (source != null) {
+      rowMap.push({ source, dest: writeAt - 1 })
+    }
+    writeAt += 1
+  }
+  return { sheet: next, rowMap }
+}
+
+/** Clear selected block cells in the source sheet (keep row structure). */
+function clearSelectionBlockInSheet(content: string[][], block: SelectionBlock): string[][] {
+  const next = content.map((row) => [...row])
+  for (const rowIdx of block.rowIndices) {
+    const r = rowIdx + 1
+    if (!next[r]) continue
+    next[r] = [...next[r]]
+    for (const colIdx of block.colIndices) {
+      if (colIdx < next[r].length) next[r][colIdx] = ''
+    }
+  }
+  return next
+}
+
 function isImageUrl(val: unknown): boolean {
   if (typeof val !== 'string' || !val.trim()) return false
   const s = val.trim().toLowerCase()
@@ -87,6 +324,299 @@ function formatValue(val: unknown): string {
   return String(val)
 }
 
+function isEditableScalar(val: unknown): boolean {
+  return val == null || typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean'
+}
+
+function scalarEditText(val: unknown): string {
+  if (val == null) return ''
+  if (typeof val === 'boolean') return val ? 'true' : 'false'
+  return String(val)
+}
+
+function needsMultilineEdit(text: string): boolean {
+  return text.includes('\n') || text.length > 72
+}
+
+function StructuredFieldEditor({
+  value,
+  onChange,
+}: {
+  value: unknown
+  onChange: (next: string) => void
+}) {
+  const text = scalarEditText(value)
+  const fieldClass =
+    'w-full min-w-[100px] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-sm text-slate-900 hover:border-slate-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30'
+  if (needsMultilineEdit(text)) {
+    return (
+      <textarea
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        rows={Math.min(6, Math.max(2, text.split('\n').length + (text.length > 120 ? 1 : 0)))}
+        className={`${fieldClass} resize-y`}
+      />
+    )
+  }
+  return (
+    <input
+      type="text"
+      value={text}
+      onChange={(e) => onChange(e.target.value)}
+      className={fieldClass}
+    />
+  )
+}
+
+function structuredFieldEditText(val: unknown): string {
+  if (Array.isArray(val)) {
+    return val.map((v) => (v == null ? '' : String(v))).join('\n')
+  }
+  return scalarEditText(val)
+}
+
+function formatTrackValue(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string') {
+    const t = v.trim()
+    return t.length > 120 ? `${t.slice(0, 117)}…` : t || '—'
+  }
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  try {
+    const s = JSON.stringify(v)
+    return s.length > 120 ? `${s.slice(0, 117)}…` : s
+  } catch {
+    return String(v)
+  }
+}
+
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  const diffSec = Math.round((Date.now() - date.getTime()) / 1000)
+  if (diffSec < 45) return 'just now'
+  const diffMin = Math.round(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.round(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.round(diffHr / 24)
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function FieldChangeChip({ change }: { change: ResearchFieldChange }) {
+  const isAdded = change.kind === 'added'
+  return (
+    <li className="flex items-start gap-2 text-xs text-slate-800">
+      <span
+        className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none ${
+          isAdded ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+        }`}
+        aria-hidden
+      >
+        {isAdded ? '+' : '~'}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="font-medium text-slate-700">{change.field.replace(/_/g, ' ')}</span>
+        <span className="mx-1.5 text-slate-300">·</span>
+        {isAdded ? (
+          <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-900">
+              {formatTrackValue(change.after)}
+            </span>
+            <span className="rounded bg-emerald-200/70 px-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-900">
+              new
+            </span>
+          </span>
+        ) : (
+          <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+            <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-500 line-through decoration-slate-400">
+              {formatTrackValue(change.before)}
+            </span>
+            <span className="text-slate-400" aria-hidden>
+              →
+            </span>
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-900">
+              {formatTrackValue(change.after)}
+            </span>
+          </span>
+        )}
+      </span>
+    </li>
+  )
+}
+
+function FieldChangeTracking({
+  changes,
+  changeLog,
+}: {
+  changes?: ResearchFieldChange[] | null
+  changeLog?: ScrapedDataItem['change_log']
+}) {
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const latest = (changes && changes.length > 0 ? changes : changeLog?.[0]?.changes) ?? []
+  const history = (changeLog ?? []).slice(1)
+  if (latest.length === 0 && history.length === 0) return null
+
+  const updatedCount = latest.filter((c) => c.kind === 'updated').length
+  const addedCount = latest.filter((c) => c.kind === 'added').length
+  const latestAt = changeLog?.[0]?.at
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/60">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/70 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+          <History className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          Field tracking
+          {updatedCount > 0 && (
+            <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-bold normal-case text-amber-900">
+              {updatedCount} updated
+            </span>
+          )}
+          {addedCount > 0 && (
+            <span className="rounded-full bg-emerald-200/80 px-1.5 py-0.5 text-[10px] font-bold normal-case text-emerald-900">
+              {addedCount} new
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {latestAt && (
+            <span
+              className="text-[11px] font-normal normal-case tracking-normal text-amber-800/80"
+              title={new Date(latestAt).toLocaleString()}
+            >
+              Last research {formatRelativeTime(latestAt)}
+            </span>
+          )}
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((o) => !o)}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/70 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-white"
+              aria-expanded={historyOpen}
+            >
+              History ({history.length})
+              <ChevronDown
+                className={`h-3 w-3 shrink-0 transition-transform ${historyOpen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {latest.length > 0 && (
+        <ul className="space-y-1.5 px-3 py-2.5">
+          {latest.map((c) => (
+            <FieldChangeChip key={`${c.kind}-${c.field}`} change={c} />
+          ))}
+        </ul>
+      )}
+
+      {historyOpen && history.length > 0 && (
+        <div className="max-h-72 overflow-y-auto border-t border-amber-200/70 bg-amber-50/40 px-3 py-2.5">
+          <ol className="relative space-y-3 border-l border-amber-300/60 pl-3.5">
+            {history.map((entry, ei) => (
+              <li key={`${entry.at}-${ei}`} className="relative">
+                <span
+                  className="absolute -left-[19px] top-0.5 h-2 w-2 rounded-full border-2 border-amber-50 bg-amber-400"
+                  aria-hidden
+                />
+                <p
+                  className="text-[11px] font-semibold text-amber-900/90"
+                  title={new Date(entry.at).toLocaleString()}
+                >
+                  {formatRelativeTime(entry.at)}
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {(entry.changes ?? []).map((c) => (
+                    <FieldChangeChip key={`${entry.at}-${c.field}`} change={c} />
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StructuredFieldCell({
+  fieldKey,
+  val,
+  editing,
+  onChange,
+}: {
+  fieldKey: string
+  val: unknown
+  editing: boolean
+  onChange: (next: string) => void
+}) {
+  const imageUrls = Array.isArray(val)
+    ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+    : isImageUrl(val)
+      ? [String(val)]
+      : []
+  const showAsImage = (isImageKey(fieldKey) || imageUrls.length > 0) && imageUrls.length > 0
+
+  if (editing) {
+    if (
+      isEditableScalar(val) ||
+      showAsImage ||
+      isImageKey(fieldKey) ||
+      (Array.isArray(val) && val.every((v) => v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
+    ) {
+      return (
+        <StructuredFieldEditor
+          value={structuredFieldEditText(val)}
+          onChange={onChange}
+        />
+      )
+    }
+    return (
+      <StructuredFieldEditor
+        value={formatValue(val) === '—' ? '' : formatValue(val)}
+        onChange={onChange}
+      />
+    )
+  }
+
+  if (showAsImage) {
+    return (
+      <span className="inline-flex flex-wrap gap-2">
+        {imageUrls.map((imgSrc, i) => (
+          <span key={i} className="relative">
+            <img
+              src={imgSrc}
+              alt={`${fieldKey.replace(/_/g, ' ')} ${i + 1}`}
+              className="max-h-24 rounded border border-gray-200 object-contain"
+              loading="lazy"
+              onError={(e) => {
+                const el = e.currentTarget
+                el.style.display = 'none'
+                const fallback = el.nextElementSibling
+                if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+              }}
+            />
+            <a
+              href={imgSrc}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden max-w-[200px] truncate text-xs text-blue-600 hover:underline"
+              title={imgSrc}
+            >
+              {imgSrc}
+            </a>
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  return <>{renderValue(val)}</>
+}
+
 function extractDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '')
@@ -109,6 +639,46 @@ function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label:
   return out
 }
 
+/** JSON context for in-panel AI (sheet row + scraped structured data). */
+function buildResearchInspectorContext(
+  headerRow: string[],
+  row: string[] | null,
+  scraped: Array<{ url: string; data: Record<string, unknown> }> | null,
+  options?: { sourceIndex?: number; sourceOnly?: boolean }
+): string {
+  const sheetRow: Record<string, string> = {}
+  if (row) {
+    headerRow.forEach((h, i) => {
+      const key = (h || `Column ${i + 1}`).trim()
+      sheetRow[key] = String(row[i] ?? '')
+    })
+  }
+  const allSources = (scraped ?? []).map((s, i) => ({
+    source_index: i + 1,
+    url: s.url,
+    data: s.data,
+  }))
+  const sources =
+    options?.sourceOnly && options.sourceIndex != null
+      ? allSources.filter((s) => s.source_index === options.sourceIndex! + 1)
+      : allSources
+  try {
+    return JSON.stringify({
+      sheet_headers: headerRow.map((h, i) => (h || `Column ${i + 1}`).trim()),
+      sheet_row: sheetRow,
+      scraped_sources: sources,
+      assistant_instructions: RESEARCH_AI_SHEET_INSTRUCTIONS,
+    })
+  } catch {
+    return JSON.stringify({
+      sheet_headers: [],
+      sheet_row: sheetRow,
+      scraped_sources: [],
+      assistant_instructions: RESEARCH_AI_SHEET_INSTRUCTIONS,
+    })
+  }
+}
+
 function comparisonItemsFromScrapedSources(
   previewScrapedData: Array<{ url: string; data: Record<string, unknown> }>,
   selectedIndices: Set<number>,
@@ -120,14 +690,63 @@ function comparisonItemsFromScrapedSources(
     const row = previewScrapedData[idx]!
     const domain = row.url ? extractDomain(row.url) : '—'
     const title = getFirstPartNumber(row.data) ?? `Source ${idx + 1}`
+    const img = extractImageFromRecord(row.data)
     return {
       id: `research-${effectiveTabId}-r${selectedRowIndex}-s${idx}`,
       title,
-      imageUrl: null,
+      imageUrl: img,
       specs: collectScalarSpecs(row.data),
       sourceName: domain,
     }
   })
+}
+
+/** Stable union of spec labels (order follows first occurrence across items). */
+function orderedUnionLabels(items: ComparisonItem[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    for (const spec of item.specs) {
+      if (!seen.has(spec.label)) {
+        seen.add(spec.label)
+        out.push(spec.label)
+      }
+    }
+  }
+  return out
+}
+
+function specValueForLabel(item: ComparisonItem, label: string): string {
+  const spec = item.specs.find((s) => s.label === label)
+  return spec?.value ?? ''
+}
+
+function extractImageFromRecord(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && isImageUrl(v) && (isImageKey(k) || /image|photo|thumbnail/i.test(k))) {
+      return v.trim()
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const nested = extractImageFromRecord(v as Record<string, unknown>)
+      if (nested) return nested
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'string' && isImageUrl(v)) return v.trim()
+  }
+  return null
+}
+
+function extractImageFromSpecs(specs: ComparisonItem['specs']): string | null {
+  for (const s of specs) {
+    if (isImageKey(s.label) && isImageUrl(s.value)) return String(s.value).trim()
+  }
+  for (const s of specs) {
+    if (isImageUrl(s.value)) return String(s.value).trim()
+  }
+  return null
 }
 
 function isPartNumberKey(key: string): boolean {
@@ -257,10 +876,131 @@ const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
 const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
 const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
+const RESEARCH_TABS_KEY = 'research-tabs'
 
 const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
 const INSPECTOR_DEFAULT_WIDTH = 450
+
+type RowDensity = 'compact' | 'default' | 'comfortable'
+
+function researchRowDensityClasses(density: RowDensity) {
+  switch (density) {
+    case 'compact':
+      return {
+        th: 'px-1 py-0.5',
+        thLabel: 'text-[10px]',
+        tdNum: 'h-7 min-h-[1.75rem] px-1 text-[10px]',
+        tdCb: 'h-7 min-h-[1.75rem] px-2',
+        tdResearch: 'h-7 min-h-[1.75rem] px-1.5',
+        tdCell: 'h-7 min-h-[1.75rem] p-0',
+        cellInput: 'h-7 min-h-[1.75rem] px-2 text-[11px]',
+        headInput: 'px-1 py-0 text-[10px]',
+      }
+    case 'comfortable':
+      return {
+        th: 'px-2 py-2',
+        thLabel: 'text-xs',
+        tdNum: 'min-h-[2.75rem] py-2 px-1 text-[11px]',
+        tdCb: 'min-h-[2.75rem] py-2 px-2',
+        tdResearch: 'min-h-[2.75rem] py-2 px-1.5',
+        tdCell: 'min-h-[2.75rem] py-2 p-0',
+        cellInput: 'min-h-[2.75rem] px-2 py-1.5 text-xs',
+        headInput: 'px-1 py-1 text-xs',
+      }
+    default:
+      return {
+        th: 'px-1.5 py-1.5',
+        thLabel: 'text-[11px]',
+        tdNum: 'h-8 px-1 text-[10px]',
+        tdCb: 'h-8 px-2',
+        tdResearch: 'h-8 px-1.5',
+        tdCell: 'h-8 p-0',
+        cellInput: 'h-8 px-2 text-xs',
+        headInput: 'px-1 py-0.5 text-[11px]',
+      }
+  }
+}
+
+/** Airtable-style row height control icon */
+function RowHeightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.5v7M19 10.5l2-2 2 2M19 13.5l2 2 2-2" />
+    </svg>
+  )
+}
+
+function researchToolbarBtnClass(active: boolean, disabled = false) {
+  if (disabled) {
+    return 'group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 opacity-60 cursor-default'
+  }
+  return `group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
+    active
+      ? 'border-blue-500 bg-blue-50 text-blue-700'
+      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+  }`
+}
+
+function ResearchToolbarTooltip({ label }: { label: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-md transition-opacity duration-100 group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  )
+}
+
+function ResearchToolbarDivider() {
+  return <span className="mx-2.5 h-5 w-px shrink-0 bg-slate-300/80" aria-hidden />
+}
+
+function ResearchToolbarGroup({
+  children,
+  label,
+}: {
+  children: ReactNode
+  label: string
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex shrink-0 items-center gap-2"
+    >
+      {children}
+    </div>
+  )
+}
+
+function ResearchFoundBadge({ count, onClick }: { count: number; onClick: () => void }) {
+  if (!count) {
+    return <span className="py-0.5 font-mono text-[11px] text-gray-400">—</span>
+  }
+
+  const tone =
+    count >= 8
+      ? 'border-blue-200 bg-blue-50 text-blue-700'
+      : count >= 4
+        ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+        : 'border-orange-200 bg-orange-50 text-orange-900'
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={`rounded-full border-[1.5px] px-2.5 py-0.5 font-mono text-[11px] font-semibold shadow-none transition-shadow hover:shadow-md ${tone}`}
+    >
+      {count} found ↗
+    </button>
+  )
+}
 
 type PersistedResearchState = {
   activeTabId: string | null
@@ -275,6 +1015,17 @@ type PersistedResearchState = {
   inspectorMode: 'single' | 'multi'
   inspectorMultiRowIndices: number[]
   inspectorCompareSelection: number[]
+  rowDensity?: RowDensity
+}
+
+function isRowDensity(value: unknown): value is RowDensity {
+  return value === 'compact' || value === 'default' || value === 'comfortable'
+}
+
+function isEmptyBlankSheet(tab: TabState): boolean {
+  if (tab.fileId != null) return false
+  if (!tab.data?.length) return true
+  return tab.data.every((row) => row.every((c) => !String(c ?? '').trim()))
 }
 
 export function ResearchPage() {
@@ -284,10 +1035,12 @@ export function ResearchPage() {
   const folderFromUrl = searchParams.get('folder')
   const [tabs, setTabs] = useState<TabState[]>(() => {
     try {
-      const raw = localStorage.getItem('research-tabs')
+      // Never read the legacy unscoped `research-tabs` key — it leaked across accounts.
+      const raw = localStorage.getItem(workspaceStorageKey(RESEARCH_TABS_KEY))
       if (!raw) return [newBlankSheet()]
       const parsed = JSON.parse(raw) as TabState[]
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [newBlankSheet()]
+      // Preserve an intentionally empty tab set after user closes all tabs.
+      return Array.isArray(parsed) ? parsed : [newBlankSheet()]
     } catch {
       return [newBlankSheet()]
     }
@@ -299,15 +1052,58 @@ export function ResearchPage() {
   const [selectedColumns, setSelectedColumns] = useState<Set<number>>(new Set())
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
-  const [toolbarActive, setToolbarActive] = useState<'all' | 'selected' | 'deep' | null>('all')
+  const [toolbarActive, setToolbarActive] = useState<'selected' | null>(null)
   // Removed "Other options" menu
   // const [otherMenuOpen, setOtherMenuOpen] = useState(false)
+  const [rowSearchDraft, setRowSearchDraft] = useState('')
+  const [rowSearchQuery, setRowSearchQuery] = useState('')
+  const [hiddenColumns, setHiddenColumns] = useState<Set<number>>(new Set())
+  const [filterBuilderItems, setFilterBuilderItems] = useState<FilterBuilderTopItem[]>(() =>
+    defaultFilterBuilderItems()
+  )
   const [filterOpen, setFilterOpen] = useState(false)
+  const [groupByCol, setGroupByCol] = useState<number | null>(null)
+  const [sortCol, setSortCol] = useState<number | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [rowDensity, setRowDensity] = useState<RowDensity>('default')
+  const [hideFieldsOpen, setHideFieldsOpen] = useState(false)
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [densityMenuOpen, setDensityMenuOpen] = useState(false)
+  const [addColumnOpen, setAddColumnOpen] = useState(false)
+  const [addColumnNameDraft, setAddColumnNameDraft] = useState('')
+  const hideFieldsBtnRef = useRef<HTMLButtonElement>(null)
+  const hideFieldsDropRef = useRef<HTMLDivElement>(null)
+  const groupMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const groupMenuDropRef = useRef<HTMLDivElement>(null)
+  const sortMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const sortMenuDropRef = useRef<HTMLDivElement>(null)
+  const densityMenuBtnRef = useRef<HTMLButtonElement>(null)
+  const densityMenuDropRef = useRef<HTMLDivElement>(null)
+  const filterBtnRef = useRef<HTMLButtonElement>(null)
+  const filterDropRef = useRef<HTMLDivElement>(null)
+  const addColumnBtnRef = useRef<HTMLButtonElement>(null)
+  const addColumnDropRef = useRef<HTMLDivElement>(null)
+  const addColumnInputRef = useRef<HTMLInputElement>(null)
+  /** Bumps when scroll/resize so portaled menus re-read anchor getBoundingClientRect. */
+  const [, setToolbarMenuLayoutTick] = useState(0)
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
   const [filePickerError, setFilePickerError] = useState<string | null>(null)
+  /** null = open-as-tab; duplicate/move = transfer selection block to picked file */
+  const [transferPickerMode, setTransferPickerMode] = useState<'duplicate' | 'move' | null>(null)
+  const [transferBusy, setTransferBusy] = useState(false)
+  const [transferFiles, setTransferFiles] = useState<{ id: number; name: string; folderPath: string | null }[]>([])
+  const [transferFilesLoading, setTransferFilesLoading] = useState(false)
+  const [transferFilesError, setTransferFilesError] = useState<string | null>(null)
+  const [transferNewSheetName, setTransferNewSheetName] = useState('')
+  const [newSheetModalOpen, setNewSheetModalOpen] = useState(false)
+  const [newSheetNameDraft, setNewSheetNameDraft] = useState('')
+  const [newSheetCreating, setNewSheetCreating] = useState(false)
+  const newSheetInputRef = useRef<HTMLInputElement>(null)
+  const transferNewSheetInputRef = useRef<HTMLInputElement>(null)
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [inspectorMaximized, setInspectorMaximized] = useState(false)
@@ -328,39 +1124,266 @@ export function ResearchPage() {
     y: number
   }>({ open: false, x: 0, y: 0 })
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<'rows' | 'columns' | null>(null)
   const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
   const [researchAiQueryInput, setResearchAiQueryInput] = useState(
     'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
   )
+  const [cellFillPopupOpen, setCellFillPopupOpen] = useState(false)
+  const [cellFillPrompt, setCellFillPrompt] = useState('')
+  const [cellFillMode, setCellFillMode] = useState<'internal' | 'external'>('internal')
+  const [cellFillLoading, setCellFillLoading] = useState(false)
+  const [researchMoreOpen, setResearchMoreOpen] = useState(false)
+  const [researchMorePrompt, setResearchMorePrompt] = useState('')
+  const [addStructuredColumnOpen, setAddStructuredColumnOpen] = useState(false)
+  const [addStructuredColumnName, setAddStructuredColumnName] = useState('')
+  const [addStructuredColumnSourceIdx, setAddStructuredColumnSourceIdx] = useState<number | null>(null)
   const [storeSelectionLoading, setStoreSelectionLoading] = useState(false)
+  const [researchProgress, setResearchProgress] = useState(0)
+  const [researchingRowIndices, setResearchingRowIndices] = useState<Set<number>>(new Set())
+  const researchProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** Tracks a remote/local research job id so other browsers can clear when it finishes. */
+  const syncedResearchJobIdRef = useRef<number | null>(null)
+  /** True while this browser's own searchSelectionAndStoreUrls request is in flight. */
+  const localResearchInFlightRef = useRef(false)
   const [researchVersion, setResearchVersion] = useState(0)
-  const [previewScrapedData, setPreviewScrapedData] = useState<
-    Array<{ url: string; data: Record<string, unknown> }> | null
-  >(null)
+  const [previewScrapedData, setPreviewScrapedData] = useState<ScrapedDataItem[] | null>(null)
+  const [previewResearchUrlId, setPreviewResearchUrlId] = useState<number | null>(null)
+  const [researchMoreLoading, setResearchMoreLoading] = useState(false)
   /** Checked scraped source indices for inspector → Compare (synced when preview data loads). */
   const [inspectorScrapedSourceSelection, setInspectorScrapedSourceSelection] = useState<Set<number>>(new Set())
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
   const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
+  const [inspectorSourceAiOpen, setInspectorSourceAiOpen] = useState<Set<number>>(new Set())
+  const [inspectorSourceEditOpen, setInspectorSourceEditOpen] = useState<Set<number>>(new Set())
+  const [inspectorRowAiOpen, setInspectorRowAiOpen] = useState(false)
+  const [researchRowSummaryByIndex, setResearchRowSummaryByIndex] = useState<
+    Map<number, ResearchGridSummaryRow>
+  >(() => new Map())
   const navigate = useNavigate()
   const location = useLocation()
   const flushSaveRef = useRef<(() => void) | null>(null)
   const { setCollapseSidebarForInspector } = useLayout()
   const { addItem, showToast } = useBucket()
-  const { openWithItems: openComparison, closeAndClear: clearComparison } = useComparison()
+  const {
+    openWithItems: openComparison,
+    closeAndClear: clearComparison,
+    items: comparisonItems,
+  } = useComparison()
+  const [comparePreviewModalOpen, setComparePreviewModalOpen] = useState(false)
+  const comparePreviewNavigateStateRef = useRef<unknown>(null)
+  const [comparePreviewLayout, setComparePreviewLayout] = useState<'matrix' | 'cards'>('matrix')
+  /** Matrix view: field labels whose rows are minimized (content hidden). */
+  const [compareMatrixCollapsedFields, setCompareMatrixCollapsedFields] = useState<Set<string>>(
+    () => new Set()
+  )
+  const comparePreviewWasOpenRef = useRef(false)
+
+  const comparePreviewLabels = useMemo(
+    () => orderedUnionLabels(comparisonItems),
+    [comparisonItems]
+  )
+
+  const openComparePreviewModal = useCallback(
+    (items: ComparisonItem[], navigateState: unknown) => {
+      clearComparison()
+      openComparison(items)
+      const base =
+        navigateState != null && typeof navigateState === 'object'
+          ? (navigateState as Record<string, unknown>)
+          : {}
+      comparePreviewNavigateStateRef.current = {
+        ...base,
+        initialComparisonItems: items,
+      }
+      setComparePreviewModalOpen(true)
+      showToast('Comparison preview ready')
+    },
+    [clearComparison, openComparison, showToast]
+  )
+
+  useEffect(() => {
+    if (!comparePreviewModalOpen) return
+    setComparePreviewLayout(comparisonItems.length >= 2 ? 'matrix' : 'cards')
+  }, [comparePreviewModalOpen, comparisonItems.length])
+
+  useEffect(() => {
+    if (comparePreviewModalOpen && !comparePreviewWasOpenRef.current) {
+      setCompareMatrixCollapsedFields(new Set())
+    }
+    comparePreviewWasOpenRef.current = comparePreviewModalOpen
+  }, [comparePreviewModalOpen])
+
+  useEffect(() => {
+    if (!comparePreviewModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setComparePreviewModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [comparePreviewModalOpen])
   const lastClosedFileIdRef = useRef<number | null>(null)
   const hasRestoredPageStateRef = useRef(false)
+  const hasHydratedResearchStateRef = useRef(false)
+  const researchPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPersistedFileTabCountRef = useRef(0)
+  const [researchSessionReady, setResearchSessionReady] = useState(false)
+  const tabsRef = useRef(tabs)
+  const activeTabIdRef = useRef(activeTabId)
+  tabsRef.current = tabs
+  activeTabIdRef.current = activeTabId
   const userHasEditedRef = useRef(false)
   const saveImmediatelyRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Bumped on local writes so in-flight GET sync responses are ignored (stale overwrite guard). */
+  const sheetSyncGenerationRef = useRef<Map<number, number>>(new Map())
+  const sheetSyncSuppressUntilRef = useRef<Map<number, number>>(new Map())
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const content = activeTab?.data ?? null
   const effectiveTabId = activeTab?.id ?? tabs[0]?.id ?? null
 
+  const bumpSheetSyncGeneration = useCallback((fileId: number, suppressMs = 2500) => {
+    const prev = sheetSyncGenerationRef.current.get(fileId) ?? 0
+    sheetSyncGenerationRef.current.set(fileId, prev + 1)
+    sheetSyncSuppressUntilRef.current.set(fileId, Date.now() + suppressMs)
+  }, [])
+
+  /**
+   * Pull latest CSV from Mongo for a file-backed tab.
+   * Skips when this browser has unsaved local edits so we don't clobber them.
+   */
+  const reloadFileTabFromServer = useCallback(async (fileId: number) => {
+    if (!Number.isFinite(fileId) || fileId <= 0) return
+    if (userHasEditedRef.current) return
+    const suppressUntil = sheetSyncSuppressUntilRef.current.get(fileId) ?? 0
+    if (Date.now() < suppressUntil) return
+    const token = getToken()
+    if (!token) return
+
+    const generation = sheetSyncGenerationRef.current.get(fileId) ?? 0
+    try {
+      const text = await getWorkspaceFileContent(fileId, token)
+      if (userHasEditedRef.current) return
+      if ((sheetSyncGenerationRef.current.get(fileId) ?? 0) !== generation) return
+      if (Date.now() < (sheetSyncSuppressUntilRef.current.get(fileId) ?? 0)) return
+      const parsed = parseCsv(text)
+      const nextData = parsed.length > 0 ? parsed : [['']]
+      const nextCsv = serializeToCsv(nextData)
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.fileId === fileId)
+        if (idx < 0) return prev
+        if (serializeToCsv(prev[idx].data) === nextCsv) return prev
+        return prev.map((t, i) => (i === idx ? { ...t, data: nextData } : t))
+      })
+    } catch {
+      // Soft-fail: keep local cache if the network/API blips during background sync.
+    }
+  }, [])
+
+  const clearResearchProgressTicker = useCallback(() => {
+    if (researchProgressIntervalRef.current) {
+      clearInterval(researchProgressIntervalRef.current)
+      researchProgressIntervalRef.current = null
+    }
+  }, [])
+
+  const startResearchProgressTicker = useCallback(() => {
+    clearResearchProgressTicker()
+    researchProgressIntervalRef.current = setInterval(() => {
+      setResearchProgress((p) => (p < 90 ? p + 1 : p))
+    }, 350)
+  }, [clearResearchProgressTicker])
+
+  const runSelectedResearch = useCallback(
+    async (aiQuery?: string, options?: { rowIndices?: number[] }) => {
+      if (!content) return
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to research selected')
+        return
+      }
+      const colIndices =
+        selectedColumns.size > 0
+          ? Array.from(selectedColumns).sort((a, b) => a - b)
+          : Array.from({ length: content[0]?.length ?? 0 }, (_, i) => i)
+      if (colIndices.length === 0) {
+        showToast('Select at least one column first')
+        return
+      }
+      const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
+      const rowIndices =
+        options?.rowIndices && options.rowIndices.length > 0
+          ? [...options.rowIndices].sort((a, b) => a - b)
+          : selectedRows.size > 0
+            ? Array.from(selectedRows).sort((a, b) => a - b)
+            : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
+      if (rowIndices.length === 0) {
+        showToast('Select at least one row first')
+        return
+      }
+      const rows = rowIndices.map((rowIdx) => {
+        const row = content[rowIdx + 1] ?? []
+        return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
+      })
+
+      setResearchingRowIndices(new Set(rowIndices))
+      setStoreSelectionLoading(true)
+      setResearchProgress(8)
+      startResearchProgressTicker()
+      setResearchFieldsPopupOpen(false)
+      setResearchMoreOpen(false)
+      localResearchInFlightRef.current = true
+
+      try {
+        setResearchProgress(20)
+        const saved = await saveDataSheetSelection(
+          {
+            headers,
+            rows,
+            row_indices: rowIndices,
+            sheet_name: activeTab?.name ?? null,
+            file_id: activeTab?.fileId ?? null,
+            tab_id: effectiveTabId ?? null,
+          },
+          token
+        )
+        setResearchProgress(45)
+        const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery?.trim() || null)
+        setResearchProgress(100)
+        setResearchVersion((v) => v + 1)
+        showToast(
+          `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
+        )
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Failed to save or search')
+      } finally {
+        localResearchInFlightRef.current = false
+        syncedResearchJobIdRef.current = null
+        clearResearchProgressTicker()
+        setStoreSelectionLoading(false)
+        setResearchingRowIndices(new Set())
+        window.setTimeout(() => setResearchProgress(0), 400)
+      }
+    },
+    [
+      activeTab?.fileId,
+      activeTab?.name,
+      clearResearchProgressTicker,
+      content,
+      effectiveTabId,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      startResearchProgressTicker,
+    ]
+  )
+
+  useEffect(() => () => clearResearchProgressTicker(), [clearResearchProgressTicker])
+
   // Persist tabs in localStorage so they survive route changes and reloads
   useEffect(() => {
     try {
-      localStorage.setItem('research-tabs', JSON.stringify(tabs))
+      localStorage.setItem(workspaceStorageKey(RESEARCH_TABS_KEY), JSON.stringify(tabs))
     } catch {
       // ignore quota or serialization errors
     }
@@ -421,18 +1444,24 @@ export function ResearchPage() {
     }
   }, [])
 
-  // Restore Research page state when returning from another page (skip if returning from Compare with restore state)
-  useEffect(() => {
+  // Restore Research page state when returning from another page (skip if returning from Compare with restore state).
+  // useLayoutEffect so activeTabId / row / inspector match persisted values before persist effect runs (avoids clobbering
+  // localStorage with first-paint nulls and breaking AI chat keys like tabId:rowIndex).
+  useLayoutEffect(() => {
     if (hasRestoredPageStateRef.current) return
     const st = location.state as { restoreResearchSelection?: unknown; restoreInspector?: unknown } | undefined
-    if (st?.restoreResearchSelection || st?.restoreInspector) return
+    if (st?.restoreResearchSelection || st?.restoreInspector) {
+      // Dedicated restore effect owns this handoff; do not hydrate from localStorage yet.
+      return
+    }
 
     hasRestoredPageStateRef.current = true
     try {
-      const raw = localStorage.getItem(RESEARCH_PAGE_STATE_KEY)
+      const raw = localStorage.getItem(workspaceStorageKey(RESEARCH_PAGE_STATE_KEY))
       if (!raw) return
       const data = JSON.parse(raw) as Partial<PersistedResearchState>
       if (data.activeTabId && tabs.some((t) => t.id === data.activeTabId)) {
+        skipSelectionResetRef.current = true
         setActiveTabId(data.activeTabId)
       }
       if (Array.isArray(data.selectedRows)) setSelectedRows(new Set(data.selectedRows))
@@ -457,13 +1486,15 @@ export function ResearchPage() {
       if (Array.isArray(data.inspectorCompareSelection)) {
         setInspectorCompareSelection(new Set(data.inspectorCompareSelection))
       }
+      if (isRowDensity(data.rowDensity)) setRowDensity(data.rowDensity)
     } catch {
       // ignore parse errors
     }
-  }, [location.state, tabs])
+  }, [location.state, tabs, setCollapseSidebarForInspector])
 
   // Persist Research page state so it survives navigation to other pages
   useEffect(() => {
+    if (!hasRestoredPageStateRef.current) return
     try {
       const data: PersistedResearchState = {
         activeTabId,
@@ -478,8 +1509,9 @@ export function ResearchPage() {
         inspectorMode,
         inspectorMultiRowIndices,
         inspectorCompareSelection: Array.from(inspectorCompareSelection),
+        rowDensity,
       }
-      localStorage.setItem(RESEARCH_PAGE_STATE_KEY, JSON.stringify(data))
+      localStorage.setItem(workspaceStorageKey(RESEARCH_PAGE_STATE_KEY), JSON.stringify(data))
     } catch {
       // ignore quota or serialization errors
     }
@@ -496,6 +1528,7 @@ export function ResearchPage() {
     inspectorMode,
     inspectorMultiRowIndices,
     inspectorCompareSelection,
+    rowDensity,
   ])
 
   useEffect(() => {
@@ -504,7 +1537,280 @@ export function ResearchPage() {
     }
   }, [tabs, activeTabId])
 
-  // Fetch all workspace files when file picker opens
+  const prevEffectiveTabIdRef = useRef<string | null>(effectiveTabId)
+  const skipSelectionResetRef = useRef(false)
+
+  // Cross-browser: restore open file-backed sheets + chrome from Mongo for this user.
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      hasHydratedResearchStateRef.current = true
+      if (!hasRestoredPageStateRef.current) hasRestoredPageStateRef.current = true
+      setResearchSessionReady(true)
+      return
+    }
+
+    const routeFileId =
+      fileIdParam && Number.isFinite(Number(fileIdParam)) && Number(fileIdParam) > 0
+        ? Number(fileIdParam)
+        : null
+    const st = location.state as
+      | { restoreResearchSelection?: unknown; restoreInspector?: unknown }
+      | undefined
+    const hasCompareRestore = Boolean(st?.restoreResearchSelection || st?.restoreInspector)
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const state = await getResearchState(token)
+        if (cancelled) return
+
+        const openTabs = Array.isArray(state?.open_tabs) ? state!.open_tabs : []
+        const needsFileFetch = openTabs.length > 0 || routeFileId != null
+        if (needsFileFetch) setLoading(true)
+        const loaded: TabState[] = []
+        for (const entry of openTabs) {
+          const fid = Number(entry.file_id)
+          if (!Number.isFinite(fid) || fid <= 0) continue
+          if (loaded.some((t) => t.fileId === fid)) continue
+          try {
+            const text = await getWorkspaceFileContent(fid, token)
+            if (cancelled) return
+            const parsed = parseCsv(text)
+            loaded.push({
+              id: crypto.randomUUID(),
+              name: typeof entry.name === 'string' && entry.name.trim() ? entry.name : `File ${fid}`,
+              data: parsed.length > 0 ? parsed : [['']],
+              fileId: fid,
+              folderPath: entry.folder_path ?? null,
+            })
+          } catch {
+            // File may have been deleted — skip.
+          }
+        }
+
+        if (routeFileId != null && !loaded.some((t) => t.fileId === routeFileId)) {
+          try {
+            const text = await getWorkspaceFileContent(routeFileId, token)
+            if (cancelled) return
+            const parsed = parseCsv(text)
+            loaded.unshift({
+              id: crypto.randomUUID(),
+              name: nameFromUrl?.trim() || `File ${routeFileId}`,
+              data: parsed.length > 0 ? parsed : [['']],
+              fileId: routeFileId,
+              folderPath: folderFromUrl,
+            })
+          } catch {
+            // Keep going; route effect can surface the error.
+          }
+        }
+
+        if (loaded.length > 0) {
+          lastPersistedFileTabCountRef.current = loaded.length
+          setTabs((prev) => {
+            const keepLocalOnly = prev.filter((t) => t.fileId == null && !isEmptyBlankSheet(t))
+            return [...loaded, ...keepLocalOnly]
+          })
+
+          const preferFileId =
+            routeFileId ??
+            (typeof state?.active_file_id === 'number' ? state.active_file_id : null) ??
+            loaded[0]!.fileId
+          const active =
+            loaded.find((t) => t.fileId === preferFileId) ?? loaded[0]!
+          skipSelectionResetRef.current = true
+          setActiveTabId(active.id)
+          setError(null)
+
+          if (!hasCompareRestore && state?.page_state && typeof state.page_state === 'object') {
+            const ps = state.page_state as Partial<PersistedResearchState> & Record<string, unknown>
+            if (Array.isArray(ps.selectedRows)) setSelectedRows(new Set(ps.selectedRows as number[]))
+            if (Array.isArray(ps.selectedColumns)) {
+              setSelectedColumns(new Set(ps.selectedColumns as number[]))
+            }
+            if (typeof ps.rowsPerPage === 'number') setRowsPerPage(ps.rowsPerPage)
+            if (typeof ps.page === 'number') setPage(ps.page)
+            if (ps.selectedRowIndex !== undefined) {
+              setSelectedRowIndex(ps.selectedRowIndex as number | null)
+            }
+            if (typeof ps.isInspectorOpen === 'boolean') {
+              setIsInspectorOpen(ps.isInspectorOpen)
+              if (ps.isInspectorOpen) setCollapseSidebarForInspector(true)
+            }
+            if (typeof ps.inspectorMaximized === 'boolean') {
+              setInspectorMaximized(ps.inspectorMaximized)
+            }
+            if (
+              typeof ps.inspectorWidth === 'number' &&
+              ps.inspectorWidth >= INSPECTOR_MIN_WIDTH &&
+              ps.inspectorWidth <= INSPECTOR_MAX_WIDTH
+            ) {
+              setInspectorWidth(ps.inspectorWidth)
+            }
+            if (ps.inspectorMode === 'single' || ps.inspectorMode === 'multi') {
+              setInspectorMode(ps.inspectorMode)
+            }
+            if (Array.isArray(ps.inspectorMultiRowIndices)) {
+              setInspectorMultiRowIndices(ps.inspectorMultiRowIndices as number[])
+            }
+            if (Array.isArray(ps.inspectorCompareSelection)) {
+              setInspectorCompareSelection(new Set(ps.inspectorCompareSelection as number[]))
+            }
+            if (isRowDensity(ps.rowDensity)) setRowDensity(ps.rowDensity)
+          }
+
+          if (routeFileId == null && active.fileId != null) {
+            const params = new URLSearchParams()
+            params.set('fileId', String(active.fileId))
+            params.set('name', active.name)
+            if (active.folderPath) params.set('folder', active.folderPath)
+            setSearchParams(params, { replace: true })
+          }
+        } else if (openTabs.length === 0) {
+          // Server has no session yet — seed it from this browser's local file-backed tabs.
+          const localFileTabs = tabsRef.current.filter(
+            (t): t is TabState & { fileId: number } => t.fileId != null && t.fileId > 0
+          )
+          if (localFileTabs.length > 0) {
+            const activeLocal =
+              localFileTabs.find((t) => t.id === activeTabIdRef.current) ?? localFileTabs[0]!
+            try {
+              await upsertResearchState(
+                {
+                  open_tabs: localFileTabs.map((t) => ({
+                    file_id: t.fileId,
+                    name: t.name,
+                    folder_path: t.folderPath ?? null,
+                  })),
+                  active_file_id: activeLocal.fileId,
+                  page_state: {},
+                },
+                token
+              )
+              lastPersistedFileTabCountRef.current = localFileTabs.length
+            } catch {
+              // ignore seed failure; debounced persist may retry
+            }
+          }
+        }
+      } catch {
+        // Keep localStorage tabs if server hydrate fails.
+      } finally {
+        if (!cancelled) {
+          hasHydratedResearchStateRef.current = true
+          hasRestoredPageStateRef.current = true
+          setResearchSessionReady(true)
+          setLoading(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // Mount-only hydrate (route fileId / compare handoff snapshotted from first render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist open file tabs + UI chrome to Mongo so a new browser can resume.
+  // Depends on researchSessionReady so the first save runs after hydrate (not before).
+  useEffect(() => {
+    if (!researchSessionReady || !hasHydratedResearchStateRef.current) return
+    if (researchPersistTimerRef.current) clearTimeout(researchPersistTimerRef.current)
+    researchPersistTimerRef.current = setTimeout(() => {
+      const token = getToken()
+      if (!token) return
+      const open_tabs = tabs
+        .filter((t): t is TabState & { fileId: number } => t.fileId != null && t.fileId > 0)
+        .map((t) => ({
+          file_id: t.fileId,
+          name: t.name,
+          folder_path: t.folderPath ?? null,
+        }))
+      // Avoid wiping another browser's session with an empty blank sheet on first paint.
+      // Still allow clearing when this browser previously had file tabs open.
+      if (open_tabs.length === 0 && lastPersistedFileTabCountRef.current === 0) return
+      const active =
+        tabs.find((t) => t.id === activeTabId) ?? tabs.find((t) => t.fileId != null) ?? null
+      void upsertResearchState(
+        {
+          open_tabs,
+          active_file_id: active?.fileId ?? null,
+          page_state: {
+            selectedRows: Array.from(selectedRows),
+            selectedColumns: Array.from(selectedColumns),
+            rowsPerPage,
+            page,
+            selectedRowIndex,
+            isInspectorOpen,
+            inspectorMaximized,
+            inspectorWidth,
+            inspectorMode,
+            inspectorMultiRowIndices,
+            inspectorCompareSelection: Array.from(inspectorCompareSelection),
+            rowDensity,
+          },
+        },
+        token
+      )
+        .then(() => {
+          lastPersistedFileTabCountRef.current = open_tabs.length
+        })
+        .catch(() => {})
+    }, 600)
+    return () => {
+      if (researchPersistTimerRef.current) clearTimeout(researchPersistTimerRef.current)
+    }
+  }, [
+    researchSessionReady,
+    tabs,
+    activeTabId,
+    selectedRows,
+    selectedColumns,
+    rowsPerPage,
+    page,
+    selectedRowIndex,
+    isInspectorOpen,
+    inspectorMaximized,
+    inspectorWidth,
+    inspectorMode,
+    inspectorMultiRowIndices,
+    inspectorCompareSelection,
+    rowDensity,
+  ])
+  useEffect(() => {
+    if (prevEffectiveTabIdRef.current === effectiveTabId) return
+    prevEffectiveTabIdRef.current = effectiveTabId
+    if (skipSelectionResetRef.current) {
+      skipSelectionResetRef.current = false
+      return
+    }
+    setSelectedRows(new Set())
+    setSelectedColumns(new Set())
+    setSelectedRowIndex(null)
+    setPage(1)
+    setHiddenColumns(new Set())
+    setFilterBuilderItems(defaultFilterBuilderItems())
+    setFilterOpen(false)
+    setGroupByCol(null)
+    setSortCol(null)
+    setSortDir('asc')
+    setHideFieldsOpen(false)
+    setGroupMenuOpen(false)
+    setSortMenuOpen(false)
+    setDensityMenuOpen(false)
+    setAddColumnOpen(false)
+    setAddColumnNameDraft('')
+    setIsInspectorOpen(false)
+    setInspectorMaximized(false)
+    setInspectorMode('single')
+    setInspectorMultiRowIndices([])
+    setInspectorCompareSelection(new Set())
+    setCollapseSidebarForInspector(false)
+  }, [effectiveTabId, setCollapseSidebarForInspector])
+
+  // Fetch all workspace files when "Open file" picker opens
   useEffect(() => {
     if (!filePickerOpen) return
     const token = getToken()
@@ -522,7 +1828,7 @@ export function ResearchPage() {
         if (item.is_folder) {
           const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
           result.push(...(await collectFiles(item.id, nextPrefix)))
-        } else {
+        } else if (isSpreadsheetWorkspaceFile(item)) {
           result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
         }
       }
@@ -534,16 +1840,56 @@ export function ResearchPage() {
       .finally(() => setFilePickerLoading(false))
   }, [filePickerOpen])
 
+  // Fetch destination files when Move/Duplicate destination dialog opens
+  useEffect(() => {
+    if (transferPickerMode == null) return
+    const token = getToken()
+    if (!token) {
+      setTransferFilesError('Sign in to choose a destination.')
+      return
+    }
+    setTransferFilesLoading(true)
+    setTransferFilesError(null)
+    const excludeFileId = activeTab?.fileId ?? null
+    type FileEntry = { id: number; name: string; folderPath: string | null }
+    async function collectFiles(parentId: number | null, pathPrefix: string): Promise<FileEntry[]> {
+      const items = await listWorkspaceItems(parentId, token!)
+      const result: FileEntry[] = []
+      for (const item of items) {
+        if (item.is_folder) {
+          const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
+          result.push(...(await collectFiles(item.id, nextPrefix)))
+        } else if (isSpreadsheetWorkspaceFile(item)) {
+          if (excludeFileId != null && item.id === excludeFileId) continue
+          result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
+        }
+      }
+      return result
+    }
+    collectFiles(null, '')
+      .then(setTransferFiles)
+      .catch((err) => setTransferFilesError(err instanceof Error ? err.message : 'Failed to load files'))
+      .finally(() => setTransferFilesLoading(false))
+  }, [transferPickerMode, activeTab?.fileId])
+
+  useEffect(() => {
+    if (transferPickerMode == null) return
+    const t = window.setTimeout(() => transferNewSheetInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [transferPickerMode])
+
   // Fetch research URLs for the selected row from MongoDB when preview is open
   useEffect(() => {
     if (selectedRowIndex == null || !isInspectorOpen) {
       setPreviewScrapedData(null)
+      setPreviewResearchUrlId(null)
       setPreviewResultsLoading(false)
       return
     }
     const token = getToken()
     if (!token) {
       setPreviewScrapedData(null)
+      setPreviewResearchUrlId(null)
       setPreviewResultsLoading(false)
       return
     }
@@ -551,6 +1897,7 @@ export function ResearchPage() {
     const tabId = effectiveTabId ?? null
     if (!fileId && !tabId) {
       setPreviewScrapedData(null)
+      setPreviewResearchUrlId(null)
       setPreviewResultsLoading(false)
       return
     }
@@ -562,19 +1909,161 @@ export function ResearchPage() {
     })
       .then((items) => {
         const item = items[0]
+        setPreviewResearchUrlId(item?.id ?? null)
         setPreviewScrapedData(item?.scraped_data ?? null)
       })
-      .catch(() => setPreviewScrapedData(null))
+      .catch(() => {
+        setPreviewResearchUrlId(null)
+        setPreviewScrapedData(null)
+      })
       .finally(() => setPreviewResultsLoading(false))
   }, [selectedRowIndex, effectiveTabId, activeTab?.fileId, researchVersion, isInspectorOpen])
 
+  // Keep scraped-source checkboxes unchecked until the user selects them (do not select all on load).
   useEffect(() => {
-    if (!previewScrapedData?.length) {
-      setInspectorScrapedSourceSelection(new Set())
+    setInspectorScrapedSourceSelection(new Set())
+  }, [previewScrapedData])
+
+  useEffect(() => {
+    setInspectorSourceAiOpen(new Set())
+    setInspectorSourceEditOpen(new Set())
+    setInspectorRowAiOpen(false)
+    setResearchMoreOpen(false)
+    setResearchMoreLoading(false)
+    setAddStructuredColumnOpen(false)
+    setAddStructuredColumnSourceIdx(null)
+  }, [selectedRowIndex])
+
+  // Grid row highlights + counts from latest selection (no full scrape payload)
+  useEffect(() => {
+    const token = getToken()
+    const fileId = activeTab?.fileId ?? null
+    const tabId = fileId ? null : effectiveTabId
+    if (!token || (!fileId && !tabId)) {
+      setResearchRowSummaryByIndex(new Map())
       return
     }
-    setInspectorScrapedSourceSelection(new Set(previewScrapedData.map((_, i) => i)))
-  }, [previewScrapedData])
+    let cancelled = false
+    listResearchGridSummary(token, { fileId: fileId ?? undefined, tabId: tabId ?? undefined })
+      .then((rows) => {
+        if (cancelled) return
+        const next = new Map<number, ResearchGridSummaryRow>()
+        for (const r of rows) {
+          const idx = Number(r.table_row_index)
+          if (!Number.isFinite(idx)) continue
+          next.set(idx, { ...r, table_row_index: idx })
+        }
+        setResearchRowSummaryByIndex(next)
+      })
+      .catch(() => {
+        if (!cancelled) setResearchRowSummaryByIndex(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab?.fileId, effectiveTabId, researchVersion])
+
+  // Cross-browser sync: poll active research jobs + refresh "N found" counts.
+  // Same user opening Research in another browser should see in-progress rows and badges.
+  useEffect(() => {
+    const fileId = activeTab?.fileId ?? null
+    const tabId = fileId ? null : effectiveTabId
+    if (!fileId && !tabId) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const refreshGridSummary = async (token: string) => {
+      try {
+        const rows = await listResearchGridSummary(token, {
+          fileId: fileId ?? undefined,
+          tabId: tabId ?? undefined,
+        })
+        if (cancelled) return
+        const next = new Map<number, ResearchGridSummaryRow>()
+        for (const r of rows) {
+          const idx = Number(r.table_row_index)
+          if (!Number.isFinite(idx)) continue
+          next.set(idx, { ...r, table_row_index: idx })
+        }
+        setResearchRowSummaryByIndex(next)
+      } catch {
+        // Soft-fail; next poll retries.
+      }
+    }
+
+    const applyRemoteJobClear = () => {
+      if (localResearchInFlightRef.current) return
+      clearResearchProgressTicker()
+      setStoreSelectionLoading(false)
+      setResearchingRowIndices(new Set())
+      window.setTimeout(() => {
+        if (!localResearchInFlightRef.current) setResearchProgress(0)
+      }, 400)
+      setResearchVersion((v) => v + 1)
+    }
+
+    const tick = async () => {
+      const token = getToken()
+      if (!token || cancelled) return
+      try {
+        const jobs = await listActiveResearchJobs(token, {
+          fileId: fileId ?? undefined,
+          tabId: tabId ?? undefined,
+        })
+        if (cancelled) return
+        const job = jobs.find((j) => j.status === 'running') ?? null
+
+        if (job) {
+          syncedResearchJobIdRef.current = job.id
+          const indices = (job.table_row_indices ?? []).filter((n) => Number.isFinite(n))
+          setResearchingRowIndices(new Set(indices))
+          setStoreSelectionLoading(true)
+          setToolbarActive('selected')
+          if (job.total_rows > 0) {
+            const pct = Math.min(
+              95,
+              Math.max(8, Math.round((job.completed_rows / job.total_rows) * 100))
+            )
+            setResearchProgress(pct)
+            // Prefer server progress over the local cosmetic ticker.
+            clearResearchProgressTicker()
+          }
+          await refreshGridSummary(token)
+        } else if (syncedResearchJobIdRef.current != null) {
+          syncedResearchJobIdRef.current = null
+          applyRemoteJobClear()
+          await refreshGridSummary(token)
+        } else if (!localResearchInFlightRef.current) {
+          // Keep badges current even when no job is running (other browser finished earlier).
+          await refreshGridSummary(token)
+        }
+      } catch {
+        // Soft-fail; next poll retries.
+      }
+
+      if (!cancelled) {
+        const hasJob = syncedResearchJobIdRef.current != null || localResearchInFlightRef.current
+        timer = window.setTimeout(() => {
+          void tick()
+        }, hasJob ? 2500 : 6000)
+      }
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    void tick()
+
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [activeTab?.fileId, clearResearchProgressTicker, effectiveTabId])
 
   // Show loading in preview while research is running (until all rows scraped)
   useEffect(() => {
@@ -584,6 +2073,7 @@ export function ResearchPage() {
   }, [storeSelectionLoading, isInspectorOpen, selectedRowIndex])
 
   useEffect(() => {
+    if (!researchSessionReady) return
     if (!fileIdParam) return
     const token = getToken()
     if (!token) {
@@ -603,6 +2093,8 @@ export function ResearchPage() {
     if (existing) {
       setActiveTabId(existing.id)
       setError(null)
+      // Tab exists in this browser's cache — still refresh from server for multi-browser sync.
+      void reloadFileTabFromServer(numericId)
       return
     }
     setLoading(true)
@@ -610,20 +2102,22 @@ export function ResearchPage() {
     getWorkspaceFileContent(numericId, token)
       .then((text) => {
         const data = parseCsv(text)
+        const nextData = data.length > 0 ? data : [['']]
         const name = nameFromUrl ?? `File ${fileIdParam}`
         const newTab: TabState = {
           id: crypto.randomUUID(),
           name,
-          data: data.length > 0 ? data : [['']],
+          data: nextData,
           fileId: numericId,
           folderPath: folderFromUrl,
         }
         setTabs((prev) => {
-          // If a tab for this fileId was created while we were loading, reuse it.
+          // If a tab for this fileId was created while we were loading, reuse it and refresh data.
           const existingTab = prev.find((t) => t.fileId === numericId)
           if (existingTab) {
             setActiveTabId(existingTab.id)
-            return prev
+            if (serializeToCsv(existingTab.data) === serializeToCsv(nextData)) return prev
+            return prev.map((t) => (t.fileId === numericId ? { ...t, data: nextData } : t))
           }
           setActiveTabId(newTab.id)
           return [...prev, newTab]
@@ -633,38 +2127,118 @@ export function ResearchPage() {
         setError(err instanceof Error ? err.message : 'Failed to load file')
       })
       .finally(() => setLoading(false))
-  }, [fileIdParam, nameFromUrl, folderFromUrl, tabs, setSearchParams])
+  }, [
+    researchSessionReady,
+    fileIdParam,
+    nameFromUrl,
+    folderFromUrl,
+    tabs,
+    setSearchParams,
+    reloadFileTabFromServer,
+  ])
+
+  // Keep file-backed sheets in sync across browsers for the same user.
+  useEffect(() => {
+    const fileId = activeTab?.fileId ?? null
+    if (fileId == null) return
+
+    void reloadFileTabFromServer(fileId)
+
+    const onVisibleOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void reloadFileTabFromServer(fileId)
+    }
+    document.addEventListener('visibilitychange', onVisibleOrFocus)
+    window.addEventListener('focus', onVisibleOrFocus)
+
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void reloadFileTabFromServer(fileId)
+    }, 15000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibleOrFocus)
+      window.removeEventListener('focus', onVisibleOrFocus)
+      window.clearInterval(pollId)
+    }
+  }, [activeTab?.fileId, reloadFileTabFromServer])
 
   const addNewTab = useCallback(() => {
-    const tab = newBlankSheet()
-    setTabs((prev) => [...prev, tab])
-    setActiveTabId(tab.id)
-    setSearchParams({}, { replace: true })
+    setNewSheetNameDraft('')
+    setNewSheetModalOpen(true)
     setError(null)
-  }, [setSearchParams])
+  }, [])
+
+  useEffect(() => {
+    if (!newSheetModalOpen) return
+    const t = window.setTimeout(() => newSheetInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [newSheetModalOpen])
+
+  const commitNewSheetFile = useCallback(async () => {
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to create a workspace file')
+      return
+    }
+    const raw = newSheetNameDraft.trim() || 'New sheet'
+    const fileName = /\.csv$/i.test(raw) ? raw : `${raw}.csv`
+    const blank = newBlankSheet()
+    const csv = serializeToCsv(blank.data)
+    const file = new File([csv], fileName, { type: 'text/csv;charset=utf-8' })
+
+    setNewSheetCreating(true)
+    try {
+      const created = await uploadWorkspaceCsv(file, null, token)
+      const tab: TabState = {
+        id: crypto.randomUUID(),
+        name: created.name,
+        data: blank.data,
+        fileId: created.id,
+        folderPath: null,
+      }
+      setTabs((prev) => [...prev, tab])
+      setActiveTabId(tab.id)
+      const params = new URLSearchParams()
+      params.set('fileId', String(created.id))
+      params.set('name', created.name)
+      setSearchParams(params, { replace: true })
+      setNewSheetModalOpen(false)
+      setNewSheetNameDraft('')
+      showToast(`Created “${created.name}”`)
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to create file')
+    } finally {
+      setNewSheetCreating(false)
+    }
+  }, [newSheetNameDraft, setSearchParams, showToast])
 
   const closeTab = useCallback(
     (e: React.MouseEvent, id: string) => {
       e.stopPropagation()
-      const idx = tabs.findIndex((t) => t.id === id)
-      if (idx < 0) return
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.id === id)
+        if (idx < 0) return prev
 
-      const tab = tabs[idx]
-      const next = tabs.filter((t) => t.id !== id)
-      setTabs(next)
+        const tab = prev[idx]
+        const next = prev.filter((t) => t.id !== id)
 
-      // If this tab was backed by a workspace file, clear any file-related URL params
-      if (tab.fileId != null) {
-        lastClosedFileIdRef.current = tab.fileId
-        setSearchParams({}, { replace: true })
-      }
+        // If this tab was backed by a workspace file, clear any file-related URL params.
+        if (tab?.fileId != null) {
+          lastClosedFileIdRef.current = tab.fileId
+          setSearchParams({}, { replace: true })
+        }
 
-      if (activeTabId === id) {
-        const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
-        setActiveTabId(nextActive?.id ?? null)
-      }
+        setActiveTabId((currentActiveId) => {
+          if (currentActiveId !== id) return currentActiveId
+          const nextActive = next[idx] ?? next[idx - 1] ?? next[0]
+          return nextActive?.id ?? null
+        })
+
+        return next
+      })
     },
-    [tabs, activeTabId, setSearchParams]
+    [setSearchParams]
   )
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
@@ -694,6 +2268,293 @@ export function ResearchPage() {
     [effectiveTabId]
   )
 
+  /** Persist sheet CSV to Mongo workspace_files when the tab is backed by a file. */
+  const persistSheetContent = useCallback(
+    async (nextData: string[][]): Promise<boolean> => {
+      const fileId = activeTab?.fileId ?? null
+      if (!fileId) return false
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to save changes to the server')
+        return false
+      }
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+      try {
+        bumpSheetSyncGeneration(fileId)
+        await updateWorkspaceFileContent(fileId, serializeToCsv(nextData), token)
+        bumpSheetSyncGeneration(fileId)
+        userHasEditedRef.current = false
+        saveImmediatelyRef.current = false
+        return true
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to save to server')
+        return false
+      }
+    },
+    [activeTab?.fileId, bumpSheetSyncGeneration, showToast]
+  )
+
+  const closeTransferPicker = useCallback(() => {
+    setTransferPickerMode(null)
+    setTransferNewSheetName('')
+    setTransferBusy(false)
+  }, [])
+
+  const openTransferPicker = useCallback(
+    (mode: 'duplicate' | 'move') => {
+      if (!content || selectedRows.size === 0 || selectedColumns.size === 0) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      if (!buildSelectionBlock(content, selectedRows, selectedColumns)) {
+        showToast('Nothing to transfer from the current selection')
+        return
+      }
+      setTransferNewSheetName('')
+      setTransferPickerMode(mode)
+    },
+    [content, selectedColumns, selectedRows, showToast]
+  )
+
+  const finishTransferToSheet = useCallback(
+    async (args: {
+      mode: 'duplicate' | 'move'
+      block: SelectionBlock
+      merged: string[][]
+      rowMap: Array<{ source: number; dest: number }>
+      targetFileId: number
+      targetName: string
+      targetFolder: string | null
+      targetTabId: string
+    }) => {
+      const { mode, block, merged, rowMap, targetFileId, targetName, targetFolder, targetTabId } =
+        args
+
+      bumpSheetSyncGeneration(targetFileId)
+      setTabs((prev) => {
+        if (prev.some((t) => t.fileId === targetFileId)) {
+          return prev.map((t) => (t.fileId === targetFileId ? { ...t, data: merged } : t))
+        }
+        return [
+          ...prev,
+          {
+            id: targetTabId,
+            name: targetName,
+            data: merged,
+            fileId: targetFileId,
+            folderPath: targetFolder,
+          },
+        ]
+      })
+
+      if (mode === 'move' && content) {
+        const cleared = clearSelectionBlockInSheet(content, block)
+        userHasEditedRef.current = true
+        saveImmediatelyRef.current = true
+        setActiveTabData(() => cleared)
+        if (activeTab?.fileId != null) {
+          bumpSheetSyncGeneration(activeTab.fileId)
+          await persistSheetContent(cleared)
+        }
+      }
+
+      // Move/copy found research (“N found”) with the transferred rows.
+      if (rowMap.length > 0) {
+        const token = getToken()
+        const sourceFileId = activeTab?.fileId ?? null
+        const sourceTabId = sourceFileId == null ? effectiveTabId ?? null : null
+        if (token && (sourceFileId != null || sourceTabId)) {
+          try {
+            await transferResearchUrls(token, {
+              mode,
+              source_file_id: sourceFileId,
+              source_tab_id: sourceTabId,
+              dest_file_id: targetFileId,
+              dest_tab_id: targetTabId,
+              row_map: rowMap.map((m) => ({
+                source_table_row_index: m.source,
+                dest_table_row_index: m.dest,
+              })),
+            })
+            setResearchVersion((v) => v + 1)
+          } catch {
+            showToast('Sheet transferred, but research results could not be moved')
+          }
+        }
+      }
+
+      setSelectedRows(new Set())
+      setSelectedColumns(new Set())
+      skipSelectionResetRef.current = true
+      setPage(1)
+      setActiveTabId(targetTabId)
+      const params = new URLSearchParams()
+      params.set('fileId', String(targetFileId))
+      params.set('name', targetName)
+      if (targetFolder) params.set('folder', targetFolder)
+      setSearchParams(params, { replace: true })
+      showToast(
+        mode === 'move'
+          ? `Moved selection & research to “${targetName}” and saved`
+          : `Duplicated selection & research to “${targetName}” and saved`
+      )
+      closeTransferPicker()
+    },
+    [
+      activeTab?.fileId,
+      bumpSheetSyncGeneration,
+      closeTransferPicker,
+      content,
+      effectiveTabId,
+      persistSheetContent,
+      setActiveTabData,
+      setSearchParams,
+      showToast,
+    ]
+  )
+
+  const transferSelectionToFile = useCallback(
+    async (targetFileId: number, mode: 'duplicate' | 'move') => {
+      if (!content) return
+      const block = buildSelectionBlock(content, selectedRows, selectedColumns)
+      if (!block) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      if (activeTab?.fileId != null && targetFileId === activeTab.fileId) {
+        showToast('Pick a different file than the current sheet')
+        return
+      }
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to transfer to a file')
+        return
+      }
+
+      const nonEmptyCells = block.rows.reduce(
+        (n, row) => n + row.filter((c) => String(c ?? '').trim().length > 0).length,
+        0
+      )
+      if (nonEmptyCells === 0) {
+        showToast('Selected cells are empty — nothing to transfer')
+        return
+      }
+
+      setTransferBusy(true)
+      try {
+        const openTarget = tabs.find((t) => t.fileId === targetFileId)
+        let targetData: string[][]
+        if (openTarget?.data?.length) {
+          targetData = openTarget.data.map((row) => [...row])
+        } else {
+          try {
+            const text = await getWorkspaceFileContent(targetFileId, token)
+            const parsed = parseCsv(text)
+            targetData = parsed.length > 0 ? parsed : [['']]
+          } catch {
+            targetData = [['']]
+          }
+        }
+
+        const { sheet: merged, rowMap } = mergeBlockIntoSheet(targetData, block)
+        bumpSheetSyncGeneration(targetFileId)
+        await updateWorkspaceFileContent(targetFileId, serializeToCsv(merged), token)
+        bumpSheetSyncGeneration(targetFileId)
+
+        const picked = transferFiles.find((f) => f.id === targetFileId)
+        await finishTransferToSheet({
+          mode,
+          block,
+          merged,
+          rowMap,
+          targetFileId,
+          targetName: picked?.name ?? openTarget?.name ?? `File ${targetFileId}`,
+          targetFolder: picked?.folderPath ?? openTarget?.folderPath ?? null,
+          targetTabId: openTarget?.id ?? crypto.randomUUID(),
+        })
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to transfer selection')
+      } finally {
+        setTransferBusy(false)
+      }
+    },
+    [
+      activeTab?.fileId,
+      bumpSheetSyncGeneration,
+      content,
+      finishTransferToSheet,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      tabs,
+      transferFiles,
+    ]
+  )
+
+  const transferSelectionToNewSheet = useCallback(
+    async (mode: 'duplicate' | 'move') => {
+      if (!content) return
+      const block = buildSelectionBlock(content, selectedRows, selectedColumns)
+      if (!block) {
+        showToast('Select at least one column and one row first')
+        return
+      }
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to create a destination sheet')
+        return
+      }
+      const nonEmptyCells = block.rows.reduce(
+        (n, row) => n + row.filter((c) => String(c ?? '').trim().length > 0).length,
+        0
+      )
+      if (nonEmptyCells === 0) {
+        showToast('Selected cells are empty — nothing to transfer')
+        return
+      }
+
+      const raw =
+        transferNewSheetName.trim() ||
+        (mode === 'move' ? 'Moved selection' : 'Duplicated selection')
+      const fileName = /\.csv$/i.test(raw) ? raw : `${raw}.csv`
+      const blank = newBlankSheet().data
+      const { sheet: merged, rowMap } = mergeBlockIntoSheet(blank, block)
+      const file = new File([serializeToCsv(merged)], fileName, { type: 'text/csv;charset=utf-8' })
+
+      setTransferBusy(true)
+      try {
+        const created = await uploadWorkspaceCsv(file, null, token)
+        bumpSheetSyncGeneration(created.id)
+        await finishTransferToSheet({
+          mode,
+          block,
+          merged,
+          rowMap,
+          targetFileId: created.id,
+          targetName: created.name,
+          targetFolder: null,
+          targetTabId: crypto.randomUUID(),
+        })
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Failed to create destination sheet')
+      } finally {
+        setTransferBusy(false)
+      }
+    },
+    [
+      bumpSheetSyncGeneration,
+      content,
+      finishTransferToSheet,
+      selectedColumns,
+      selectedRows,
+      showToast,
+      transferNewSheetName,
+    ]
+  )
+
   const updateCell = useCallback(
     (rowIndex: number, colIndex: number, value: string) => {
       userHasEditedRef.current = true
@@ -710,7 +2571,449 @@ export function ResearchPage() {
     [setActiveTabData]
   )
 
-  // addColumn UI removed with "Other options"
+  const applySheetColumnUpdates = useCallback(
+    (updates: SheetColumnUpdate[], targetDataRowIndex?: number) => {
+      const rowIdx0 = targetDataRowIndex ?? selectedRowIndex
+      if (!updates.length || rowIdx0 == null || !content?.length) {
+        showToast('Select a row before applying sheet updates')
+        return
+      }
+      const validUpdates = updates.filter((u) => u.column.trim())
+      if (!validUpdates.length) return
+
+      userHasEditedRef.current = true
+      saveImmediatelyRef.current = true
+      const dataRowIndex = rowIdx0 + 1
+      setActiveTabData((prev) => {
+        if (!prev.length) return prev
+        const next = prev.map((row) => [...row])
+        const headerRow = [...(next[0] ?? [])]
+        const row = [...(next[dataRowIndex] ?? [])]
+
+        for (const { column, value } of validUpdates) {
+          const name = column.trim()
+          const norm = name.toLowerCase()
+          let colIdx = headerRow.findIndex((h) => (h || '').trim().toLowerCase() === norm)
+          if (colIdx < 0) {
+            colIdx = headerRow.length
+            headerRow.push(name)
+            for (let r = 1; r < next.length; r++) {
+              while (next[r]!.length < headerRow.length) next[r]!.push('')
+            }
+          }
+          while (row.length < headerRow.length) row.push('')
+          row[colIdx] = value
+        }
+
+        next[0] = headerRow
+        next[dataRowIndex] = row
+        return next
+      })
+      if (targetDataRowIndex == null) {
+        showToast(`Updated ${validUpdates.length} column${validUpdates.length === 1 ? '' : 's'} on this row`)
+      }
+    },
+    [content, selectedRowIndex, setActiveTabData, showToast]
+  )
+
+  const parseCellFillUpdates = useCallback(
+    (assistantContent: string, targetColumns: string[]): SheetColumnUpdate[] => {
+      const updates = parseSheetUpdatesFromAssistantMessage(assistantContent).filter((u) =>
+        targetColumns.some((c) => c.trim().toLowerCase() === u.column.trim().toLowerCase())
+      )
+      let toApply = updates
+      if (toApply.length === 0) {
+        const jsonMatch = assistantContent.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          try {
+            const obj = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+            const nested =
+              obj.updates && Array.isArray(obj.updates)
+                ? (obj.updates as unknown[])
+                : null
+            if (nested) {
+              toApply = nested
+                .map((row) => {
+                  if (!row || typeof row !== 'object') return null
+                  const column = String((row as { column?: unknown }).column ?? '').trim()
+                  const value = String((row as { value?: unknown }).value ?? '').trim()
+                  if (!column) return null
+                  const match = targetColumns.find((c) => c.toLowerCase() === column.toLowerCase())
+                  return match ? { column: match, value } : null
+                })
+                .filter((x): x is SheetColumnUpdate => x != null && Boolean(x.value))
+            } else {
+              toApply = targetColumns
+                .map((col) => {
+                  const key = Object.keys(obj).find((k) => k.trim().toLowerCase() === col.toLowerCase())
+                  if (!key) return null
+                  return { column: col, value: String(obj[key] ?? '').trim() }
+                })
+                .filter((x): x is SheetColumnUpdate => x != null && Boolean(x.value))
+            }
+          } catch {
+            toApply = []
+          }
+        }
+      }
+      if (toApply.length === 0 && targetColumns.length === 1) {
+        const prose = assistantContent
+          .replace(/```[\s\S]*?```/g, '')
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l && !l.startsWith('#') && l.length < 500)
+        if (prose) toApply = [{ column: targetColumns[0]!, value: prose }]
+      }
+      return toApply
+    },
+    []
+  )
+
+  const runCellFillResearch = useCallback(async () => {
+    if (!content?.[0]) return
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to research cells')
+      return
+    }
+    if (selectedColumns.size === 0 || selectedRows.size === 0) {
+      showToast('Select at least one column and one row first')
+      return
+    }
+    const prompt = cellFillPrompt.trim()
+    if (!prompt) {
+      showToast('Enter a research prompt for the selected cells')
+      return
+    }
+
+    const colIndices = Array.from(selectedColumns)
+      .filter((i) => i >= 0 && i < content[0]!.length)
+      .sort((a, b) => a - b)
+    const rowIndices = Array.from(selectedRows)
+      .filter((i) => i >= 0 && i + 1 < content.length)
+      .sort((a, b) => a - b)
+    if (colIndices.length === 0 || rowIndices.length === 0) {
+      showToast('Select at least one column and one row first')
+      return
+    }
+
+    const targetColumns = colIndices.map((i) => sheetHeaderLabel(content[0]!, i))
+    const headerRow = content[0] ?? []
+    const mode = cellFillMode
+
+    setCellFillLoading(true)
+    setResearchingRowIndices(new Set(rowIndices))
+    setCellFillPopupOpen(false)
+    let filled = 0
+    let failed = 0
+    let skippedNoInternal = 0
+
+    try {
+      for (const rowIdx of rowIndices) {
+        const row = content[rowIdx + 1] ?? []
+        let scraped: ScrapedDataItem[] | null = null
+
+        const targetColSet = new Set(colIndices)
+
+        if (mode === 'external') {
+          // Search using other non-empty row values (exclude target cells so old values
+          // do not bias a re-research / overwrite run).
+          const searchHeaders: string[] = []
+          const searchValues: string[] = []
+          for (let i = 0; i < headerRow.length; i++) {
+            if (targetColSet.has(i)) continue
+            const val = String(row[i] ?? '').trim()
+            if (!val) continue
+            searchHeaders.push(sheetHeaderLabel(headerRow, i))
+            searchValues.push(val)
+          }
+          if (searchValues.length === 0) {
+            failed += 1
+            continue
+          }
+          // Bias the web search toward the user’s ask.
+          searchHeaders.push('focus')
+          searchValues.push(prompt)
+
+          try {
+            const saved = await saveDataSheetSelection(
+              {
+                headers: searchHeaders,
+                rows: [searchValues],
+                row_indices: [rowIdx],
+                sheet_name: activeTab?.name ?? null,
+                file_id: activeTab?.fileId ?? null,
+                tab_id: effectiveTabId ?? null,
+              },
+              token
+            )
+            const extractionQuery = [
+              `Extract values needed to answer: ${prompt}`,
+              `Prefer fields matching these sheet columns: ${targetColumns.join(', ')}.`,
+              'Return structured JSON with clear keys and short cell-ready values.',
+            ].join(' ')
+            await searchSelectionAndStoreUrls(saved.id, token, extractionQuery)
+            setResearchVersion((v) => v + 1)
+          } catch {
+            failed += 1
+            continue
+          }
+        }
+
+        try {
+          const urls = await listResearchUrls(token, {
+            fileId: activeTab?.fileId ?? undefined,
+            tabId: activeTab?.fileId == null ? effectiveTabId ?? undefined : undefined,
+            tableRowIndex: rowIdx,
+            fast: mode === 'internal',
+          })
+          scraped = urls[0]?.scraped_data ?? null
+        } catch {
+          scraped = null
+        }
+
+        if (mode === 'internal' && (!scraped || scraped.length === 0)) {
+          skippedNoInternal += 1
+          continue
+        }
+
+        // Blank target columns in AI context so existing cell text is not echoed back
+        // on re-research; applySheetColumnUpdates always overwrites those cells.
+        const rowForContext = [...row]
+        for (const ci of colIndices) {
+          while (rowForContext.length <= ci) rowForContext.push('')
+          rowForContext[ci] = ''
+        }
+        const context = buildResearchInspectorContext(headerRow, rowForContext, scraped)
+        const message = [
+          mode === 'internal'
+            ? 'INTERNAL research only: use the provided scraped_sources / sheet_row. Do not invent web facts.'
+            : 'EXTERNAL research: use the newly scraped_sources from web research plus sheet_row.',
+          `OVERWRITE these sheet columns (replace any previous value): ${targetColumns.map((c) => `"${c}"`).join(', ')}.`,
+          'Always return fresh values for those columns even if they already had data. Do not keep or reuse the old cell text.',
+          `User prompt: ${prompt}`,
+          'Return short cell-ready values (not essays). If unknown, use an empty string.',
+          RESEARCH_AI_SHEET_INSTRUCTIONS,
+        ].join('\n')
+
+        try {
+          const res = await aiGroqChat(token, {
+            mode: 'chat',
+            message,
+            context,
+            session_label: `Fill cell · ${mode} · row ${rowIdx + 1}`,
+            source: mode === 'internal' ? 'research_cell_fill_internal' : 'research_cell_fill_external',
+          })
+          const toApply = parseCellFillUpdates(res.content, targetColumns)
+          if (toApply.length > 0) {
+            applySheetColumnUpdates(toApply, rowIdx)
+            filled += 1
+          } else {
+            failed += 1
+          }
+        } catch {
+          failed += 1
+        }
+      }
+
+      if (filled > 0) {
+        const extra: string[] = []
+        if (failed > 0) extra.push(`${failed} failed`)
+        if (skippedNoInternal > 0) {
+          extra.push(`${skippedNoInternal} had no found results (use External)`)
+        }
+        showToast(
+          extra.length > 0
+            ? `Filled ${filled} row${filled === 1 ? '' : 's'}; ${extra.join('; ')}`
+            : `Filled selected cells on ${filled} row${filled === 1 ? '' : 's'}`
+        )
+      } else if (skippedNoInternal > 0 && failed === 0) {
+        showToast('No found research results for these rows — switch to External research')
+      } else {
+        showToast('Could not fill cells — try a clearer prompt or External research')
+      }
+    } finally {
+      setCellFillLoading(false)
+      setResearchingRowIndices(new Set())
+    }
+  }, [
+    activeTab?.fileId,
+    activeTab?.name,
+    applySheetColumnUpdates,
+    cellFillMode,
+    cellFillPrompt,
+    content,
+    effectiveTabId,
+    parseCellFillUpdates,
+    selectedColumns,
+    selectedRows,
+    showToast,
+  ])
+
+  const toggleInspectorSourceAi = useCallback((sourceIndex: number) => {
+    setInspectorSourceAiOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(sourceIndex)) next.delete(sourceIndex)
+      else next.add(sourceIndex)
+      return next
+    })
+  }, [])
+
+  const toggleInspectorSourceEdit = useCallback((sourceIndex: number) => {
+    setInspectorSourceEditOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(sourceIndex)) next.delete(sourceIndex)
+      else next.add(sourceIndex)
+      return next
+    })
+  }, [])
+
+  const updateScrapedField = useCallback((sourceIndex: number, key: string, value: string) => {
+    setPreviewScrapedData((prev) => {
+      if (!prev) return prev
+      return prev.map((item, i) => {
+        if (i !== sourceIndex) return item
+        return { ...item, data: { ...item.data, [key]: value } }
+      })
+    })
+  }, [])
+
+  const addStructuredColumn = useCallback(
+    (columnName: string, sourceIndex: number | null) => {
+      const key = columnName.trim().replace(/\s+/g, '_')
+      const label = columnName.trim()
+      if (!label) {
+        showToast('Enter a column name')
+        return
+      }
+      setPreviewScrapedData((prev) => {
+        if (!prev || prev.length === 0) {
+          return [{ url: '', data: { [key]: '' } }]
+        }
+        return prev.map((item, i) => {
+          if (sourceIndex != null && i !== sourceIndex) return item
+          if (Object.prototype.hasOwnProperty.call(item.data, key)) return item
+          return { ...item, data: { ...item.data, [key]: '' } }
+        })
+      })
+      applySheetColumnUpdates([{ column: label, value: '' }])
+      setAddStructuredColumnName('')
+      setAddStructuredColumnOpen(false)
+      setAddStructuredColumnSourceIdx(null)
+      showToast(`Added column “${label}”`)
+    },
+    [applySheetColumnUpdates, showToast]
+  )
+
+  const runResearchMoreOnSelectedSource = useCallback(async () => {
+    const prompt = researchMorePrompt.trim()
+    if (!prompt) {
+      showToast('Enter a prompt for what to extract')
+      return
+    }
+    if (inspectorScrapedSourceSelection.size !== 1) {
+      showToast('Select exactly one source (checkbox) to research more')
+      return
+    }
+    const sourceIndex = Array.from(inspectorScrapedSourceSelection)[0]
+    const source = previewScrapedData?.[sourceIndex ?? -1]
+    if (sourceIndex == null || !source) {
+      showToast('Selected source not found')
+      return
+    }
+    if (source.id == null) {
+      showToast('This source cannot be re-scraped yet. Run Research Selected first.')
+      return
+    }
+    if (previewResearchUrlId == null) {
+      showToast('No research record for this row')
+      return
+    }
+    if (!source.url?.trim()) {
+      showToast('Selected source has no URL')
+      return
+    }
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to research more')
+      return
+    }
+
+    setResearchMoreLoading(true)
+    try {
+      const result = await researchMoreSource(token, previewResearchUrlId, {
+        scrapedId: source.id,
+        aiQuery: prompt,
+      })
+      setPreviewScrapedData((prev) => {
+        if (!prev) return prev
+        return prev.map((item, i) =>
+          i === sourceIndex
+            ? {
+                ...item,
+                id: result.scraped_id,
+                url: result.url,
+                data: result.data,
+                last_field_changes: result.field_changes ?? [],
+                change_log: result.change_log ?? item.change_log ?? [],
+              }
+            : item
+        )
+      })
+      const bits: string[] = []
+      if (result.updated_fields.length) {
+        bits.push(`updated ${result.updated_fields.length}`)
+      }
+      if (result.new_fields.length) {
+        bits.push(`added ${result.new_fields.length} column${result.new_fields.length === 1 ? '' : 's'}`)
+      }
+      showToast(
+        bits.length
+          ? `Source ${sourceIndex + 1}: ${bits.join(', ')} — see before → current below`
+          : `Source ${sourceIndex + 1}: no field changes`
+      )
+      setResearchMoreOpen(false)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Research more failed')
+    } finally {
+      setResearchMoreLoading(false)
+    }
+  }, [
+    inspectorScrapedSourceSelection,
+    previewResearchUrlId,
+    previewScrapedData,
+    researchMorePrompt,
+    showToast,
+  ])
+
+  const addSheetColumn = useCallback(
+    async (rawName?: string) => {
+      const defaultLabel = `Column ${(content?.[0]?.length ?? 0) + 1}`
+      const label = (rawName ?? '').trim() || defaultLabel
+      const nextData = (() => {
+        if (!content?.length) return [[label]]
+        const next = content.map((row) => [...row])
+        const headerRow = [...(next[0] ?? []), label]
+        next[0] = headerRow
+        for (let r = 1; r < next.length; r++) {
+          while (next[r].length < headerRow.length) next[r].push('')
+        }
+        return next
+      })()
+
+      userHasEditedRef.current = true
+      saveImmediatelyRef.current = true
+      setActiveTabData(() => nextData)
+      setAddColumnOpen(false)
+      setAddColumnNameDraft('')
+
+      const saved = await persistSheetContent(nextData)
+      showToast(
+        saved ? `Added column “${label}” and saved` : `Added column “${label}”`
+      )
+    },
+    [content, persistSheetContent, setActiveTabData, showToast]
+  )
 
   const addRow = useCallback((count: number = 1) => {
     userHasEditedRef.current = true
@@ -726,12 +3029,22 @@ export function ResearchPage() {
 
   const removeSelectedRows = useCallback(() => {
     if (!content || selectedRows.size === 0) return
-    setDeleteConfirmOpen(true)
+    setDeleteConfirm('rows')
   }, [content, selectedRows.size])
+
+  const removeSelectedColumns = useCallback(() => {
+    if (!content?.[0] || selectedColumns.size === 0) return
+    const colCount = content[0].length
+    if (selectedColumns.size >= colCount) {
+      showToast('Keep at least one column')
+      return
+    }
+    setDeleteConfirm('columns')
+  }, [content, selectedColumns.size, showToast])
 
   const confirmDeleteSelectedRows = useCallback(() => {
     if (!content || selectedRows.size === 0) {
-      setDeleteConfirmOpen(false)
+      setDeleteConfirm(null)
       return
     }
 
@@ -759,13 +3072,102 @@ export function ResearchPage() {
     setInspectorMultiRowIndices([])
     setInspectorCompareSelection(new Set())
     setCollapseSidebarForInspector(false)
-    setDeleteConfirmOpen(false)
+    setDeleteConfirm(null)
   }, [
     content,
     selectedRows,
     setActiveTabData,
     setCollapseSidebarForInspector,
   ])
+
+  const confirmDeleteSelectedColumns = useCallback(async () => {
+    if (!content?.[0] || selectedColumns.size === 0) {
+      setDeleteConfirm(null)
+      return
+    }
+    const colCount = content[0].length
+    const toRemove = Array.from(selectedColumns)
+      .filter((i) => i >= 0 && i < colCount)
+      .sort((a, b) => a - b)
+    if (toRemove.length === 0) {
+      setDeleteConfirm(null)
+      return
+    }
+    if (toRemove.length >= colCount) {
+      showToast('Keep at least one column')
+      setDeleteConfirm(null)
+      return
+    }
+
+    const remapCol = (oldIdx: number | null): number | null => {
+      if (oldIdx == null) return null
+      if (toRemove.includes(oldIdx)) return null
+      return oldIdx - toRemove.filter((r) => r < oldIdx).length
+    }
+
+    const removedHeaderKeys = new Set(
+      toRemove
+        .map((i) => String(content[0][i] ?? '').trim())
+        .filter(Boolean)
+        .map((h) => h.toLowerCase())
+    )
+    const nextData = content.map((row) => row.filter((_, colIdx) => !toRemove.includes(colIdx)))
+
+    userHasEditedRef.current = true
+    saveImmediatelyRef.current = true
+    setActiveTabData(() => nextData)
+
+    setSelectedColumns(new Set())
+    setHiddenColumns((prev) => {
+      const next = new Set<number>()
+      for (const idx of prev) {
+        const mapped = remapCol(idx)
+        if (mapped != null) next.add(mapped)
+      }
+      return next
+    })
+    setSortCol((prev) => remapCol(prev))
+    setGroupByCol((prev) => remapCol(prev))
+    setFilterBuilderItems((prev) =>
+      prev.map((item) => {
+        if (item.type === 'line') {
+          return {
+            ...item,
+            row: { ...item.row, fieldCol: remapCol(item.row.fieldCol) },
+          }
+        }
+        return {
+          ...item,
+          rows: item.rows.map((row) => ({ ...row, fieldCol: remapCol(row.fieldCol) })),
+        }
+      })
+    )
+    if (removedHeaderKeys.size > 0) {
+      setPreviewScrapedData((prev) => {
+        if (!prev?.length) return prev
+        return prev.map((item) => {
+          const data = { ...item.data }
+          let changed = false
+          for (const key of Object.keys(data)) {
+            if (removedHeaderKeys.has(key.trim().toLowerCase())) {
+              delete data[key]
+              changed = true
+            }
+          }
+          return changed ? { ...item, data } : item
+        })
+      })
+    }
+    setDeleteConfirm(null)
+
+    const saved = await persistSheetContent(nextData)
+    const n = toRemove.length
+    showToast(
+      saved
+        ? `Deleted ${n} column${n === 1 ? '' : 's'} and saved`
+        : `Deleted ${n} column${n === 1 ? '' : 's'}`
+    )
+  }, [content, persistSheetContent, selectedColumns, setActiveTabData, showToast])
 
   const openAddRowPopover = (anchor: HTMLElement | null) => {
     if (!anchor) return
@@ -830,7 +3232,7 @@ export function ResearchPage() {
         setInspectorMode('single')
         setInspectorMaximized(false)
         setInspectorMultiRowIndices([])
-        setInspectorCompareSelection(new Set([dataRowIndex]))
+        setInspectorCompareSelection(new Set())
         setCollapseSidebarForInspector(true)
       }
     },
@@ -844,27 +3246,141 @@ export function ResearchPage() {
       setInspectorMode('single')
       setInspectorMaximized(false)
       setInspectorMultiRowIndices([])
-      setInspectorCompareSelection(new Set([dataRowIndex]))
+      setInspectorCompareSelection(new Set())
       setCollapseSidebarForInspector(true)
     },
     [setCollapseSidebarForInspector]
   )
 
-  const toggleSelectAll = () => {
-    if (!content || content.length <= 1) return
-    if (selectedRows.size >= content.length - 1) setSelectedRows(new Set())
-    else setSelectedRows(new Set(Array.from({ length: content.length - 1 }, (_, i) => i)))
-  }
+  const headers = content?.[0] ?? []
+  const hasRowSearch = rowSearchQuery.trim().length > 0
+  const unfilteredRowCount = content ? content.length - 1 : 0
+  const rd = researchRowDensityClasses(rowDensity)
 
-  const totalDataRows = content ? content.length - 1 : 0
+  const visibleColIndices = useMemo(() => {
+    if (!content?.[0]) return []
+    return Array.from({ length: content[0].length }, (_, i) => i).filter((i) => !hiddenColumns.has(i))
+  }, [content, hiddenColumns])
+
+  const hasActiveColumnFilters = useMemo(
+    () => filterBuilderIsActive(filterBuilderItems),
+    [filterBuilderItems]
+  )
+  const filterSummaryLabels = useMemo(
+    () => filterBuilderSummaryLabels(filterBuilderItems, headers),
+    [filterBuilderItems, headers]
+  )
+
+  const getDistinctColumnValues = useCallback(
+    (colIdx: number) => {
+      if (!content || content.length <= 1) return []
+      return Array.from(
+        new Set(content.slice(1).map((row) => String(row[colIdx] ?? '').trim()).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b))
+    },
+    [content]
+  )
+
+  // Debounce global row search so it stays snappy for large sheets.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setRowSearchQuery(rowSearchDraft)
+      setPage(1)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [rowSearchDraft])
+
+  const searchFilteredIndices = useMemo(() => {
+    if (!content || content.length <= 1) return []
+    const allIndices = Array.from({ length: content.length - 1 }, (_, i) => i)
+    const q = rowSearchQuery.trim().toLowerCase()
+    if (!q) return allIndices
+    return allIndices.filter((dataIdx) => {
+      const row = content[dataIdx + 1]
+      for (const cell of row) {
+        if (String(cell ?? '').toLowerCase().includes(q)) return true
+      }
+      return false
+    })
+  }, [content, rowSearchQuery])
+
+  const columnFilteredIndices = useMemo(() => {
+    if (!content) return []
+    if (!hasActiveColumnFilters) return searchFilteredIndices
+    return searchFilteredIndices.filter((dataIdx) => {
+      const row = content[dataIdx + 1]
+      return evalFilterBuilder(filterBuilderItems, row)
+    })
+  }, [content, searchFilteredIndices, filterBuilderItems, hasActiveColumnFilters])
+
+  const viewRowIndices = useMemo(() => {
+    if (!content || sortCol === null) return columnFilteredIndices
+    const copy = [...columnFilteredIndices]
+    copy.sort((a, b) => {
+      const ra = content[a + 1]!
+      const rb = content[b + 1]!
+      const va = String(ra[sortCol] ?? '').toLowerCase()
+      const vb = String(rb[sortCol] ?? '').toLowerCase()
+      const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' })
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return copy
+  }, [content, columnFilteredIndices, sortCol, sortDir])
+
+  const totalDataRows = viewRowIndices.length
   const totalPages = Math.max(1, Math.ceil(totalDataRows / rowsPerPage))
   const currentPage = Math.min(page, totalPages)
   const startRow = (currentPage - 1) * rowsPerPage
   const endRow = Math.min(startRow + rowsPerPage, totalDataRows)
-  const pageRows = content ? content.slice(1 + startRow, 1 + endRow) : []
-  const rowIndices = pageRows.map((_, i) => startRow + i)
-  const numCols = content?.[0]?.length ?? 0
-  const headers = content?.[0] ?? []
+  const rowIndices = viewRowIndices.slice(startRow, endRow)
+  const sheetBodyItems = useMemo(() => {
+    if (!content) return []
+    type BodyItem =
+      | { kind: 'group'; key: string; label: string }
+      | { kind: 'row'; dataRowIndex: number; row: string[] }
+    const groupLabel = (dataIdx: number) => {
+      if (groupByCol == null) return ''
+      return String(content[dataIdx + 1]?.[groupByCol] ?? '').trim() || '(Empty)'
+    }
+    const items: BodyItem[] = []
+    for (let idx = 0; idx < rowIndices.length; idx++) {
+      const dataRowIndex = rowIndices[idx]!
+      const row = content[dataRowIndex + 1]
+      if (!row) continue
+      if (groupByCol != null) {
+        const prevDataIdx =
+          idx === 0 ? (startRow > 0 ? viewRowIndices[startRow - 1] : undefined) : rowIndices[idx - 1]
+        const needsHeader = prevDataIdx === undefined || groupLabel(dataRowIndex) !== groupLabel(prevDataIdx)
+        if (needsHeader) {
+          items.push({
+            kind: 'group',
+            key: `g-${dataRowIndex}-${groupLabel(dataRowIndex)}`,
+            label: groupLabel(dataRowIndex),
+          })
+        }
+      }
+      items.push({ kind: 'row', dataRowIndex, row })
+    }
+    return items
+  }, [content, rowIndices, groupByCol, startRow, viewRowIndices])
+
+  const toggleSelectAll = () => {
+    if (!content || content.length <= 1) return
+    const allFilteredSelected = viewRowIndices.length > 0 && viewRowIndices.every((i) => selectedRows.has(i))
+    if (allFilteredSelected) {
+      setSelectedRows((prev) => {
+        const next = new Set(prev)
+        for (const i of viewRowIndices) next.delete(i)
+        return next
+      })
+    } else {
+      setSelectedRows((prev) => {
+        const next = new Set(prev)
+        for (const i of viewRowIndices) next.add(i)
+        return next
+      })
+    }
+  }
 
   const closeInspector = useCallback(
     (e?: React.MouseEvent) => {
@@ -882,11 +3398,110 @@ export function ResearchPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isInspectorOpen) closeInspector()
+      if (e.key !== 'Escape' || !isInspectorOpen) return
+      if (comparePreviewModalOpen) return
+      closeInspector()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isInspectorOpen, closeInspector])
+  }, [isInspectorOpen, comparePreviewModalOpen, closeInspector])
+
+  const closeAllGridMenus = useCallback(() => {
+    setHideFieldsOpen(false)
+    setFilterOpen(false)
+    setGroupMenuOpen(false)
+    setSortMenuOpen(false)
+    setDensityMenuOpen(false)
+    setAddColumnOpen(false)
+  }, [])
+
+  const anyToolbarMenuOpen =
+    hideFieldsOpen ||
+    filterOpen ||
+    groupMenuOpen ||
+    sortMenuOpen ||
+    densityMenuOpen ||
+    addColumnOpen
+
+  useLayoutEffect(() => {
+    if (!anyToolbarMenuOpen) return
+    const bump = () => setToolbarMenuLayoutTick((n) => n + 1)
+    window.addEventListener('scroll', bump, true)
+    window.addEventListener('resize', bump)
+    return () => {
+      window.removeEventListener('scroll', bump, true)
+      window.removeEventListener('resize', bump)
+    }
+  }, [anyToolbarMenuOpen])
+
+  useEffect(() => {
+    if (addColumnOpen) {
+      const t = window.setTimeout(() => addColumnInputRef.current?.focus(), 0)
+      return () => window.clearTimeout(t)
+    }
+  }, [addColumnOpen])
+
+  useEffect(() => {
+    if (
+      !hideFieldsOpen &&
+      !filterOpen &&
+      !groupMenuOpen &&
+      !sortMenuOpen &&
+      !densityMenuOpen &&
+      !addColumnOpen
+    ) {
+      return
+    }
+    function onPointerDown(e: PointerEvent) {
+      const t = e.target as Node
+      if (
+        hideFieldsOpen &&
+        (hideFieldsBtnRef.current?.contains(t) || hideFieldsDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (
+        groupMenuOpen &&
+        (groupMenuBtnRef.current?.contains(t) || groupMenuDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (sortMenuOpen && (sortMenuBtnRef.current?.contains(t) || sortMenuDropRef.current?.contains(t))) {
+        return
+      }
+      if (
+        densityMenuOpen &&
+        (densityMenuBtnRef.current?.contains(t) || densityMenuDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      if (filterOpen && (filterBtnRef.current?.contains(t) || filterDropRef.current?.contains(t))) return
+      if (
+        addColumnOpen &&
+        (addColumnBtnRef.current?.contains(t) || addColumnDropRef.current?.contains(t))
+      ) {
+        return
+      }
+      closeAllGridMenus()
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeAllGridMenus()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [
+    hideFieldsOpen,
+    filterOpen,
+    groupMenuOpen,
+    sortMenuOpen,
+    densityMenuOpen,
+    addColumnOpen,
+    closeAllGridMenus,
+  ])
 
   // Capture element details for selected row (for Add details)
   useEffect(() => {
@@ -978,7 +3593,10 @@ export function ResearchPage() {
       const r = st.restoreResearchSelection
       if (r.rowsPerPage) setRowsPerPage(r.rowsPerPage)
       if (r.page) setPage(r.page)
-      if (r.activeTabId) setActiveTabId(r.activeTabId)
+      if (r.activeTabId) {
+        skipSelectionResetRef.current = true
+        setActiveTabId(r.activeTabId)
+      }
       setSelectedRows(new Set(r.selectedRows ?? []))
     }
     if (st?.restoreInspector) {
@@ -991,6 +3609,7 @@ export function ResearchPage() {
       setCollapseSidebarForInspector(true)
     }
     if (st?.restoreInspector || st?.restoreResearchSelection) {
+      hasRestoredPageStateRef.current = true
       navigate(location.pathname + location.search, { replace: true })
     }
   }, [location.pathname, location.search, location.state, navigate, setCollapseSidebarForInspector])
@@ -1000,9 +3619,9 @@ export function ResearchPage() {
       <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
         <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
         <p className="max-w-sm text-sm text-gray-500">
-          Open a file from Home or start with a new sheet.
+          Open a workspace file, or start with a new sheet.
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           <Link
             to="/"
             className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
@@ -1011,12 +3630,97 @@ export function ResearchPage() {
           </Link>
           <button
             type="button"
+            onClick={() => setFilePickerOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            <FolderOpen className="h-4 w-4" aria-hidden />
+            Open existing
+          </button>
+          <button
+            type="button"
             onClick={addNewTab}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
           >
             + New tab
           </button>
         </div>
+        {filePickerOpen &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+              onClick={() => setFilePickerOpen(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="empty-file-picker-title"
+            >
+              <div
+                className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                  <h3 id="empty-file-picker-title" className="text-base font-semibold text-gray-900">
+                    Open existing file
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setFilePickerOpen(false)}
+                    className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {filePickerLoading && (
+                    <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
+                  )}
+                  {filePickerError && (
+                    <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
+                  )}
+                  {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
+                    <p className="py-8 text-center text-sm text-gray-500">
+                      No spreadsheet files in your workspace yet.
+                    </p>
+                  )}
+                  {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {filePickerFiles.map((file) => (
+                        <li key={file.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const params = new URLSearchParams()
+                              params.set('fileId', String(file.id))
+                              params.set('name', file.name)
+                              if (file.folderPath) params.set('folder', file.folderPath)
+                              setSearchParams(params, { replace: true })
+                              setFilePickerOpen(false)
+                            }}
+                            className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
+                          >
+                            <span className="w-full truncate font-medium">{file.name}</span>
+                            {file.folderPath && (
+                              <span className="w-full truncate text-xs text-gray-500">{file.folderPath}</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="border-t border-gray-200 px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setFilePickerOpen(false)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     )
   }
@@ -1025,52 +3729,582 @@ export function ResearchPage() {
     return null
   }
 
-  const activePathLabel =
-    activeTab && activeTab.name
-      ? ['All Files', activeTab.folderPath, activeTab.name].filter(Boolean).join(' / ')
-      : ''
   const selectedRowData =
     selectedRowIndex != null && content
       ? content[1 + selectedRowIndex] ?? null
       : null
 
+  const researchAiContext = buildResearchInspectorContext(headers, selectedRowData, previewScrapedData)
+  const researchAiSessionLabel = (() => {
+    const primary = selectedRowData?.[0]
+    const label =
+      primary != null && String(primary).trim()
+        ? String(primary).trim()
+        : `Row ${(selectedRowIndex ?? 0) + 1}`
+    return `Research · ${label.slice(0, 100)}`
+  })()
+  const researchAiTabRowKey = activeTab?.fileId
+    ? `file:${activeTab.fileId}:row:${selectedRowIndex ?? 0}`
+    : `tab:${effectiveTabId ?? 'sheet'}:row:${selectedRowIndex ?? 0}`
+
   return (
     <div
-      className={`bg-white ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`bg-[#f8f9fb] text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
-      {deleteConfirmOpen && (
+      {newSheetModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="delete-rows-title"
-          onClick={(e) => e.target === e.currentTarget && setDeleteConfirmOpen(false)}
+          aria-labelledby="new-sheet-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !newSheetCreating) setNewSheetModalOpen(false)
+          }}
         >
           <div
             className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="delete-rows-title" className="text-sm font-semibold text-gray-900">
-              Delete selected row{selectedRows.size === 1 ? '' : 's'}?
+            <h2 id="new-sheet-title" className="text-sm font-semibold text-gray-900">
+              New sheet
             </h2>
             <p className="mt-1 text-sm text-gray-600">
-              You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be undone.
+              Name the file to create it in your workspace.
             </p>
+            <input
+              ref={newSheetInputRef}
+              type="text"
+              value={newSheetNameDraft}
+              onChange={(e) => setNewSheetNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void commitNewSheetFile()
+                }
+                if (e.key === 'Escape' && !newSheetCreating) setNewSheetModalOpen(false)
+              }}
+              placeholder="New sheet"
+              disabled={newSheetCreating}
+              className="mt-3 w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+            />
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={newSheetCreating}
+                onClick={() => setNewSheetModalOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={newSheetCreating}
+                onClick={() => void commitNewSheetFile()}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {newSheetCreating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {transferPickerMode != null && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="transfer-dest-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !transferBusy) closeTransferPicker()
+          }}
+        >
+          <div
+            className="flex max-h-[min(85vh,560px)] w-full max-w-lg flex-col rounded-xl border border-gray-200 bg-white shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-gray-100 px-4 py-3">
+              <h2 id="transfer-dest-title" className="text-sm font-semibold text-gray-900">
+                Where do you want to place this?
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {transferPickerMode === 'move'
+                  ? 'Move the selected rows and columns into another sheet (saved to your workspace).'
+                  : 'Duplicate the selected rows and columns into another sheet (saved to your workspace).'}
+              </p>
+            </div>
+
+            <div className="shrink-0 space-y-2 border-b border-gray-100 px-4 py-3">
+              <label htmlFor="transfer-new-sheet-name" className="text-xs font-medium text-gray-700">
+                Create a new sheet
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="transfer-new-sheet-name"
+                  ref={transferNewSheetInputRef}
+                  type="text"
+                  value={transferNewSheetName}
+                  onChange={(e) => setTransferNewSheetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void transferSelectionToNewSheet(transferPickerMode)
+                    }
+                    if (e.key === 'Escape' && !transferBusy) closeTransferPicker()
+                  }}
+                  placeholder={transferPickerMode === 'move' ? 'Moved selection' : 'Duplicated selection'}
+                  disabled={transferBusy}
+                  className="min-w-0 flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  disabled={transferBusy}
+                  onClick={() => void transferSelectionToNewSheet(transferPickerMode)}
+                  className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {transferBusy ? 'Working…' : 'Create & place'}
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                Or choose an existing sheet
+              </p>
+              {transferBusy && (
+                <p className="px-2 py-4 text-center text-sm text-gray-500">Saving…</p>
+              )}
+              {!transferBusy && transferFilesLoading && (
+                <p className="px-2 py-4 text-center text-sm text-gray-500">Loading sheets…</p>
+              )}
+              {!transferBusy && transferFilesError && (
+                <p className="px-2 py-4 text-center text-sm text-red-600">{transferFilesError}</p>
+              )}
+              {!transferBusy &&
+                !transferFilesLoading &&
+                !transferFilesError &&
+                transferFiles.length === 0 && (
+                  <p className="px-2 py-4 text-center text-sm text-gray-500">
+                    No other sheets yet — create a new one above.
+                  </p>
+                )}
+              {!transferBusy &&
+                !transferFilesLoading &&
+                !transferFilesError &&
+                transferFiles.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {transferFiles.map((file) => (
+                      <li key={file.id}>
+                        <button
+                          type="button"
+                          disabled={transferBusy}
+                          onClick={() => void transferSelectionToFile(file.id, transferPickerMode)}
+                          className="flex w-full flex-col rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <span className="truncate text-sm font-medium text-gray-900">{file.name}</span>
+                          {file.folderPath ? (
+                            <span className="truncate text-xs text-gray-500">{file.folderPath}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </div>
+
+            <div className="shrink-0 border-t border-gray-100 px-4 py-3 text-right">
+              <button
+                type="button"
+                disabled={transferBusy}
+                onClick={closeTransferPicker}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteConfirm != null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+          onClick={(e) => e.target === e.currentTarget && setDeleteConfirm(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {deleteConfirm === 'rows' ? (
+              <>
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                  Delete selected row{selectedRows.size === 1 ? '' : 's'}?
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be
+                  undone.
+                </p>
+              </>
+            ) : deleteConfirm === 'columns' ? (
+              <>
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                  Delete selected column{selectedColumns.size === 1 ? '' : 's'}?
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  You are about to delete {selectedColumns.size} column
+                  {selectedColumns.size === 1 ? '' : 's'} from the sheet. This cannot be undone.
+                </p>
+              </>
+            ) : (
+              (() => {
+                const _exhaustive: never = deleteConfirm
+                return _exhaustive
+              })()
+            )}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={confirmDeleteSelectedRows}
+                onClick={() => {
+                  if (deleteConfirm === 'rows') confirmDeleteSelectedRows()
+                  else if (deleteConfirm === 'columns') confirmDeleteSelectedColumns()
+                  else {
+                    const _exhaustive: never = deleteConfirm
+                    return _exhaustive
+                  }
+                }}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
               >
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {comparePreviewModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="compare-preview-title"
+          onClick={(e) => e.target === e.currentTarget && setComparePreviewModalOpen(false)}
+        >
+          <div
+            className="flex h-[min(90vh,calc(100dvh-2rem))] max-h-[min(90vh,calc(100dvh-2rem))] min-h-0 w-full max-w-[min(120rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/30 px-4 py-3 sm:px-5">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/60"
+                  aria-hidden
+                >
+                  <GitCompare className="h-5 w-5" strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h2 id="compare-preview-title" className="text-base font-semibold tracking-tight text-slate-900">
+                    Compare preview
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {comparisonItems.length === 0
+                      ? 'No sources loaded'
+                      : comparisonItems.length === 1
+                        ? '1 source — review fields below'
+                        : `${comparisonItems.length} sources — scroll vertically for fields, horizontally for vendors`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {comparisonItems.length >= 2 && (
+                  <div
+                    className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+                    role="group"
+                    aria-label="Comparison layout"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setComparePreviewLayout('matrix')}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        comparePreviewLayout === 'matrix'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Table2 className="h-3.5 w-3.5" aria-hidden />
+                      Matrix
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setComparePreviewLayout('cards')}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        comparePreviewLayout === 'cards'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+                      Cards
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setComparePreviewModalOpen(false)}
+                  className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200/80 hover:text-slate-900"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 p-3 sm:p-4">
+              {comparisonItems.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  No items to compare.
+                </p>
+              ) : comparePreviewLayout === 'matrix' && comparisonItems.length >= 2 ? (
+                <div
+                  className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-slate-200/90 bg-white shadow-sm [-webkit-overflow-scrolling:touch]"
+                  role="region"
+                  aria-label="Side-by-side field comparison"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50/90 px-3 py-2">
+                    <span className="text-[11px] text-slate-600">
+                      Use the arrow beside each field to minimize or expand that row.
+                    </span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCompareMatrixCollapsedFields(new Set())}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Expand all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompareMatrixCollapsedFields(new Set(comparePreviewLabels))
+                        }
+                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      >
+                        Minimize all
+                      </button>
+                    </div>
+                  </div>
+                  <table className="w-max min-w-full border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/95">
+                        <th
+                          scope="col"
+                          className="sticky top-0 left-0 z-30 min-w-[140px] max-w-[200px] border-r border-slate-200 bg-slate-50/95 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)] sm:min-w-[160px]"
+                        >
+                          Field
+                        </th>
+                        {comparisonItems.map((item) => {
+                          const thumb = item.imageUrl ?? extractImageFromSpecs(item.specs)
+                          return (
+                            <th
+                              key={item.id}
+                              scope="col"
+                              className="sticky top-0 z-20 min-w-[200px] max-w-[280px] border-r border-slate-100 bg-slate-50/95 px-3 py-3 align-top shadow-[0_1px_0_0_rgb(226_232_240)] last:border-r-0 sm:min-w-[220px]"
+                            >
+                              <div className="flex flex-col gap-2">
+                                {thumb ? (
+                                  <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                    <img
+                                      src={thumb}
+                                      alt={item.title ? `${item.title} — preview` : 'Product preview'}
+                                      className="h-full w-full object-contain"
+                                      loading="lazy"
+                                    />
+                                  </div>
+                                ) : null}
+                                <div className="min-w-0 text-center">
+                                  <div className="line-clamp-2 text-xs font-semibold leading-snug text-slate-900">
+                                    {item.title || '—'}
+                                  </div>
+                                  {item.sourceName != null && item.sourceName !== '' && (
+                                    <div className="mt-1 truncate text-[11px] text-emerald-700">{item.sourceName}</div>
+                                  )}
+                                </div>
+                              </div>
+                            </th>
+                          )
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparePreviewLabels.map((label, rowIdx) => {
+                        const rowBg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                        const collapsed = compareMatrixCollapsedFields.has(label)
+                        return (
+                          <tr key={label} className={`border-b border-slate-100/80 ${rowBg}`}>
+                            <th
+                              scope="row"
+                              className={`sticky left-0 z-10 max-w-[200px] border-r border-slate-200 px-2 py-1.5 text-left text-xs font-medium text-slate-600 shadow-[2px_0_8px_-2px_rgba(15,23,42,0.06)] sm:px-3 ${rowBg}`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCompareMatrixCollapsedFields((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(label)) next.delete(label)
+                                    else next.add(label)
+                                    return next
+                                  })
+                                }
+                                className="flex w-full min-w-0 items-start gap-1.5 rounded-md py-0.5 text-left text-slate-700 hover:bg-slate-200/50"
+                                aria-expanded={!collapsed}
+                                aria-label={
+                                  collapsed ? `Expand field row: ${label}` : `Minimize field row: ${label}`
+                                }
+                              >
+                                {collapsed ? (
+                                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                ) : (
+                                  <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                )}
+                                <span className="min-w-0 break-words leading-snug">{label}</span>
+                              </button>
+                            </th>
+                            {comparisonItems.map((item) => {
+                              const v = specValueForLabel(item, label)
+                              const display = v.trim() === '' ? '—' : v
+                              return (
+                                <td
+                                  key={`${item.id}-${label}`}
+                                  className={`max-w-[280px] border-r border-slate-100 px-3 align-top text-slate-800 last:border-r-0 ${rowBg} ${
+                                    collapsed ? 'py-1.5' : 'py-2.5'
+                                  }`}
+                                >
+                                  {collapsed ? (
+                                    <span className="text-xs text-slate-400" aria-hidden>
+                                      …
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="line-clamp-6 break-words text-sm leading-snug"
+                                      title={display}
+                                    >
+                                      {display}
+                                    </span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [-webkit-overflow-scrolling:touch]"
+                  role="region"
+                  aria-label="Source cards comparison"
+                >
+                  <div
+                    className={`mx-auto grid w-full max-w-full gap-4 pb-1 ${
+                      comparisonItems.length === 1
+                        ? 'grid-cols-1'
+                        : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                    }`}
+                  >
+                  {comparisonItems.map((item) => {
+                    const thumb = item.imageUrl ?? extractImageFromSpecs(item.specs)
+                    return (
+                      <article
+                        key={item.id}
+                        className="flex flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/5"
+                      >
+                        <div className="shrink-0 border-b border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 py-3">
+                          {thumb ? (
+                            <div className="mb-2 flex justify-center">
+                              <div className="h-24 w-24 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <img
+                                  src={thumb}
+                                  alt={item.title ? `${item.title} — preview` : 'Product preview'}
+                                  className="h-full w-full object-contain"
+                                  loading="lazy"
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                          <h3 className="text-center text-sm font-semibold leading-snug text-slate-900">
+                            {item.title || '—'}
+                          </h3>
+                          {item.sourceName != null && item.sourceName !== '' && (
+                            <p className="mt-1 text-center text-[11px] font-medium text-emerald-700">
+                              {item.sourceName}
+                            </p>
+                          )}
+                        </div>
+                        <dl className="min-w-0 space-y-2.5 p-3">
+                          {item.specs.map((spec, idx) => (
+                            <div key={`${item.id}-${spec.label}-${idx}`} className="min-w-0 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                {spec.label}
+                              </dt>
+                              <dd className="mt-0.5 break-words text-sm text-slate-800">{spec.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </article>
+                    )
+                  })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+              <p className="text-xs text-slate-500">
+                {comparisonItems.length > 0 && (
+                  <>
+                    <span className="font-medium text-slate-700">{comparisonItems.length}</span> source
+                    {comparisonItems.length === 1 ? '' : 's'} in preview
+                  </>
+                )}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setComparePreviewModalOpen(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComparePreviewModalOpen(false)
+                    const base =
+                      comparePreviewNavigateStateRef.current != null &&
+                      typeof comparePreviewNavigateStateRef.current === 'object'
+                        ? (comparePreviewNavigateStateRef.current as Record<string, unknown>)
+                        : { returnTo: '/research' }
+                    navigate(RESEARCH_COMPARE_PATH, {
+                      state: {
+                        ...base,
+                        initialComparisonItems:
+                          (base.initialComparisonItems as ComparisonItem[] | undefined) ??
+                          comparisonItems,
+                      },
+                    })
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                >
+                  Open full Compare
+                  <GitCompare className="h-4 w-4 opacity-90" aria-hidden />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1111,53 +4345,122 @@ export function ResearchPage() {
               <button
                 type="button"
                 disabled={storeSelectionLoading}
-                onClick={async () => {
-                  if (!content || selectedColumns.size === 0) return
-                  const token = getToken()
-                  if (!token) {
-                    showToast('Sign in to research selected')
-                    return
-                  }
-                  const aiQuery = researchAiQueryInput.trim() || undefined
-                  const colIndices = Array.from(selectedColumns).sort((a, b) => a - b)
-                  const headers = colIndices.map((i) => String(content[0]?.[i] ?? `Column ${i + 1}`).trim())
-                  const rowIndices =
-                    selectedRows.size > 0
-                      ? Array.from(selectedRows).sort((a, b) => a - b)
-                      : Array.from({ length: Math.max(0, content.length - 1) }, (_, i) => i)
-                  const rows = rowIndices.map((rowIdx) => {
-                    const row = content[rowIdx + 1] ?? []
-                    return colIndices.map((colIdx) => String(row[colIdx] ?? ''))
-                  })
-                  setStoreSelectionLoading(true)
-                  setResearchFieldsPopupOpen(false)
-                  try {
-                    const saved = await saveDataSheetSelection(
-                      {
-                        headers,
-                        rows,
-                        row_indices: rowIndices,
-                        sheet_name: activeTab?.name ?? null,
-                        file_id: activeTab?.fileId ?? null,
-                        tab_id: effectiveTabId ?? null,
-                      },
-                      token
-                    )
-                    const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery || null)
-                    setResearchVersion((v) => v + 1)
-                    showToast(
-                      `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
-                    )
-                  } catch (e) {
-                    showToast(e instanceof Error ? e.message : 'Failed to save or search')
-                  } finally {
-                    setStoreSelectionLoading(false)
-                  }
-                }}
+                onClick={() => void runSelectedResearch(researchAiQueryInput)}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {storeSelectionLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
                 {storeSelectionLoading ? 'Researching…' : 'Start Research'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {cellFillPopupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cell-fill-title"
+          onClick={(e) => e.target === e.currentTarget && !cellFillLoading && setCellFillPopupOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="cell-fill-title" className="text-sm font-semibold text-gray-900">
+              Research & fill selected cells
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Choose how to research, then describe what to put in the selected cells. Running again
+              replaces any existing values in those cells.
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillMode('internal')}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  cellFillMode === 'internal'
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="block text-xs font-semibold">Internal</span>
+                <span className="mt-0.5 block text-[11px] leading-snug opacity-80">
+                  Use already found research results for this row
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillMode('external')}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  cellFillMode === 'external'
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className="block text-xs font-semibold">External</span>
+                <span className="mt-0.5 block text-[11px] leading-snug opacity-80">
+                  Search the web, scrape sources, then fill the cell
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <p>
+                <span className="font-semibold text-slate-800">Columns:</span>{' '}
+                {content?.[0]
+                  ? Array.from(selectedColumns)
+                      .sort((a, b) => a - b)
+                      .map((i) => sheetHeaderLabel(content[0]!, i))
+                      .join(', ') || '—'
+                  : '—'}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-800">Rows:</span>{' '}
+                {Array.from(selectedRows)
+                  .sort((a, b) => a - b)
+                  .map((i) => i + 1)
+                  .join(', ') || '—'}
+              </p>
+            </div>
+            <textarea
+              value={cellFillPrompt}
+              onChange={(e) => setCellFillPrompt(e.target.value)}
+              placeholder={
+                cellFillMode === 'internal'
+                  ? 'e.g. "Pull alternate part numbers from the found sources"'
+                  : 'e.g. "Find related / additional part numbers online"'
+              }
+              rows={4}
+              disabled={cellFillLoading}
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-60"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={cellFillLoading}
+                onClick={() => setCellFillPopupOpen(false)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={cellFillLoading || !cellFillPrompt.trim()}
+                onClick={() => void runCellFillResearch()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {cellFillLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
+                {cellFillLoading
+                  ? cellFillMode === 'external'
+                    ? 'Searching…'
+                    : 'Filling…'
+                  : cellFillMode === 'external'
+                    ? 'External research & fill'
+                    : 'Internal research & fill'}
               </button>
             </div>
           </div>
@@ -1203,13 +4506,17 @@ export function ResearchPage() {
       <div
         className={
           isInspectorOpen
-            ? 'flex-1 min-w-0 overflow-hidden px-4 py-3 flex flex-col h-[calc(100vh-3.5rem)]'
-            : 'px-4 py-3 overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]'
+            ? 'flex h-[calc(100vh-3.5rem)] min-w-0 flex-1 flex-col overflow-hidden'
+            : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
         }
       >
-      <div className="shrink-0">
-        <h2 className="mb-1 text-lg font-semibold text-gray-900">Data Research</h2>
+      <div className="shrink-0 border-b border-gray-200 bg-white px-5 pb-0 pt-3">
+        <h1 className="mb-2.5 text-[17px] font-semibold text-gray-900">Data Research</h1>
+      </div>
 
+      {/* Unified header: tabs + toolbar in one container, flush full-width.
+          z-30 keeps toolbar dropdowns above the sheet (sticky thead is z-10). */}
+      <div className="relative z-30 shrink-0 border-b border-gray-200 bg-white">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -1249,126 +4556,658 @@ export function ResearchPage() {
           }}
         />
 
-      {activePathLabel && (
-        <p className="mb-1 text-xs font-medium text-gray-500 truncate">
-          {activePathLabel}
-        </p>
-      )}
-
       {loading && (
-        <p className="mb-2 text-sm text-gray-500">Loading file…</p>
+        <p className="px-4 pb-1 text-sm text-slate-500">Loading file…</p>
       )}
       {error && (
-        <p className="mb-2 text-sm text-red-600">{error}</p>
+        <p className="px-4 pb-1 text-sm text-rose-600">{error}</p>
       )}
 
       {/* Toolbar */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setToolbarActive('all')}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          Research All
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setToolbarActive('selected')
-            if (!content || selectedColumns.size === 0) {
-              showToast('Select at least one column first')
-              return
+      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-4 overflow-visible border-t border-gray-200 bg-[#f8f9fb] px-4 py-2.5">
+        <ResearchToolbarGroup label="View">
+          <button
+            ref={hideFieldsBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setHideFieldsOpen((o) => !o)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+              setAddColumnOpen(false)
+            }}
+            className={researchToolbarBtnClass(hideFieldsOpen, !content?.[0])}
+            aria-label="Hide fields"
+          >
+            <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+            <ResearchToolbarTooltip label="Hide fields" />
+          </button>
+          {hideFieldsOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={hideFieldsDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (hideFieldsBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, hideFieldsBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined'
+                      ? window.innerWidth - Math.min(320, window.innerWidth - 16) - 8
+                      : 8
+                  ),
+                  width: typeof window !== 'undefined' ? Math.min(320, window.innerWidth - 16) : 320,
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  Visible columns
+                </p>
+                <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
+                  {headers.map((h, colIdx) => {
+                    const name = (h || `Column ${colIdx + 1}`).trim()
+                    const visible = !hiddenColumns.has(colIdx)
+                    return (
+                      <label
+                        key={colIdx}
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visible}
+                          onChange={() => {
+                            setHiddenColumns((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(colIdx)) next.delete(colIdx)
+                              else next.add(colIdx)
+                              return next
+                            })
+                          }}
+                          className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                        />
+                        <span className="truncate text-slate-700" title={name}>
+                          {name}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={filterBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setFilterOpen((f) => !f)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setAddColumnOpen(false)
+            }}
+            className={researchToolbarBtnClass(hasActiveColumnFilters, !content?.[0])}
+            aria-label={
+              hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'
             }
-            setResearchAiQueryInput(
-              'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
-            )
-            setResearchFieldsPopupOpen(true)
-          }}
-          disabled={!content || selectedColumns.size === 0 || storeSelectionLoading}
-          title={
-            selectedColumns.size === 0
-              ? 'Select column(s) first'
-              : 'Research selected headers and rows'
-          }
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
-            toolbarActive === 'selected' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          } disabled:cursor-not-allowed disabled:opacity-50`}
-        >
-          {storeSelectionLoading ? (
-            <LoaderIcon className="h-4 w-4 shrink-0" />
-          ) : (
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          >
+            <Filter className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                hasActiveColumnFilters ? `Filtered by ${filterSummaryLabels.join(', ')}` : 'Filter'
+              }
+            />
+          </button>
+          {filterOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={filterDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (filterBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    filterBtnRef.current?.getBoundingClientRect().left ?? 0,
+                    window.innerWidth - 420
+                  ),
+                }}
+                className="min-w-[min(26rem,calc(100vw-1rem))] max-w-[32rem] rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <ResearchSheetFilterBuilder
+                  headers={headers}
+                  items={filterBuilderItems}
+                  onChange={(next) => {
+                    setFilterBuilderItems(next)
+                    setPage(1)
+                  }}
+                  getDistinctColumnValues={getDistinctColumnValues}
+                />
+                {hasActiveColumnFilters && (
+                  <div className="mt-2 flex justify-end border-t border-slate-100 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterBuilderItems(defaultFilterBuilderItems())
+                        setPage(1)
+                      }}
+                      className="text-[11px] font-medium text-red-600 hover:text-red-700"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={groupMenuBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setGroupMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+              setAddColumnOpen(false)
+            }}
+            className={researchToolbarBtnClass(groupByCol != null, !content?.[0])}
+            aria-label="Group"
+          >
+            <LayoutGrid className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip label="Group" />
+          </button>
+          {groupMenuOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={groupMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (groupMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, groupMenuBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 240 - 8 : 8
+                  ),
+                  width: 240,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGroupByCol(null)
+                    setGroupMenuOpen(false)
+                  }}
+                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Don&apos;t group
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                {headers.map((h, colIdx) => {
+                  const label = (h || `Column ${colIdx + 1}`).trim()
+                  return (
+                    <button
+                      key={colIdx}
+                      type="button"
+                      onClick={() => {
+                        setGroupByCol(colIdx)
+                        setGroupMenuOpen(false)
+                      }}
+                      className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                        groupByCol === colIdx ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={sortMenuBtnRef}
+            type="button"
+            disabled={!content?.[0]}
+            onClick={() => {
+              if (!content?.[0]) return
+              setSortMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+              setAddColumnOpen(false)
+            }}
+            className={researchToolbarBtnClass(sortCol != null, !content?.[0])}
+            aria-label="Sort"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip label="Sort" />
+          </button>
+          {sortMenuOpen &&
+            content?.[0] &&
+            createPortal(
+              <div
+                ref={sortMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (sortMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, sortMenuBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 240 - 8 : 8
+                  ),
+                  width: 240,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortCol(null)
+                    setSortDir('asc')
+                    setSortMenuOpen(false)
+                  }}
+                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Clear sort
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                {headers.map((h, colIdx) => {
+                  const label = (h || `Column ${colIdx + 1}`).trim()
+                  const active = sortCol === colIdx
+                  return (
+                    <button
+                      key={colIdx}
+                      type="button"
+                      onClick={() => {
+                        if (sortCol === colIdx) {
+                          setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                        } else {
+                          setSortCol(colIdx)
+                          setSortDir('asc')
+                        }
+                        setSortMenuOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                        active ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      }`}
+                    >
+                      <span className="truncate">{label}</span>
+                      {active && (
+                        <span className="shrink-0 text-[10px] text-slate-500">
+                          {sortDir === 'asc' ? 'A→Z' : 'Z→A'}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>,
+              document.body
+            )}
+
+          <button
+            ref={densityMenuBtnRef}
+            type="button"
+            onClick={() => {
+              setDensityMenuOpen((o) => !o)
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setFilterOpen(false)
+              setAddColumnOpen(false)
+            }}
+            className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-slate-600 hover:bg-slate-50"
+            aria-label="Row height"
+          >
+            <RowHeightIcon className="h-4 w-4" />
+            <ResearchToolbarTooltip label="Row height" />
+          </button>
+          {densityMenuOpen &&
+            createPortal(
+              <div
+                ref={densityMenuDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (densityMenuBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (() => {
+                    const w = typeof window !== 'undefined' ? window.innerWidth : 800
+                    const panel = 192
+                    const r = densityMenuBtnRef.current?.getBoundingClientRect()
+                    const alignRight = Math.max(8, (r?.right ?? panel) - panel)
+                    return Math.min(alignRight, w - panel - 8)
+                  })(),
+                  width: 192,
+                }}
+                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+              >
+                {(
+                  [
+                    { id: 'compact' as const, label: 'Compact' },
+                    { id: 'default' as const, label: 'Default' },
+                    { id: 'comfortable' as const, label: 'Comfortable' },
+                  ] as const
+                ).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setRowDensity(id)
+                      setDensityMenuOpen(false)
+                    }}
+                    className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
+                      rowDensity === id ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+        </ResearchToolbarGroup>
+
+        <ResearchToolbarDivider />
+
+        <ResearchToolbarGroup label="Columns">
+          <button
+            ref={addColumnBtnRef}
+            type="button"
+            disabled={!content}
+            onClick={() => {
+              if (!content) return
+              setAddColumnOpen((o) => !o)
+              setAddColumnNameDraft('')
+              setHideFieldsOpen(false)
+              setGroupMenuOpen(false)
+              setSortMenuOpen(false)
+              setDensityMenuOpen(false)
+              setFilterOpen(false)
+            }}
+            className={researchToolbarBtnClass(addColumnOpen, !content)}
+            aria-label="Add column"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip label="Add column" />
+          </button>
+          {addColumnOpen &&
+            createPortal(
+              <div
+                ref={addColumnDropRef}
+                style={{
+                  position: 'fixed',
+                  zIndex: 9999,
+                  top: (addColumnBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: Math.min(
+                    Math.max(8, addColumnBtnRef.current?.getBoundingClientRect().left ?? 8),
+                    typeof window !== 'undefined' ? window.innerWidth - 260 - 8 : 8
+                  ),
+                  width: 260,
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+              >
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  New column
+                </p>
+                <input
+                  ref={addColumnInputRef}
+                  type="text"
+                  value={addColumnNameDraft}
+                  onChange={(e) => setAddColumnNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addSheetColumn(addColumnNameDraft)
+                    }
+                  }}
+                  placeholder={`Column ${(content?.[0]?.length ?? 0) + 1}`}
+                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+                <div className="mt-2.5 flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddColumnOpen(false)
+                      setAddColumnNameDraft('')
+                    }}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addSheetColumn(addColumnNameDraft)}
+                    className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Add
+                  </button>
+                </div>
+              </div>,
+              document.body
+            )}
+
+          <button
+            type="button"
+            onClick={removeSelectedColumns}
+            disabled={selectedColumns.size === 0}
+            className={researchToolbarBtnClass(selectedColumns.size > 0, selectedColumns.size === 0)}
+            aria-label={
+              selectedColumns.size === 0
+                ? 'Select column(s) in the header to remove'
+                : 'Delete column'
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedColumns.size === 0
+                  ? 'Select column(s) to delete'
+                  : 'Delete column'
+              }
+            />
+          </button>
+        </ResearchToolbarGroup>
+
+        <ResearchToolbarDivider />
+
+        <ResearchToolbarGroup label="Selection actions">
+          <button
+            type="button"
+            onClick={() => {
+              setToolbarActive('selected')
+              if (!content || selectedColumns.size === 0 || selectedRows.size === 0) {
+                showToast(
+                  selectedColumns.size === 0 && selectedRows.size === 0
+                    ? 'Select at least one column and one row first'
+                    : selectedColumns.size === 0
+                      ? 'Select at least one column first'
+                      : 'Select at least one row first'
+                )
+                return
+              }
+              setResearchAiQueryInput(
+                'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
+              )
+              setResearchFieldsPopupOpen(true)
+            }}
+            disabled={
+              !content ||
+              selectedColumns.size === 0 ||
+              selectedRows.size === 0 ||
+              storeSelectionLoading
+            }
+            className={
+              storeSelectionLoading
+                ? 'group relative inline-flex h-8 w-8 shrink-0 cursor-wait items-center justify-center rounded-[5px] border border-blue-600 bg-blue-600 text-white disabled:opacity-100'
+                : researchToolbarBtnClass(
+                    toolbarActive === 'selected' &&
+                      selectedColumns.size > 0 &&
+                      selectedRows.size > 0,
+                    !content || selectedColumns.size === 0 || selectedRows.size === 0
+                  )
+            }
+            aria-label={
+              storeSelectionLoading
+                ? `Researching… ${researchProgress}%`
+                : selectedColumns.size === 0 || selectedRows.size === 0
+                  ? 'Select column(s) and row(s) first'
+                  : 'Research Selected'
+            }
+          >
+            {storeSelectionLoading && (
+              <span
+                className="pointer-events-none absolute inset-0 overflow-hidden rounded-[4px]"
+                aria-hidden
+              >
+                <span
+                  className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-300 ease-out"
+                  style={{ width: `${researchProgress}%` }}
+                />
+              </span>
+            )}
+            <span className="relative z-[1] inline-flex items-center justify-center">
+              {storeSelectionLoading ? (
+                <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              )}
+            </span>
+            <ResearchToolbarTooltip
+              label={
+                storeSelectionLoading
+                  ? `Researching… ${researchProgress}%`
+                  : selectedColumns.size === 0 || selectedRows.size === 0
+                    ? 'Select column(s) and row(s) first'
+                    : 'Research Selected'
+              }
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!content || selectedColumns.size === 0 || selectedRows.size === 0) {
+                showToast(
+                  selectedColumns.size === 0 && selectedRows.size === 0
+                    ? 'Select at least one column and one row first'
+                    : selectedColumns.size === 0
+                      ? 'Select the column(s) to fill first'
+                      : 'Select the row(s) to fill first'
+                )
+                return
+              }
+              const cols = Array.from(selectedColumns)
+                .sort((a, b) => a - b)
+                .map((i) => sheetHeaderLabel(content[0]!, i))
+              setCellFillPrompt(
+                cols.length === 1
+                  ? `Find and fill a value for “${cols[0]}” based on this row.`
+                  : `Find and fill values for: ${cols.join(', ')}.`
+              )
+              setCellFillPopupOpen(true)
+            }}
+            disabled={
+              !content ||
+              selectedColumns.size === 0 ||
+              selectedRows.size === 0 ||
+              cellFillLoading ||
+              storeSelectionLoading
+            }
+            className={researchToolbarBtnClass(
+              cellFillPopupOpen || cellFillLoading,
+              !content ||
+                selectedColumns.size === 0 ||
+                selectedRows.size === 0 ||
+                cellFillLoading ||
+                storeSelectionLoading
+            )}
+            aria-label={
+              cellFillLoading
+                ? 'Filling cells…'
+                : selectedColumns.size === 0 || selectedRows.size === 0
+                  ? 'Select column(s) and row(s) first'
+                  : 'Research & fill cells'
+            }
+          >
+            {cellFillLoading ? (
+              <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            <ResearchToolbarTooltip
+              label={
+                cellFillLoading
+                  ? 'Filling cells…'
+                  : selectedColumns.size === 0 || selectedRows.size === 0
+                    ? 'Check column(s) and row(s) to fill'
+                    : 'Research & fill cells'
+              }
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedRows.size === 0) return
+              const first = Math.min(...selectedRows)
+              setSelectedRowIndex(first)
+              setIsInspectorOpen(true)
+              setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
+              const all = Array.from(selectedRows).sort((a, b) => a - b)
+              setInspectorMultiRowIndices(all)
+              setInspectorCompareSelection(new Set())
+              setCollapseSidebarForInspector(true)
+            }}
+            disabled={selectedRows.size === 0}
+            className={researchToolbarBtnClass(false, selectedRows.size === 0)}
+            aria-label={selectedRows.size === 0 ? 'Select a row first' : 'Preview Selected'}
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-          )}
-          {storeSelectionLoading ? 'Researching…' : 'Research Selected'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setToolbarActive('deep')}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          Deep Search Selected
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedRows.size === 0) return
-            const first = Math.min(...selectedRows)
-            setSelectedRowIndex(first)
-            setIsInspectorOpen(true)
-            setInspectorMode(selectedRows.size > 1 ? 'multi' : 'single')
-            const all = Array.from(selectedRows).sort((a, b) => a - b)
-            setInspectorMultiRowIndices(all)
-            // Start unchecked so user explicitly chooses what to compare
-            setInspectorCompareSelection(new Set())
-            setCollapseSidebarForInspector(true)
-          }}
-          disabled={selectedRows.size === 0}
-          title={selectedRows.size === 0 ? 'Select a row first' : 'Open inspector for selected row'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          Preview Selected
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedRows.size === 0 || !content || !effectiveTabId) return
-            clearComparison()
-            const comparisonItems = Array.from(selectedRows)
-              .map((rowIndex) => {
-                const row = content[rowIndex + 1]
-                if (!row) return null
-                const title = String(row[0] ?? '')
-                const specs = headers.map((label, i) => ({
-                  label: (label || `Column ${i + 1}`).trim(),
-                  value: String(row[i] ?? '—'),
-                }))
-                const imageUrl = null
-                return {
-                  id: `${effectiveTabId}-${rowIndex}`,
-                  title,
-                  imageUrl,
-                  specs,
-                }
-              })
-              .filter((x): x is NonNullable<typeof x> => x != null)
-            openComparison(comparisonItems)
-            showToast('Opened comparison')
-            navigate(RESEARCH_COMPARE_PATH, {
-              state: {
+            <ResearchToolbarTooltip
+              label={selectedRows.size === 0 ? 'Select a row first' : 'Preview Selected'}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedRows.size === 0 || !content || !effectiveTabId) return
+              const items = Array.from(selectedRows)
+                .map((rowIndex) => {
+                  const row = content[rowIndex + 1]
+                  if (!row) return null
+                  const title = String(row[0] ?? '')
+                  const specs = headers.map((label, i) => ({
+                    label: (label || `Column ${i + 1}`).trim(),
+                    value: String(row[i] ?? '—'),
+                  }))
+                  const imageUrl = null
+                  return {
+                    id: `${effectiveTabId}-${rowIndex}`,
+                    title,
+                    imageUrl,
+                    specs,
+                  }
+                })
+                .filter((x): x is NonNullable<typeof x> => x != null)
+              openComparePreviewModal(items, {
                 returnTo: '/research',
                 restoreResearchSelection: {
                   selectedRows: Array.from(selectedRows),
@@ -1376,90 +5215,154 @@ export function ResearchPage() {
                   page: currentPage,
                   rowsPerPage,
                 },
-              },
-            })
-          }}
-          disabled={selectedRows.size === 0}
-          title={selectedRows.size === 0 ? 'Select rows first' : 'Open comparison with selected rows'}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-          Compare Selected
-        </button>
-        {/* Other options removed */}
-        <div className="ml-auto flex items-center gap-2">
+              })
+            }}
+            disabled={selectedRows.size === 0}
+            className={researchToolbarBtnClass(false, selectedRows.size === 0)}
+            aria-label={selectedRows.size === 0 ? 'Select rows first' : 'Compare Selected'}
+          >
+            <GitCompare className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={selectedRows.size === 0 ? 'Select rows first' : 'Compare Selected'}
+            />
+          </button>
+
           <button
             type="button"
-            onClick={() => setFilterOpen((f) => !f)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => openTransferPicker('duplicate')}
+            disabled={!content || transferBusy}
+            className={researchToolbarBtnClass(
+              selectedRows.size > 0 && selectedColumns.size > 0,
+              !content || transferBusy
+            )}
+            aria-label={
+              selectedRows.size === 0 || selectedColumns.size === 0
+                ? 'Select column checkboxes and row checkboxes first'
+                : 'Duplicate to file'
+            }
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17m0 0h2m-2 0h-5m-9 0H3" />
-            </svg>
-            Filter
+            <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedRows.size === 0 || selectedColumns.size === 0
+                  ? 'Check row(s) and column header checkbox(es) first'
+                  : 'Duplicate to file'
+              }
+            />
           </button>
+
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => openTransferPicker('move')}
+            disabled={!content || transferBusy}
+            className={researchToolbarBtnClass(
+              selectedRows.size > 0 && selectedColumns.size > 0,
+              !content || transferBusy
+            )}
+            aria-label={
+              selectedRows.size === 0 || selectedColumns.size === 0
+                ? 'Select column checkboxes and row checkboxes first'
+                : 'Move to file'
+            }
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download Selected
+            <FolderInput className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <ResearchToolbarTooltip
+              label={
+                selectedRows.size === 0 || selectedColumns.size === 0
+                  ? 'Check row(s) and column header checkbox(es) first'
+                  : 'Move to file'
+              }
+            />
           </button>
+        </ResearchToolbarGroup>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+          <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+            <input
+              type="search"
+              value={rowSearchDraft}
+              onChange={(e) => setRowSearchDraft(e.target.value)}
+              placeholder="Search rows…"
+              className="w-[130px] border-0 bg-transparent text-xs text-gray-900 outline-none placeholder:text-gray-400 sm:w-[150px]"
+            />
+            {rowSearchDraft.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRowSearchDraft('')
+                  setRowSearchQuery('')
+                  setPage(1)
+                }}
+                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {filterOpen && (
-        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-          Filter options (placeholder). Configure filters per column.
-        </div>
-      )}
-      </div>
+      </div>{/* end unified header */}
 
       {content && content.length > 0 && (
         <>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="h-full overflow-auto rounded-lg border border-gray-200 shadow-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50">
-                <tr>
-                  <th className="w-10 px-2 py-3 border-r border-gray-200">
+          <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden bg-white">
+            <div className="h-full w-full overflow-auto">
+            <table className="min-w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-[#f8f9fb]">
+                <tr className="border-b-2 border-gray-200">
+                  {/* Row-number gutter */}
+                  <th
+                    className={`w-8 border-r border-slate-200 text-center ${rd.th} ${rd.thLabel} text-slate-400`}
+                    aria-label="Row number"
+                  />
+                  <th className={`w-8 border-r border-slate-200 ${rd.th}`}>
                     <input
                       type="checkbox"
-                      checked={totalDataRows > 0 && selectedRows.size >= totalDataRows}
+                      checked={viewRowIndices.length > 0 && viewRowIndices.every((i) => selectedRows.has(i))}
                       onChange={toggleSelectAll}
-                      className="rounded border-gray-300"
+                      className="rounded border-slate-300"
                     />
                   </th>
-                  {content[0].map((cell, i) => {
-                    const columnHasData = content.some(
-                      (row) => (row[i] ?? '').trim().length > 0
-                    )
+                  <th
+                    scope="col"
+                    className={`w-[80px] shrink-0 border-r border-slate-200 text-left font-medium uppercase tracking-wide text-slate-500 ${rd.th} ${rd.thLabel}`}
+                  >
+                    Research
+                  </th>
+                  {visibleColIndices.map((i) => {
+                    const cell = content[0][i] ?? ''
+                    const colSelected = selectedColumns.has(i)
                     return (
-                      <th key={i} scope="col" className="px-2 py-2 border-r border-gray-200 last:border-r-0">
-                        <div className="flex items-center gap-2">
-                          {columnHasData && (
-                            <input
-                              type="checkbox"
-                              checked={selectedColumns.has(i)}
-                              onChange={() =>
-                                setSelectedColumns((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(i)) next.delete(i)
-                                  else next.add(i)
-                                  return next
-                                })
-                              }
-                              className="mt-0.5 rounded border-gray-300"
-                            />
-                          )}
+                      <th
+                        key={i}
+                        scope="col"
+                        className={`border-r border-slate-200 last:border-r-0 ${rd.th} ${
+                          colSelected ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={colSelected}
+                            onChange={() =>
+                              setSelectedColumns((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(i)) next.delete(i)
+                                else next.add(i)
+                                return next
+                              })
+                            }
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300"
+                            title="Select column"
+                            aria-label={`Select column ${cell || i + 1}`}
+                          />
                           <input
                             value={cell}
                             onChange={(e) => updateCell(0, i, e.target.value)}
-                            className="w-full min-w-[100px] border-0 bg-transparent px-2 py-1.5 font-medium text-gray-900 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className={`w-full min-w-[80px] border-0 bg-transparent font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.headInput}`}
                           />
                         </div>
                       </th>
@@ -1467,40 +5370,95 @@ export function ResearchPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {pageRows.map((row, idx) => {
-                  const dataRowIndex = rowIndices[idx]
-                  const isSelectedRow = selectedRowIndex === dataRowIndex
-                  const isRowBeingResearched = storeSelectionLoading && selectedRows.has(dataRowIndex)
+              <tbody className="bg-white">
+                {sheetBodyItems.map((item) => {
+                  if (item.kind === 'group') {
+                    return (
+                      <tr key={item.key} className="bg-blue-50/40">
+                        <td
+                          colSpan={3 + visibleColIndices.length}
+                          className="border-b border-gray-200 px-3 py-1.5 text-[11px] font-semibold text-gray-700"
+                        >
+                          {item.label}
+                        </td>
+                      </tr>
+                    )
+                  }
+                  const { dataRowIndex, row } = item
+                  const isInspectorRow = isInspectorOpen && selectedRowIndex === dataRowIndex
+                  const isRowChecked = selectedRows.has(dataRowIndex)
+                  const isRowBeingResearched = researchingRowIndices.has(dataRowIndex)
+                  const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
+                  const hasStructuredData = rowResearchSummary?.has_structured_data === true
+                  const stripe = dataRowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fb]'
                   return (
                     <tr
                       key={dataRowIndex}
                       data-row-index={dataRowIndex}
-                      className={`transition-colors ${isSelectedRow ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
+                      className={`cursor-pointer border-b border-gray-200 border-l-[3px] transition-colors ${
+                        isInspectorRow
+                          ? 'border-l-blue-500 bg-[#f0f7ff]'
+                          : isRowChecked
+                            ? 'border-l-transparent bg-blue-50 hover:bg-blue-50'
+                            : `border-l-transparent ${stripe} hover:bg-[#f0f4f9]`
+                      }`}
                     >
-                      <td className="w-10 px-2 py-2 border-r border-gray-200">
-                        {isRowBeingResearched ? (
-                          <LoaderIcon className="h-5 w-5 text-emerald-600" />
-                        ) : (
+                      <td
+                        className={`w-8 select-none border-r border-slate-200 text-center align-middle text-slate-400 ${rd.tdNum}`}
+                      >
+                        {dataRowIndex + 1}
+                      </td>
+                      <td className={`w-8 border-r border-slate-200 align-middle ${rd.tdCb}`}>
+                        <div className="flex items-center justify-center">
                           <input
                             type="checkbox"
                             checked={selectedRows.has(dataRowIndex)}
                             onChange={() => toggleRowSelection(dataRowIndex)}
-                            className="rounded border-gray-300"
+                            className="rounded border-slate-300"
                           />
+                        </div>
+                      </td>
+                      <td
+                        className={`w-[80px] shrink-0 cursor-pointer border-r border-slate-200 align-middle transition-colors ${rd.tdResearch} ${
+                          hasStructuredData || isRowBeingResearched
+                            ? 'hover:bg-blue-100/80'
+                            : 'hover:bg-slate-100'
+                        }`}
+                        title={
+                          isRowBeingResearched ? 'Researching this row…' : 'Open inspector for this row'
+                        }
+                        onClick={() => handleCellClick(dataRowIndex)}
+                      >
+                        {isRowBeingResearched ? (
+                          <div className="flex h-full w-full items-center justify-center text-emerald-600" aria-label="Researching">
+                            <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+                          </div>
+                        ) : hasStructuredData && rowResearchSummary ? (
+                          <ResearchFoundBadge
+                            count={rowResearchSummary.structured_sources_count}
+                            onClick={() => handleCellClick(dataRowIndex)}
+                          />
+                        ) : (
+                          <span className="font-mono text-[11px] text-gray-400">—</span>
                         )}
                       </td>
-                      {Array.from({ length: numCols }, (_, colIndex) => (
+                      {visibleColIndices.map((colIndex, vi) => (
                         <td
                           key={colIndex}
-                          className="cursor-pointer p-0 border-r border-gray-200 last:border-r-0"
+                          className={`cursor-pointer border-r border-slate-200 p-0 ${
+                            vi === visibleColIndices.length - 1 ? 'last:border-r-0' : ''
+                          } ${rd.tdCell} ${selectedColumns.has(colIndex) ? 'bg-blue-50/70' : ''}`}
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className="w-full min-w-[100px] border-0 bg-transparent px-4 py-3 text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            className={`w-full min-w-[80px] border-0 bg-transparent text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput} ${
+                              vi === 0 || /part|internal|mfr/i.test((headers[colIndex] ?? '').trim())
+                                ? 'font-mono font-medium text-blue-700'
+                                : ''
+                            } ${selectedColumns.has(colIndex) ? 'bg-transparent' : ''}`}
                           />
                         </td>
                       ))}
@@ -1513,13 +5471,13 @@ export function ResearchPage() {
           </div>
 
           {/* Footer: Add row + pagination */}
-          <div className="shrink-0 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-2">
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={(e) => openAddRowPopover(e.currentTarget)}
                 data-add-row-footer-btn
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
               >
                 + Add row
               </button>
@@ -1528,19 +5486,20 @@ export function ResearchPage() {
                 onClick={removeSelectedRows}
                 disabled={selectedRows.size === 0}
                 title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete row
               </button>
-              <span className="text-sm text-gray-600">
-                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows} entries
+              <span className="text-sm text-slate-600">
+                Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}
+                {hasRowSearch || hasActiveColumnFilters ? ` (filtered from ${unfilteredRowCount})` : ''} entries
               </span>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
                 Rows per page
                 <select
                   value={rowsPerPage}
                   onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
-                  className="rounded border border-gray-300 py-1 pl-2 pr-6 text-sm"
+                  className="rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
                 >
                   {ROWS_PER_PAGE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n}</option>
@@ -1553,7 +5512,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(1)}
                 disabled={currentPage <= 1}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &laquo;
               </button>
@@ -1561,18 +5520,18 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &lsaquo;
               </button>
-              <span className="px-3 py-1.5 text-sm text-gray-600">
+              <span className="px-2 text-xs text-gray-500">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &rsaquo;
               </button>
@@ -1580,7 +5539,7 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(totalPages)}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
               >
                 &raquo;
               </button>
@@ -1610,7 +5569,7 @@ export function ResearchPage() {
               aria-orientation="vertical"
               aria-label="Resize preview panel"
               title="Drag to resize"
-              className="shrink-0 w-1.5 cursor-col-resize border-l border-gray-200 bg-gray-100 hover:bg-blue-100 active:bg-blue-200 transition-colors"
+              className="shrink-0 w-1.5 cursor-col-resize border-l border-slate-200 bg-slate-100 transition-colors hover:bg-blue-100 active:bg-blue-200"
               onMouseDown={(e) => {
                 e.preventDefault()
                 document.body.style.cursor = 'col-resize'
@@ -1623,7 +5582,7 @@ export function ResearchPage() {
             className={
               inspectorMaximized
                 ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-white shadow-xl'
-                : 'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white animate-[slideInRight_0.2s_ease-out]'
+                : 'flex h-full min-h-0 shrink-0 animate-[slideInRight_0.2s_ease-out] flex-col overflow-hidden border-l border-slate-200 bg-white'
             }
             style={
               inspectorMaximized
@@ -1643,48 +5602,177 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 items-center justify-end gap-1 border-b border-gray-200 bg-gray-50/80 px-4 py-3">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setInspectorMaximized((m) => !m)
-              }}
-              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-              title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
-              aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
-            >
-              {inspectorMaximized ? (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
-                </svg>
+          <header className="flex shrink-0 flex-col border-b border-gray-200 bg-white">
+            <div className="bg-slate-900 px-4 py-3">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              {inspectorMode === 'single' && selectedRowData ? (
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[15px] font-semibold text-slate-100">
+                      {String(selectedRowData[0] ?? '—')}
+                    </span>
+                    {selectedRowIndex != null && researchRowSummaryByIndex.get(selectedRowIndex) && (
+                      <span className="rounded bg-blue-800 px-1.5 py-0.5 text-[10px] font-semibold text-blue-200">
+                        {researchRowSummaryByIndex.get(selectedRowIndex)!.structured_sources_count} sources
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-sm text-slate-400">
+                    {String(selectedRowData[1] ?? headers[1] ?? 'Row details')}
+                  </p>
+                </div>
               ) : (
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-100">Selected rows</p>
+                  <p className="text-xs text-slate-400">Review and compare sheet rows</p>
+                </div>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={closeInspector}
-              className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-              title="Close panel"
-              aria-label="Close panel"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              <div className="flex shrink-0 items-center justify-end gap-1 self-start">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setInspectorMaximized((m) => !m)
+                  }}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+                  aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
+                >
+                  {inspectorMaximized ? (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeInspector}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  title="Close panel"
+                  aria-label="Close panel"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            </div>
+            {inspectorMode === 'single' && selectedRowData && (
+              <div className="flex flex-wrap gap-2 border-t border-gray-200 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
+                    if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
+                      showToast('Select at least one scraped source')
+                      return
+                    }
+                    const navigateState = {
+                      returnTo: '/research',
+                      restoreInspector: {
+                        mode: 'single' as const,
+                        selectedRowIndex,
+                        multiRowIndices: [] as number[],
+                        compareSelection: [] as number[],
+                      },
+                    }
+                    if (hasScraped) {
+                      const scrapedItems = comparisonItemsFromScrapedSources(
+                        previewScrapedData,
+                        inspectorScrapedSourceSelection,
+                        effectiveTabId,
+                        selectedRowIndex
+                      )
+                      if (scrapedItems.length === 0) {
+                        showToast('Select at least one scraped source')
+                        return
+                      }
+                      openComparePreviewModal(scrapedItems, navigateState)
+                    } else {
+                      const title = String(selectedRowData[0] ?? '')
+                      const specs = headers.map((label, i) => ({
+                        label: (label || `Column ${i + 1}`).trim(),
+                        value: String(selectedRowData[i] ?? '—'),
+                      }))
+                      openComparePreviewModal(
+                        [
+                          {
+                            id: `${effectiveTabId}-${selectedRowIndex}`,
+                            title,
+                            imageUrl: null,
+                            specs,
+                          },
+                        ],
+                        navigateState
+                      )
+                    }
+                  }}
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Compare
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                    const id = `${effectiveTabId}-${selectedRowIndex}`
+                    const title = selectedRowData[0] ?? ''
+                    const manufacturer = selectedRowData[1] ?? ''
+                    const price = selectedRowData[2] ?? ''
+                    const result = addItem({
+                      id,
+                      title: String(title),
+                      manufacturer: String(manufacturer),
+                      price: String(price),
+                      rowIndex: selectedRowIndex,
+                      tabId: effectiveTabId,
+                    })
+                    if (result.added) showToast('Item added to Bucket')
+                    else showToast('Item already in Bucket')
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Add to Bucket
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Copy row
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorRowAiOpen((open) => !open)}
+                  className={`inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    inspectorRowAiOpen
+                      ? 'border-sky-400 bg-sky-50 text-sky-900'
+                      : 'border-sky-300 bg-white text-sky-800 hover:bg-sky-50'
+                  }`}
+                  title="Chat with AI about this row"
+                  aria-pressed={inspectorRowAiOpen}
+                >
+                  <Bot className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  AI
+                </button>
+              </div>
+            )}
           </header>
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain p-4">
+          <div className="flex flex-1 min-h-0 flex-col p-4">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900">Selected rows</h3>
-                        <p className="mt-0.5 text-xs text-gray-500">
+                        <h3 className="text-sm font-semibold text-slate-900">Selected rows</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
                           Pick which items to compare, then click Compare.
                         </p>
                       </div>
@@ -1697,8 +5785,7 @@ export function ResearchPage() {
                             showToast('Select at least one item to compare')
                             return
                           }
-                          clearComparison()
-                          const comparisonItems = chosen
+                          const items = chosen
                             .map((rowIndex) => {
                               const row = content[rowIndex + 1]
                               if (!row) return null
@@ -1713,26 +5800,23 @@ export function ResearchPage() {
                               }
                             })
                             .filter((x): x is NonNullable<typeof x> => x != null)
-                          openComparison(comparisonItems)
-                          navigate(RESEARCH_COMPARE_PATH, {
-                            state: {
-                              returnTo: '/research',
-                              restoreInspector: {
-                                mode: 'multi',
-                                selectedRowIndex,
-                                multiRowIndices: inspectorMultiRowIndices,
-                                compareSelection: chosen,
-                              },
-                              restoreResearchSelection: {
-                                selectedRows: Array.from(selectedRows),
-                                activeTabId: effectiveTabId,
-                                page: currentPage,
-                                rowsPerPage,
-                              },
+                          openComparePreviewModal(items, {
+                            returnTo: '/research',
+                            restoreInspector: {
+                              mode: 'multi' as const,
+                              selectedRowIndex,
+                              multiRowIndices: inspectorMultiRowIndices,
+                              compareSelection: chosen,
+                            },
+                            restoreResearchSelection: {
+                              selectedRows: Array.from(selectedRows),
+                              activeTabId: effectiveTabId,
+                              page: currentPage,
+                              rowsPerPage,
                             },
                           })
                         }}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >
                         Compare ({inspectorCompareSelection.size})
                       </button>
@@ -1747,8 +5831,8 @@ export function ResearchPage() {
                         return (
                           <label
                             key={rowIndex}
-                            className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer ${
-                              checked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 ${
+                              checked ? 'border-blue-200 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
                             }`}
                           >
                             <input
@@ -1765,12 +5849,12 @@ export function ResearchPage() {
                               }}
                             />
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">{title || '—'}</p>
-                              {sub && <p className="text-xs text-gray-600 truncate">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
+                              <p className="truncate text-sm font-semibold text-slate-900">{title || '—'}</p>
+                              {sub && <p className="truncate text-xs text-slate-600">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
                             </div>
                             <button
                               type="button"
-                              className="ml-auto text-xs font-medium text-gray-600 hover:text-gray-900"
+                              className="ml-auto text-xs font-medium text-slate-600 hover:text-slate-900"
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -1787,60 +5871,220 @@ export function ResearchPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                        Item
-                      </h3>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {headers[0] ? `${headers[0]}: ${selectedRowData?.[0] ?? '—'}` : selectedRowData?.[0] ?? 'Row ' + (selectedRowIndex != null ? selectedRowIndex + 1 : '')}
-                      </p>
-                    </div>
-
-
-
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                    {inspectorRowAiOpen && (
+                      <ResearchRowAiChat
+                        tabRowKey={researchAiTabRowKey}
+                        researchContext={researchAiContext}
+                        sessionLabel={researchAiSessionLabel}
+                        onApplySheetUpdates={applySheetColumnUpdates}
+                      />
+                    )}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
                           Structured data
                         </h3>
-                        {previewScrapedData && previewScrapedData.length > 0 && (
-                          <div className="flex rounded-lg border border-gray-200 p-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResearchMoreOpen((o) => {
+                                const next = !o
+                                if (next && previewScrapedData?.length === 1) {
+                                  setInspectorScrapedSourceSelection(new Set([0]))
+                                }
+                                return next
+                              })
+                              setAddStructuredColumnOpen(false)
+                              if (!researchMorePrompt.trim()) {
+                                setResearchMorePrompt(
+                                  'Extract updated pricing, availability, product details, and any additional fields relevant to this product page.'
+                                )
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                              researchMoreOpen
+                                ? 'border-blue-400 bg-blue-50 text-blue-900'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                            title="Re-scrape the selected source with a custom prompt"
+                          >
+                            <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            Research more
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddStructuredColumnOpen((o) => !o)
+                              setResearchMoreOpen(false)
+                              setAddStructuredColumnSourceIdx(null)
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                              addStructuredColumnOpen
+                                ? 'border-emerald-400 bg-emerald-50 text-emerald-900'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                            title="Add a column to structured data and the sheet"
+                          >
+                            <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            Add column
+                          </button>
+                          {previewScrapedData && previewScrapedData.length > 0 && (
+                            <div className="flex rounded-lg border border-slate-200 p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setStructuredDataViewType('row')}
+                                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                  structuredDataViewType === 'row'
+                                    ? 'bg-slate-200 text-slate-900'
+                                    : 'text-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                Row
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setStructuredDataViewType('column')}
+                                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                  structuredDataViewType === 'column'
+                                    ? 'bg-slate-200 text-slate-900'
+                                    : 'text-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                Column
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {researchMoreOpen && selectedRowIndex != null && (
+                        <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                          <p className="text-xs font-medium text-blue-900">Research more — selected source only</p>
+                          <p className="mt-0.5 text-[11px] text-blue-800/80">
+                            Check exactly one source below. We re-scrape that URL only, merge updated fields, and add any
+                            new columns.
+                          </p>
+                          {inspectorScrapedSourceSelection.size === 1 ? (
+                            <p className="mt-1 truncate text-[11px] font-medium text-blue-900" title={previewScrapedData?.[Array.from(inspectorScrapedSourceSelection)[0]!]?.url ?? undefined}>
+                              Target: Source {Array.from(inspectorScrapedSourceSelection)[0]! + 1}
+                              {previewScrapedData?.[Array.from(inspectorScrapedSourceSelection)[0]!]?.url
+                                ? ` · ${previewScrapedData[Array.from(inspectorScrapedSourceSelection)[0]!]!.url}`
+                                : ''}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-[11px] font-medium text-amber-800">
+                              Select one source checkbox to continue
+                              {inspectorScrapedSourceSelection.size > 1 ? ' (uncheck extras)' : ''}.
+                            </p>
+                          )}
+                          <textarea
+                            value={researchMorePrompt}
+                            onChange={(e) => setResearchMorePrompt(e.target.value)}
+                            rows={3}
+                            placeholder="e.g. Get current price, warranty terms, and shipping ETA"
+                            className="mt-2 w-full resize-y rounded-md border border-blue-200 bg-white px-2.5 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <div className="mt-2 flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => setStructuredDataViewType('row')}
-                              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                                structuredDataViewType === 'row'
-                                  ? 'bg-gray-200 text-gray-900'
-                                  : 'text-gray-600 hover:bg-gray-100'
-                              }`}
+                              onClick={() => setResearchMoreOpen(false)}
+                              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
                             >
-                              Row
+                              Cancel
                             </button>
                             <button
                               type="button"
-                              onClick={() => setStructuredDataViewType('column')}
-                              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                                structuredDataViewType === 'column'
-                                  ? 'bg-gray-200 text-gray-900'
-                                  : 'text-gray-600 hover:bg-gray-100'
-                              }`}
+                              disabled={
+                                researchMoreLoading ||
+                                !researchMorePrompt.trim() ||
+                                inspectorScrapedSourceSelection.size !== 1
+                              }
+                              onClick={() => void runResearchMoreOnSelectedSource()}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
                             >
-                              Column
+                              {researchMoreLoading ? (
+                                <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+                              ) : (
+                                <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              )}
+                              {researchMoreLoading ? 'Updating source…' : 'Update selected source'}
                             </button>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
+
+                      {addStructuredColumnOpen && (
+                        <div className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+                          <p className="text-xs font-medium text-emerald-900">Add column</p>
+                          <p className="mt-0.5 text-[11px] text-emerald-800/80">
+                            Adds a field to structured data
+                            {addStructuredColumnSourceIdx != null
+                              ? ` (source ${addStructuredColumnSourceIdx + 1})`
+                              : ' (all sources)'}{' '}
+                            and to the sheet for this row.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <input
+                              value={addStructuredColumnName}
+                              onChange={(e) => setAddStructuredColumnName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  addStructuredColumn(addStructuredColumnName, addStructuredColumnSourceIdx)
+                                }
+                              }}
+                              placeholder="Column name (e.g. Warranty)"
+                              className="min-w-[160px] flex-1 rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addStructuredColumn(addStructuredColumnName, addStructuredColumnSourceIdx)
+                              }
+                              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {previewResultsLoading ? (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
                           <LoaderIcon className="h-4 w-4 shrink-0" />
                           <span>Loading…</span>
                         </div>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
                         <div className="space-y-4">
-                          {previewScrapedData.map((item, idx) => (
-                            <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                          {previewScrapedData.map((item, idx) => {
+                            const sourceAiOpen = inspectorSourceAiOpen.has(idx)
+                            const sourceEditing = inspectorSourceEditOpen.has(idx)
+                            const sourceSelected = inspectorScrapedSourceSelection.has(idx)
+                            const sourceAiContext = buildResearchInspectorContext(
+                              headers,
+                              selectedRowData,
+                              previewScrapedData,
+                              { sourceIndex: idx, sourceOnly: true }
+                            )
+                            const sourceAiKey = `${researchAiTabRowKey}:source:${idx}`
+                            const sourceAiLabel = `${researchAiSessionLabel} · Source ${idx + 1}`
+                            return (
+                            <div
+                              key={item.id ?? idx}
+                              className={`rounded-lg border p-3 ${
+                                researchMoreOpen && sourceSelected
+                                  ? 'border-blue-300 bg-blue-50/70 ring-1 ring-blue-200'
+                                  : sourceEditing
+                                    ? 'border-amber-200 bg-amber-50/40'
+                                    : 'border-slate-100 bg-slate-50/50'
+                              }`}
+                            >
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                               {item.url && (
-                                <div className="mb-2 flex items-center gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
+                                <div className="flex min-w-0 flex-1 items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
                                   <input
                                     type="checkbox"
                                     checked={inspectorScrapedSourceSelection.has(idx)}
@@ -1852,73 +6096,125 @@ export function ResearchPage() {
                                         return next
                                       })
                                     }}
-                                    className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                     aria-label={`Include source ${idx + 1} in comparison`}
                                   />
                                   <a
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-gray-600 transition-colors hover:text-blue-600"
+                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-600 transition-colors hover:text-blue-600"
                                     title={item.url}
                                   >
-                                    <span className="shrink-0 font-medium text-gray-400">Source {idx + 1}</span>
+                                    <span className="shrink-0 font-medium text-slate-400">Source {idx + 1}</span>
                                     <span className="min-w-0 truncate">{item.url}</span>
-                                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                     </svg>
                                   </a>
+                                </div>
+                              )}
+                                </div>
+                                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleInspectorSourceEdit(idx)}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                      sourceEditing
+                                        ? 'border-amber-400 bg-amber-100 text-amber-950'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                    title={sourceEditing ? 'Finish editing this source' : 'Edit fields for this source'}
+                                    aria-pressed={sourceEditing}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    {sourceEditing ? 'Done' : 'Edit'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAddStructuredColumnSourceIdx(idx)
+                                      setAddStructuredColumnOpen(true)
+                                      setResearchMoreOpen(false)
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                    title="Add a column to this source"
+                                  >
+                                    <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    Column
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleInspectorSourceAi(idx)}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                      sourceAiOpen
+                                        ? 'border-sky-400 bg-sky-100 text-sky-900'
+                                        : 'border-sky-200 bg-white text-sky-800 hover:bg-sky-50'
+                                    }`}
+                                    title="Chat with AI about this source"
+                                  >
+                                    <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                    {sourceAiOpen ? 'Hide AI' : 'Ask AI'}
+                                  </button>
+                                </div>
+                              </div>
+                              {sourceAiOpen && (
+                                <div className="mb-3">
+                                  <ResearchRowAiChat
+                                    compact
+                                    tabRowKey={sourceAiKey}
+                                    researchContext={sourceAiContext}
+                                    sessionLabel={sourceAiLabel}
+                                    onApplySheetUpdates={applySheetColumnUpdates}
+                                  />
                                 </div>
                               )}
                               <div className="overflow-x-auto">
                                 {structuredDataViewType === 'row' ? (
                                   <table className="min-w-full text-sm">
                                     <tbody className="divide-y divide-gray-200">
-                                    
                                       {Object.entries(item.data).map(([key, val]) => {
-                                        const imageUrls = Array.isArray(val)
-                                          ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
-                                          : isImageUrl(val)
-                                            ? [String(val)]
-                                            : []
-                                        const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                                        const changed = (item.last_field_changes ?? []).find(
+                                          (c) => c.field === key
+                                        )
                                         return (
-                                          <tr key={key}>
+                                          <tr
+                                            key={key}
+                                            className={
+                                              changed
+                                                ? changed.kind === 'added'
+                                                  ? 'bg-emerald-50/80'
+                                                  : 'bg-amber-50/70'
+                                                : undefined
+                                            }
+                                          >
                                             <td className="py-1 pr-4 font-medium text-gray-500 align-top">
-                                              {key.replace(/_/g, ' ')}
+                                              <span className="inline-flex items-center gap-1">
+                                                {key.replace(/_/g, ' ')}
+                                                {changed?.kind === 'updated' && (
+                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
+                                                    updated
+                                                  </span>
+                                                )}
+                                                {changed?.kind === 'added' && (
+                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
+                                                    new
+                                                  </span>
+                                                )}
+                                              </span>
                                             </td>
                                             <td className="py-1 text-gray-900">
-                                              {showAsImage ? (
-                                                <span className="inline-flex flex-wrap gap-2">
-                                                  {imageUrls.map((imgSrc, i) => (
-                                                    <span key={i} className="relative">
-                                                      <img
-                                                        src={imgSrc}
-                                                        alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                                        className="max-h-24 rounded border border-gray-200 object-contain"
-                                                        loading="lazy"
-                                                        onError={(e) => {
-                                                          const el = e.currentTarget
-                                                          el.style.display = 'none'
-                                                          const fallback = el.nextElementSibling
-                                                          if (fallback) (fallback as HTMLElement).classList.remove('hidden')
-                                                        }}
-                                                      />
-                                                      <a
-                                                        href={imgSrc}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
-                                                        title={imgSrc}
-                                                      >
-                                                        {imgSrc}
-                                                      </a>
-                                                    </span>
-                                                  ))}
-                                                </span>
-                                              ) : (
-                                                renderValue(val)
+                                              {changed?.kind === 'updated' && (
+                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
+                                                  {formatTrackValue(changed.before)}
+                                                </p>
                                               )}
+                                              <StructuredFieldCell
+                                                fieldKey={key}
+                                                val={val}
+                                                editing={sourceEditing}
+                                                onChange={(next) => updateScrapedField(idx, key, next)}
+                                              />
                                             </td>
                                           </tr>
                                         )
@@ -1929,55 +6225,67 @@ export function ResearchPage() {
                                   <table className="min-w-full text-sm">
                                     <thead>
                                       <tr className="divide-x divide-gray-200">
-                                        {Object.keys(item.data).map((key) => (
-                                          <th key={key} className="px-3 py-1.5 text-left font-medium text-gray-500">
-                                            {key.replace(/_/g, ' ')}
-                                          </th>
-                                        ))}
+                                        {Object.keys(item.data).map((key) => {
+                                          const changed = (item.last_field_changes ?? []).find(
+                                            (c) => c.field === key
+                                          )
+                                          return (
+                                            <th
+                                              key={key}
+                                              className={`px-3 py-1.5 text-left font-medium text-gray-500 ${
+                                                changed
+                                                  ? changed.kind === 'added'
+                                                    ? 'bg-emerald-50/80'
+                                                    : 'bg-amber-50/70'
+                                                  : ''
+                                              }`}
+                                            >
+                                              <span className="inline-flex items-center gap-1">
+                                                {key.replace(/_/g, ' ')}
+                                                {changed?.kind === 'updated' && (
+                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
+                                                    updated
+                                                  </span>
+                                                )}
+                                                {changed?.kind === 'added' && (
+                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
+                                                    new
+                                                  </span>
+                                                )}
+                                              </span>
+                                            </th>
+                                          )
+                                        })}
                                       </tr>
                                     </thead>
                                     <tbody>
                                       <tr className="divide-x divide-gray-200">
                                         {Object.entries(item.data).map(([key, val]) => {
-                                          const imageUrls = Array.isArray(val)
-                                            ? val.filter((v): v is string => typeof v === 'string' && isImageUrl(v))
-                                            : isImageUrl(val)
-                                              ? [String(val)]
-                                              : []
-                                          const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                                          const changed = (item.last_field_changes ?? []).find(
+                                            (c) => c.field === key
+                                          )
                                           return (
-                                            <td key={key} className="px-3 py-1.5 text-gray-900 align-top">
-                                              {showAsImage ? (
-                                                <span className="inline-flex flex-wrap gap-2">
-                                                  {imageUrls.map((imgSrc, i) => (
-                                                    <span key={i} className="relative">
-                                                      <img
-                                                        src={imgSrc}
-                                                        alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                                        className="max-h-24 rounded border border-gray-200 object-contain"
-                                                        loading="lazy"
-                                                        onError={(e) => {
-                                                          const el = e.currentTarget
-                                                          el.style.display = 'none'
-                                                          const fallback = el.nextElementSibling
-                                                          if (fallback) (fallback as HTMLElement).classList.remove('hidden')
-                                                        }}
-                                                      />
-                                                      <a
-                                                        href={imgSrc}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="hidden text-xs text-blue-600 hover:underline truncate max-w-[200px]"
-                                                        title={imgSrc}
-                                                      >
-                                                        {imgSrc}
-                                                      </a>
-                                                    </span>
-                                                  ))}
-                                                </span>
-                                              ) : (
-                                                renderValue(val)
+                                            <td
+                                              key={key}
+                                              className={`px-3 py-1.5 text-gray-900 align-top ${
+                                                changed
+                                                  ? changed.kind === 'added'
+                                                    ? 'bg-emerald-50/80'
+                                                    : 'bg-amber-50/70'
+                                                  : ''
+                                              }`}
+                                            >
+                                              {changed?.kind === 'updated' && (
+                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
+                                                  {formatTrackValue(changed.before)}
+                                                </p>
                                               )}
+                                              <StructuredFieldCell
+                                                fieldKey={key}
+                                                val={val}
+                                                editing={sourceEditing}
+                                                onChange={(next) => updateScrapedField(idx, key, next)}
+                                              />
                                             </td>
                                           )
                                         })}
@@ -1986,103 +6294,38 @@ export function ResearchPage() {
                                   </table>
                                 )}
                               </div>
+                              <FieldChangeTracking
+                                changes={item.last_field_changes}
+                                changeLog={item.change_log}
+                              />
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500">
-                          No data yet. Run &quot;Research Selected&quot; first.
-                        </p>
+                        <div className="space-y-3">
+                          <p className="text-sm text-gray-500">
+                            No data yet. Run &quot;Research Selected&quot; or use Research more with a prompt.
+                          </p>
+                          {selectedRowIndex != null && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setResearchMoreOpen(true)
+                                if (!researchMorePrompt.trim()) {
+                                  setResearchMorePrompt(researchAiQueryInput)
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                            >
+                              <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Research this row
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </>
-                )}
-                {inspectorMode !== 'multi' && (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                        const hasScraped = previewScrapedData != null && previewScrapedData.length > 0
-                        if (hasScraped && inspectorScrapedSourceSelection.size === 0) {
-                          showToast('Select at least one scraped source')
-                          return
-                        }
-                        clearComparison()
-                        if (hasScraped) {
-                          const scrapedItems = comparisonItemsFromScrapedSources(
-                            previewScrapedData,
-                            inspectorScrapedSourceSelection,
-                            effectiveTabId,
-                            selectedRowIndex
-                          )
-                          if (scrapedItems.length === 0) {
-                            showToast('Select at least one scraped source')
-                            return
-                          }
-                          openComparison(scrapedItems)
-                        } else {
-                          const title = String(selectedRowData[0] ?? '')
-                          const specs = headers.map((label, i) => ({
-                            label: (label || `Column ${i + 1}`).trim(),
-                            value: String(selectedRowData[i] ?? '—'),
-                          }))
-                          openComparison([
-                            {
-                              id: `${effectiveTabId}-${selectedRowIndex}`,
-                              title,
-                              imageUrl: null,
-                              specs,
-                            },
-                          ])
-                        }
-                        showToast('Opened comparison')
-                        navigate(RESEARCH_COMPARE_PATH, {
-                          state: {
-                            returnTo: '/research',
-                            restoreInspector: {
-                              mode: 'single',
-                              selectedRowIndex,
-                              multiRowIndices: [],
-                              compareSelection: [],
-                            },
-                          },
-                        })
-                      }}
-                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                    >
-                      Compare
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
-                        const id = `${effectiveTabId}-${selectedRowIndex}`
-                        const title = selectedRowData[0] ?? ''
-                        const manufacturer = selectedRowData[1] ?? ''
-                        const price = selectedRowData[2] ?? ''
-                        const result = addItem({
-                          id,
-                          title: String(title),
-                          manufacturer: String(manufacturer),
-                          price: String(price),
-                          rowIndex: selectedRowIndex,
-                          tabId: effectiveTabId,
-                        })
-                        if (result.added) showToast('Item added to Bucket')
-                        else showToast('Item already in Bucket')
-                      }}
-                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                    >
-                      Add to Bucket
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                    >
-                      Copy row
-                    </button>
-                  </div>
                 )}
               </div>
             ) : (
@@ -2090,6 +6333,7 @@ export function ResearchPage() {
                 Select a row in the table to preview its details here.
               </div>
             )}
+            </div>
           </div>
         </aside>
         </>

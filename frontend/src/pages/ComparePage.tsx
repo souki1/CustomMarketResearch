@@ -1,13 +1,31 @@
-import type { DragEvent, MouseEvent } from 'react'
+import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getToken } from '@/lib/auth'
+import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
+import { getToken, workspaceStorageKey } from '@/lib/auth'
+import { CompareFilePickerModal } from '@/components/compare/CompareFilePickerModal'
 import {
+  CompareDecisionWorkspace,
+  type CompareDecisionRow,
+  type ComparePartChip,
+} from '@/components/compare/CompareDecisionWorkspace'
+import { CompareVendorMindMap } from '@/components/compare/CompareVendorMindMap'
+import { CompareVendorOverview, collectPricesFromScrapedData } from '@/components/compare/CompareVendorOverview'
+import { primaryTextFromDataRow } from '@/components/compare/dataRow'
+import type { CompareMode, CompareTab, CompareTabData, FileEntry, LoadedFile } from '@/components/compare/types'
+import {
+  getCompareState,
   getWorkspaceFileContent,
+  listDataSheetSelections,
+  listPortfolioItems,
   listResearchUrls,
   listWorkspaceItems,
+  upsertCompareState,
 } from '@/lib/api'
-import type { ScrapedDataItem } from '@/lib/api'
+import type { PortfolioItem, ScrapedDataItem } from '@/lib/api'
+import { isSpreadsheetWorkspaceFile } from '@/lib/workspaceFiles'
 import { useComparison, type ComparisonItem } from '@/contexts/ComparisonContext'
+import { useBucket } from '@/contexts/BucketContext'
 
 function parseCsv(text: string): string[][] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
@@ -44,6 +62,33 @@ function isImageKey(key: string): boolean {
   return /image|img|photo|picture|thumbnail/.test(k)
 }
 
+/** First usable product image URL from scraped vendor data (nested + arrays). */
+function extractImageFromScrapedData(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (Array.isArray(v)) {
+      const hit = v.find((x): x is string => typeof x === 'string' && isImageUrl(x))
+      if (hit && (isImageKey(k) || isImageUrl(hit))) return hit.trim()
+      continue
+    }
+    if (typeof v === 'string' && isImageUrl(v) && (isImageKey(k) || /image|photo|thumbnail/i.test(k))) {
+      return v.trim()
+    }
+  }
+  for (const v of Object.values(obj)) {
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const nested = extractImageFromScrapedData(v as Record<string, unknown>)
+      if (nested) return nested
+    }
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && isImageUrl(v) && isImageKey(k)) return v.trim()
+  }
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'string' && isImageUrl(v)) return v.trim()
+  }
+  return null
+}
+
 /** Flatten nested object keys for display (e.g. { a: { b: 1 } } -> ["a.b"]) */
 function flattenObjectKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   const keys: string[] = []
@@ -67,6 +112,120 @@ function extractDomain(url: string): string {
   }
 }
 
+function shortenUrl(url: string, maxLen = 48): string {
+  const s = String(url ?? '').trim()
+  if (!s) return '—'
+  if (s.length <= maxLen) return s
+  return `${s.slice(0, Math.max(1, maxLen - 3))}...`
+}
+
+function compactSourceUrlLabel(url: string): string {
+  const s = String(url ?? '').trim()
+  if (!s) return '—'
+  try {
+    const u = new URL(s)
+    const host = u.hostname.replace(/^www\./, '')
+    const hasPath = Boolean(u.pathname && u.pathname !== '/')
+    return hasPath ? `${host}/...` : host
+  } catch {
+    return shortenUrl(s, 28)
+  }
+}
+
+function formatValue(val: unknown): string {
+  if (typeof val === 'string') return val
+  if (val == null) return '—'
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
+}
+
+function collectScalarSpecs(obj: Record<string, unknown>, prefix = ''): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = []
+  for (const [k, v] of Object.entries(obj)) {
+    const label = prefix ? `${prefix}.${k}` : k
+    if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      out.push(...collectScalarSpecs(v as Record<string, unknown>, label))
+    } else {
+      out.push({ label, value: formatValue(v) })
+    }
+  }
+  return out
+}
+
+function isPartNumberKey(key: string): boolean {
+  const k = key.toLowerCase().replace(/\s+/g, '').replace(/-/g, '_')
+  return (k.includes('part') && (k.includes('number') || k.endsWith('part_no') || k.includes('part_no'))) || k === 'partno'
+}
+
+function getFirstPartNumber(obj: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(obj)) {
+    if (!isPartNumberKey(k)) continue
+    if (v == null) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v)
+    if (Array.isArray(v)) {
+      const first = v.find((x) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean')
+      if (first != null) return String(first)
+    }
+  }
+  return null
+}
+
+function getVendorNameFromSourceData(data: Record<string, unknown>, url: string): string {
+  const preferredKeys = [
+    'vendor_name',
+    'vendor',
+    'seller',
+    'store_name',
+    'manufacturer',
+    'brand',
+    'company',
+    'supplier',
+  ]
+  for (const key of preferredKeys) {
+    const val = data[key]
+    if (typeof val === 'string' && val.trim()) return val.trim()
+  }
+  for (const [key, val] of Object.entries(data)) {
+    if (!/(vendor|seller|store|manufacturer|brand|company|supplier)/i.test(key)) continue
+    if (typeof val === 'string' && val.trim()) return val.trim()
+  }
+  return extractDomain(url)
+}
+
+function formatFieldLabel(key: string): string {
+  const toTitle = (s: string) =>
+    s
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => (w.length ? `${w[0]!.toUpperCase()}${w.slice(1).toLowerCase()}` : w))
+      .join(' ')
+
+  return key
+    .split('.')
+    .map((segment) => toTitle(segment.replace(/_/g, ' ')))
+    .join(' › ')
+}
+
+function pickFirstFieldValue(data: Record<string, unknown>, candidates: RegExp[]): string | null {
+  for (const [k, v] of Object.entries(data)) {
+    if (!candidates.some((rx) => rx.test(k))) continue
+    if (v == null) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      const s = String(v).trim()
+      if (s) return s
+    }
+  }
+  return null
+}
+
+function parseMoneyValue(raw: string | null): number | null {
+  if (!raw) return null
+  const m = raw.replace(/,/g, '').match(/-?\d+(\.\d+)?/)
+  if (!m) return null
+  const n = Number(m[0])
+  return Number.isFinite(n) ? n : null
+}
+
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.')
   let current: unknown = obj
@@ -75,28 +234,6 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
     current = (current as Record<string, unknown>)[p]
   }
   return current
-}
-
-type FileEntry = { id: number; name: string; folderPath: string | null }
-
-type LoadedFile = {
-  fileId: number
-  name: string
-  content: string[][]
-  folderPath: string | null
-}
-
-type CompareTabData = {
-  selectedFilesData: LoadedFile[]
-  selectedFileRows: Record<number, number[]>
-  activeFileId: number | null
-  selectedRowForScraped: { fileId: number; rowIdx: number; partLabel: string } | null
-}
-
-type CompareTab = {
-  id: string
-  name: string
-  data: CompareTabData
 }
 
 function newBlankCompareTab(): CompareTab {
@@ -112,11 +249,162 @@ function newBlankCompareTab(): CompareTab {
   }
 }
 
+const COMPARE_PAGE_STATE_KEY = 'ir-compare-page-state-v1'
+const COMPARE_VENDOR_COVERAGE_VIEW_KEY = 'ir-compare-vendor-coverage-view'
+
+/** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
+const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
+
+function readPersistedCompareState(): {
+  compareTabs?: CompareTab[]
+  activeCompareTabId?: string | null
+  compareMode?: CompareMode
+} | null {
+  try {
+    // Never read the legacy unscoped key — it leaked across accounts.
+    const raw = localStorage.getItem(workspaceStorageKey(COMPARE_PAGE_STATE_KEY))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as {
+      compareTabs?: CompareTab[]
+      activeCompareTabId?: string | null
+      compareMode?: CompareMode
+    }
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function serializeCompareTabsForPersistence(tabs: CompareTab[]): Array<Record<string, unknown>> {
+  return tabs.map((t) => ({
+    id: t.id,
+    name: t.name,
+    data: {
+      selectedFilesData: t.data.selectedFilesData.map((f) => ({
+        fileId: f.fileId,
+        name: f.name,
+        folderPath: f.folderPath,
+      })),
+      selectedFileRows: t.data.selectedFileRows,
+      activeFileId: t.data.activeFileId,
+      selectedRowForScraped: t.data.selectedRowForScraped,
+    },
+  }))
+}
+
+function coercePersistedTabs(raw: unknown): CompareTab[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((t): CompareTab | null => {
+      if (!t || typeof t !== 'object') return null
+      const obj = t as Record<string, unknown>
+      const id = typeof obj.id === 'string' && obj.id ? obj.id : crypto.randomUUID()
+      const name = typeof obj.name === 'string' && obj.name ? obj.name : 'New tab'
+      const data = (obj.data && typeof obj.data === 'object' ? obj.data : {}) as Record<string, unknown>
+      const selectedFilesDataRaw = Array.isArray(data.selectedFilesData) ? data.selectedFilesData : []
+      const selectedFilesData: LoadedFile[] = selectedFilesDataRaw
+        .map((f): LoadedFile | null => {
+          if (!f || typeof f !== 'object') return null
+          const fo = f as Record<string, unknown>
+          const fileId = Number(fo.fileId)
+          if (!Number.isFinite(fileId)) return null
+          return {
+            fileId,
+            name: String(fo.name ?? ''),
+            folderPath: fo.folderPath == null ? null : String(fo.folderPath),
+            content: Array.isArray(fo.content) ? (fo.content as string[][]) : [],
+          }
+        })
+        .filter((x): x is LoadedFile => x != null)
+      const selectedFileRows =
+        data.selectedFileRows && typeof data.selectedFileRows === 'object'
+          ? (data.selectedFileRows as Record<number, number[]>)
+          : {}
+      const activeFileId = data.activeFileId == null ? null : Number(data.activeFileId)
+      const selectedRowForScraped =
+        data.selectedRowForScraped && typeof data.selectedRowForScraped === 'object'
+          ? (data.selectedRowForScraped as {
+              fileId: number | null
+              tabId: string | null
+              rowIdx: number
+              partLabel: string
+            })
+          : null
+      return {
+        id,
+        name,
+        data: {
+          selectedFilesData,
+          selectedFileRows,
+          activeFileId: Number.isFinite(activeFileId) ? activeFileId : null,
+          selectedRowForScraped,
+        },
+      }
+    })
+    .filter((x): x is CompareTab => x != null)
+}
+
+function coerceRouteComparisonItems(raw: unknown): ComparisonItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((item): ComparisonItem | null => {
+      if (!item || typeof item !== 'object') return null
+      const obj = item as Record<string, unknown>
+      const id = typeof obj.id === 'string' ? obj.id : ''
+      const title = typeof obj.title === 'string' ? obj.title : ''
+      const sourceName = typeof obj.sourceName === 'string' ? obj.sourceName : null
+      const imageUrl = typeof obj.imageUrl === 'string' ? obj.imageUrl : null
+      const specsRaw = Array.isArray(obj.specs) ? obj.specs : []
+      const specs = specsRaw
+        .map((spec) => {
+          if (!spec || typeof spec !== 'object') return null
+          const s = spec as Record<string, unknown>
+          return {
+            label: String(s.label ?? ''),
+            value: String(s.value ?? '—'),
+          }
+        })
+        .filter((x): x is { label: string; value: string } => x != null)
+      if (!id || specs.length === 0) return null
+      return {
+        id,
+        title: title || '—',
+        specs,
+        sourceName,
+        imageUrl,
+      }
+    })
+    .filter((x): x is ComparisonItem => x != null)
+}
+
+type ResearchCompareRequestState = {
+  fileId: number | null
+  tabId: string | null
+  rowIndex: number
+  sourceIndices: number[]
+}
+
+type StructuredScrapedRow = ScrapedDataItem & {
+  sourceKey: string
+  partId: string
+  partLabel: string
+}
+
 export function ComparePage() {
-  const { items, addItems, removeItem, closeAndClear } = useComparison()
-  const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => [newBlankCompareTab()])
-  const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(null)
-  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false)
+  const location = useLocation()
+  const { items, openWithItems } = useComparison()
+  const { addItem: addBucketItem, showToast: showBucketToast } = useBucket()
+  const [compareTabs, setCompareTabs] = useState<CompareTab[]>(() => {
+    const persisted = readPersistedCompareState()
+    const tabs = coercePersistedTabs(persisted?.compareTabs)
+    return tabs.length > 0
+      ? tabs
+      : [newBlankCompareTab()]
+  })
+  const [activeCompareTabId, setActiveCompareTabId] = useState<string | null>(() => {
+    const persisted = readPersistedCompareState()
+    return typeof persisted?.activeCompareTabId === 'string' ? persisted.activeCompareTabId : null
+  })
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerFiles, setFilePickerFiles] = useState<FileEntry[]>([])
   const [filePickerLoading, setFilePickerLoading] = useState(false)
@@ -127,9 +415,52 @@ export function ComparePage() {
   const [scrapedData, setScrapedData] = useState<ScrapedDataItem[] | null>(null)
   const [scrapedDataLoading, setScrapedDataLoading] = useState(false)
   /** Filter scraped data to same vendor only (for "different parts same vendor" step 3) */
-  const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string | null>(null)
-  type CompareMode = 'same-part' | 'different-same-vendor' | 'different-different-vendors'
-  const [compareMode, setCompareMode] = useState<CompareMode>('different-different-vendors')
+  const [scrapedVendorFilter, setScrapedVendorFilter] = useState<string>('all')
+  const [scrapedViewMode, setScrapedViewMode] = useState<'row' | 'column'>('row')
+  const [scrapedSelectedFields, setScrapedSelectedFields] = useState<string[]>([])
+  const [scrapedFieldPickerSearch, setScrapedFieldPickerSearch] = useState('')
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false)
+  const fieldPickerBtnRef = useRef<HTMLButtonElement>(null)
+  const fieldPickerDropRef = useRef<HTMLDivElement>(null)
+  const [scrapedValueSearch, setScrapedValueSearch] = useState('')
+  const [scrapedNonEmptyOnly, setScrapedNonEmptyOnly] = useState(false)
+  const [scrapedDataByPart, setScrapedDataByPart] = useState<Record<string, ScrapedDataItem[]>>({})
+  const [commonVendorsLoading, setCommonVendorsLoading] = useState(false)
+  const [portfolioPartNumbers, setPortfolioPartNumbers] = useState<Set<string>>(new Set())
+  const [vendorCoverageView, setVendorCoverageView] = useState<'map' | 'overview'>(() => {
+    try {
+      const v = localStorage.getItem(workspaceStorageKey(COMPARE_VENDOR_COVERAGE_VIEW_KEY))
+      return v === 'overview' ? 'overview' : 'map'
+    } catch {
+      return 'map'
+    }
+  })
+  const hasHydratedCompareStateRef = useRef(false)
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [externalItemsByTab, setExternalItemsByTab] = useState<Record<string, ComparisonItem[]>>({})
+  const consumedRouteItemsRef = useRef(false)
+  const consumedResearchRequestRef = useRef(false)
+  const routeComparisonItems = useMemo(() => {
+    const st = location.state as { initialComparisonItems?: unknown } | null
+    return coerceRouteComparisonItems(st?.initialComparisonItems)
+  }, [location.state])
+  const routeResearchRequest = useMemo(() => {
+    const st = location.state as { researchCompareRequest?: unknown } | null
+    const raw = st?.researchCompareRequest as Partial<ResearchCompareRequestState> | undefined
+    if (!raw || typeof raw !== 'object') return null
+    const rowIndex = Number(raw.rowIndex)
+    if (!Number.isFinite(rowIndex) || rowIndex < 0) return null
+    const sourceIndices = Array.isArray(raw.sourceIndices)
+      ? raw.sourceIndices.filter((v): v is number => Number.isInteger(v) && v >= 0)
+      : []
+    if (sourceIndices.length === 0) return null
+    return {
+      fileId: raw.fileId == null ? null : Number(raw.fileId),
+      tabId: typeof raw.tabId === 'string' ? raw.tabId : null,
+      rowIndex,
+      sourceIndices,
+    } satisfies ResearchCompareRequestState
+  }, [location.state])
 
   const activeTab =
     compareTabs.find((t) => t.id === (activeCompareTabId ?? undefined)) ?? compareTabs[0] ?? null
@@ -137,6 +468,158 @@ export function ComparePage() {
   const selectedFileRows = activeTab?.data.selectedFileRows ?? {}
   const activeFileId = activeTab?.data.activeFileId ?? null
   const selectedRowForScraped = activeTab?.data.selectedRowForScraped ?? null
+  const fileBackedItems = useMemo(
+    () => items.filter((item) => parseFileItemId(item.id) != null),
+    [items]
+  )
+  const compareMode: CompareMode = fileBackedItems.length > 1 ? 'different-same-vendor' : 'same-part'
+  const [structuredPartView, setStructuredPartView] = useState<'all' | string>('all')
+
+  useEffect(() => {
+    if (consumedRouteItemsRef.current) return
+    if (!activeTab?.id) return
+    if (routeComparisonItems.length > 0) {
+      const tabId = activeTab.id
+      setExternalItemsByTab((prev) => ({ ...prev, [tabId]: routeComparisonItems }))
+      openWithItems(routeComparisonItems)
+      // Drop persisted file row selections so sync does not merge stale file items
+      // into a Research/Portfolio handoff.
+      setCompareTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                data: {
+                  ...t.data,
+                  selectedFilesData: [],
+                  selectedFileRows: {},
+                  activeFileId: null,
+                  selectedRowForScraped: null,
+                },
+              }
+            : t
+        )
+      )
+      consumedRouteItemsRef.current = true
+      return
+    }
+    // Research/Portfolio often set ComparisonContext before navigate without route payload.
+    // Seed external items from context so the sync effect cannot wipe them with [].
+    if (items.length > 0) {
+      const tabId = activeTab.id
+      setExternalItemsByTab((prev) => {
+        if ((prev[tabId] ?? []).length > 0) return prev
+        return { ...prev, [tabId]: items }
+      })
+      consumedRouteItemsRef.current = true
+    }
+  }, [routeComparisonItems, activeTab?.id, openWithItems, items])
+
+  useEffect(() => {
+    if (consumedResearchRequestRef.current) return
+    if (!activeTab?.id) return
+    if (!routeResearchRequest) return
+    const token = getToken()
+    if (!token) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listResearchUrls(token, {
+          fileId: routeResearchRequest.fileId ?? undefined,
+          tabId: routeResearchRequest.tabId ?? undefined,
+          tableRowIndex: routeResearchRequest.rowIndex,
+        })
+        if (cancelled) return
+        const scraped = rows[0]?.scraped_data ?? []
+        const mapped = routeResearchRequest.sourceIndices
+          .filter((idx) => idx >= 0 && idx < scraped.length)
+          .map((idx) => {
+            const source = scraped[idx]!
+            return {
+              id: `research-api-${routeResearchRequest.tabId ?? routeResearchRequest.fileId ?? 'row'}-${routeResearchRequest.rowIndex}-${idx}`,
+              title: getFirstPartNumber(source.data) ?? `Source ${idx + 1}`,
+              imageUrl: null,
+              specs: collectScalarSpecs(source.data),
+              sourceName: source.url ? extractDomain(source.url) : '—',
+            } satisfies ComparisonItem
+          })
+        if (mapped.length === 0) return
+        setExternalItemsByTab((prev) => ({ ...prev, [activeTab.id]: mapped }))
+        openWithItems(mapped)
+        consumedResearchRequestRef.current = true
+      } catch {
+        // no-op: keep existing compare state if API fails
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [routeResearchRequest, activeTab?.id, openWithItems])
+
+  useEffect(() => {
+    if (!fieldPickerOpen) return
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node
+      if (fieldPickerDropRef.current?.contains(target)) return
+      if (fieldPickerBtnRef.current?.contains(target)) return
+      setFieldPickerOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [fieldPickerOpen])
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      hasHydratedCompareStateRef.current = true
+      return
+    }
+    // Snapshot route handoff on mount only — do not treat leftover ComparisonContext
+    // items as a handoff (those persist across navigations).
+    const hasRouteHandoff =
+      routeComparisonItems.length > 0 || Boolean(routeResearchRequest)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const state = await getCompareState(token)
+        if (cancelled || !state) {
+          hasHydratedCompareStateRef.current = true
+          return
+        }
+        if (
+          !hasRouteHandoff &&
+          Array.isArray(state.compare_tabs) &&
+          state.compare_tabs.length > 0
+        ) {
+          const tabs = coercePersistedTabs(state.compare_tabs)
+          if (tabs.length > 0) {
+            setCompareTabs(tabs)
+            setActiveCompareTabId(
+              typeof state.active_compare_tab_id === 'string'
+                ? state.active_compare_tab_id
+                : tabs[0]?.id ?? null
+            )
+          }
+        }
+        setScrapedVendorFilter(state.scraped_vendor_filter || 'all')
+        setScrapedViewMode(state.scraped_view_mode === 'column' ? 'column' : 'row')
+        setScrapedSelectedFields(state.scraped_selected_fields ?? [])
+        setScrapedValueSearch(state.scraped_value_search ?? '')
+        setScrapedNonEmptyOnly(Boolean(state.scraped_non_empty_only))
+        setScrapedDataByPart(state.scraped_data_by_part ?? {})
+        setScrapedData(state.scraped_data ?? null)
+      } catch {
+        // fall back to local state
+      } finally {
+        if (!cancelled) hasHydratedCompareStateRef.current = true
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Mount-only hydrate; route handoff is snapshotted above from first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const updateActiveTabData = useCallback((updater: (d: CompareTabData) => CompareTabData) => {
     if (!activeTab) return
@@ -147,50 +630,97 @@ export function ComparePage() {
     )
   }, [activeTab?.id])
 
-  // When "Different parts from same vendor" is selected, keep only one file
-  useEffect(() => {
-    if (compareMode === 'different-same-vendor' && selectedFilesData.length > 1) {
-      updateActiveTabData((d) => {
-        const first = d.selectedFilesData[0]!
-        return {
-          ...d,
-          selectedFilesData: [first],
-          activeFileId: first.fileId,
-          selectedFileRows: { [first.fileId]: d.selectedFileRows[first.fileId] ?? [] },
-          selectedRowForScraped: d.selectedRowForScraped?.fileId === first.fileId ? d.selectedRowForScraped : null,
-        }
-      })
-    }
-  }, [compareMode, selectedFilesData.length, updateActiveTabData])
-
-  const addNewCompareTab = useCallback(() => {
-    const tab = newBlankCompareTab()
-    setCompareTabs((prev) => [...prev, tab])
-    setActiveCompareTabId(tab.id)
-    setNewTabMenuOpen(false)
-  }, [])
-
-  const closeCompareTab = useCallback((e: MouseEvent, id: string) => {
-    e.stopPropagation()
-    const idx = compareTabs.findIndex((t) => t.id === id)
-    if (idx < 0) return
-    const next = compareTabs.filter((t) => t.id !== id)
-    const finalTabs = next.length === 0 ? [newBlankCompareTab()] : next
-    setCompareTabs(finalTabs)
-    const closedWasActive = activeCompareTabId === id
-    if (closedWasActive) {
-      const newIdx = Math.min(idx, finalTabs.length - 1)
-      setActiveCompareTabId(finalTabs[newIdx].id)
-    } else if (next.length > 0 && compareTabs.findIndex((t) => t.id === activeCompareTabId) >= next.length) {
-      setActiveCompareTabId(finalTabs[finalTabs.length - 1].id)
-    }
-  }, [compareTabs, activeCompareTabId])
-
   useEffect(() => {
     if (compareTabs.length > 0 && (!activeCompareTabId || !compareTabs.some((t) => t.id === activeCompareTabId))) {
       setActiveCompareTabId(compareTabs[0].id)
     }
   }, [compareTabs, activeCompareTabId])
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const selections = await listDataSheetSelections(token)
+        if (cancelled || selections.length === 0) return
+        const batches = await Promise.all(
+          selections.map((s) =>
+            listPortfolioItems(token, { selectionId: s.id }).catch(() => [] as PortfolioItem[])
+          )
+        )
+        if (cancelled) return
+        const nums = new Set<string>()
+        for (const batch of batches) {
+          for (const item of batch) {
+            if (item.part_number) nums.add(item.part_number.trim().toLowerCase())
+          }
+        }
+        setPortfolioPartNumbers(nums)
+      } catch {
+        // non-critical
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        workspaceStorageKey(COMPARE_PAGE_STATE_KEY),
+        JSON.stringify({
+          compareTabs: serializeCompareTabsForPersistence(compareTabs),
+          activeCompareTabId,
+          compareMode,
+        })
+      )
+    } catch {
+      // ignore
+    }
+    if (!hasHydratedCompareStateRef.current) return
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = setTimeout(() => {
+      const token = getToken()
+      if (!token) return
+      void upsertCompareState(
+        {
+          compare_tabs: serializeCompareTabsForPersistence(compareTabs),
+          active_compare_tab_id: activeCompareTabId,
+          compare_mode: compareMode,
+          scraped_vendor_filter: scrapedVendorFilter,
+          scraped_view_mode: scrapedViewMode,
+          scraped_selected_fields: scrapedSelectedFields,
+          scraped_value_search: scrapedValueSearch,
+          scraped_non_empty_only: scrapedNonEmptyOnly,
+          scraped_data_by_part: scrapedDataByPart as Record<string, Array<{ url: string; data: Record<string, unknown> }>>,
+          scraped_data: (scrapedData ?? []) as Array<{ url: string; data: Record<string, unknown> }>,
+        },
+        token
+      ).catch(() => {})
+    }, 600)
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
+    }
+  }, [
+    compareTabs,
+    activeCompareTabId,
+    compareMode,
+    scrapedVendorFilter,
+    scrapedViewMode,
+    scrapedSelectedFields,
+    scrapedValueSearch,
+    scrapedNonEmptyOnly,
+    scrapedDataByPart,
+    scrapedData,
+  ])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(workspaceStorageKey(COMPARE_VENDOR_COVERAGE_VIEW_KEY), vendorCoverageView)
+    } catch {
+      // ignore
+    }
+  }, [vendorCoverageView])
 
   // When navigating from Research with items, scroll to comparison section
   useEffect(() => {
@@ -220,7 +750,7 @@ export function ComparePage() {
         if (item.is_folder) {
           const nextPrefix = pathPrefix ? `${pathPrefix} / ${item.name}` : item.name
           result.push(...(await collectFiles(item.id, nextPrefix)))
-        } else {
+        } else if (isSpreadsheetWorkspaceFile(item)) {
           result.push({ id: item.id, name: item.name, folderPath: pathPrefix || null })
         }
       }
@@ -263,6 +793,50 @@ export function ComparePage() {
     [selectedFilesData, updateActiveTabData]
   )
 
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    const missing = compareTabs.flatMap((t) =>
+      t.data.selectedFilesData
+        .filter((f) => !Array.isArray(f.content) || f.content.length === 0)
+        .map((f) => ({ tabId: t.id, file: f }))
+    )
+    if (missing.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const cache = new Map<number, string[][]>()
+      for (const { file } of missing) {
+        if (cache.has(file.fileId)) continue
+        try {
+          const text = await getWorkspaceFileContent(file.fileId, token)
+          const parsed = parseCsv(text)
+          cache.set(file.fileId, parsed.length > 0 ? parsed : [['']])
+        } catch {
+          cache.set(file.fileId, [['']])
+        }
+      }
+      if (cancelled) return
+      setCompareTabs((prev) =>
+        prev.map((tab) => ({
+          ...tab,
+          data: {
+            ...tab.data,
+            selectedFilesData: tab.data.selectedFilesData.map((f) =>
+              !Array.isArray(f.content) || f.content.length === 0
+                ? { ...f, content: cache.get(f.fileId) ?? [['']] }
+                : f
+            ),
+          },
+        }))
+      )
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [compareTabs])
+
   const handleRemoveFile = useCallback((fileId: number) => {
     updateActiveTabData((d) => {
       const next = { ...d }
@@ -279,7 +853,7 @@ export function ComparePage() {
   useEffect(() => {
     if (!selectedRowForScraped) {
       setScrapedData(null)
-      setScrapedVendorFilter(null)
+      setScrapedVendorFilter('all')
       return
     }
     const token = getToken()
@@ -287,79 +861,623 @@ export function ComparePage() {
       setScrapedData(null)
       return
     }
+    let cancelled = false
     setScrapedDataLoading(true)
     listResearchUrls(token, {
       fileId: selectedRowForScraped.fileId,
       tableRowIndex: selectedRowForScraped.rowIdx,
     })
       .then((res) => {
+        if (cancelled) return
         const data = res[0]?.scraped_data ?? null
         setScrapedData(data)
-        setScrapedVendorFilter(null)
       })
-      .catch(() => setScrapedData(null))
-      .finally(() => setScrapedDataLoading(false))
+      .catch(() => {
+        if (!cancelled) setScrapedData(null)
+      })
+      .finally(() => {
+        if (!cancelled) setScrapedDataLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [selectedRowForScraped])
 
-  // Step 3: When different parts same vendor, default scraped view to first vendor only
-  const isDifferentPartsSameVendor =
-    items.length > 1 && new Set(items.map((i) => i.sourceName ?? '')).size === 1
+  // For "different parts from same vendor", collect scraped sources for every selected part.
+  useEffect(() => {
+    if (compareMode !== 'different-same-vendor') {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    if (fileBackedItems.length === 0) {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    const token = getToken()
+    if (!token || items.length === 0) {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+    const partRefs = fileBackedItems
+      .map((item) => ({ itemId: item.id, parsed: parseFileItemId(item.id) }))
+      .filter((x): x is { itemId: string; parsed: { fileId: number; rowIdx: number } } => x.parsed != null)
+    if (partRefs.length === 0) {
+      setScrapedDataByPart({})
+      setCommonVendorsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setCommonVendorsLoading(true)
+    Promise.all(
+      partRefs.map(async ({ itemId, parsed }) => {
+        try {
+          const res = await listResearchUrls(token, {
+            fileId: parsed.fileId,
+            tableRowIndex: parsed.rowIdx,
+          })
+          return { itemId, scraped: res[0]?.scraped_data ?? [] }
+        } catch {
+          return { itemId, scraped: [] as ScrapedDataItem[] }
+        }
+      })
+    )
+      .then((all) => {
+        if (cancelled) return
+        const map: Record<string, ScrapedDataItem[]> = {}
+        for (const x of all) map[x.itemId] = x.scraped
+        setScrapedDataByPart(map)
+      })
+      .finally(() => {
+        if (!cancelled) setCommonVendorsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [compareMode, fileBackedItems])
+
+  /**
+   * Vendor-driven part filtering for "different-same-vendor".
+   * When a specific vendor is selected, only parts that contain that vendor stay in the Part dropdown and
+   * downstream shared-vendor computations.
+   */
+  const effectiveVendorFilteredParts = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return fileBackedItems
+    if (scrapedVendorFilter === 'all') return fileBackedItems
+
+    // Avoid aggressive filtering while scraped-by-part data is still loading.
+    const hasScrapedByPart = Object.keys(scrapedDataByPart).length > 0
+    if (!hasScrapedByPart) return fileBackedItems
+
+    const wantedDomain = scrapedVendorFilter
+    const filtered = fileBackedItems.filter((part) =>
+      (scrapedDataByPart[part.id] ?? []).some((d) => extractDomain(d.url) === wantedDomain),
+    )
+    return filtered.length > 0 ? filtered : fileBackedItems
+  }, [compareMode, scrapedVendorFilter, fileBackedItems, scrapedDataByPart])
+  const selectedPartItemId = selectedRowForScraped
+    ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
+    : null
+  const structuredPartSelectValue =
+    compareMode === 'different-same-vendor'
+      ? structuredPartView === 'all'
+        ? 'all'
+        : structuredPartView
+      : (selectedPartItemId ?? '')
+  const showingAllStructuredParts =
+    compareMode === 'different-same-vendor' &&
+    structuredPartSelectValue === 'all' &&
+    effectiveVendorFilteredParts.length > 1
+  const currentComparedPartLabel = selectedRowForScraped?.partLabel
+    ? selectedRowForScraped.partLabel
+    : showingAllStructuredParts
+      ? `All selected parts (${effectiveVendorFilteredParts.length})`
+      : (effectiveVendorFilteredParts[0]?.title ?? 'Selected part')
+
+  const handleStructuredPartViewChange = useCallback((id: string) => {
+    if (compareMode === 'different-same-vendor' && id === 'all') {
+      setStructuredPartView('all')
+      return
+    }
+    const parsed = parseFileItemId(id)
+    const item = effectiveVendorFilteredParts.find((i) => i.id === id)
+    if (parsed && item) {
+      setStructuredPartView(id)
+      updateActiveTabData((d) => ({
+        ...d,
+        selectedRowForScraped: {
+          fileId: parsed.fileId,
+          tabId: null,
+          rowIdx: parsed.rowIdx,
+          partLabel: item.title || '—',
+        },
+      }))
+    }
+  }, [compareMode, effectiveVendorFilteredParts, updateActiveTabData])
 
   useEffect(() => {
-    if (
-      scrapedData &&
-      scrapedData.length > 0 &&
-      isDifferentPartsSameVendor &&
-      scrapedVendorFilter === null
-    ) {
-      const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))]
-      if (domains.length > 0) {
-        setScrapedVendorFilter(domains[0]!)
+    if (compareMode !== 'different-same-vendor') {
+      setStructuredPartView(selectedPartItemId ?? 'all')
+      return
+    }
+    if (effectiveVendorFilteredParts.length <= 1) {
+      setStructuredPartView(selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? 'all')
+      return
+    }
+    if (structuredPartView === 'all') return
+    const exists = effectiveVendorFilteredParts.some((item) => item.id === structuredPartView)
+    if (!exists) setStructuredPartView(selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? 'all')
+  }, [compareMode, effectiveVendorFilteredParts, selectedPartItemId, structuredPartView])
+
+  /** Domains that count as "common": on ≥2 parts when comparing multiple parts; all domains when only one part. */
+  const commonVendorDomains = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return []
+    const partIds = effectiveVendorFilteredParts
+      .map((item) => (parseFileItemId(item.id) ? item.id : null))
+      .filter((id): id is string => id != null)
+    if (partIds.length === 0) return []
+
+    const domainSets = partIds.map((id) =>
+      new Set((scrapedDataByPart[id] ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
+    )
+
+    if (partIds.length === 1) {
+      return Array.from(domainSets[0] ?? []).sort()
+    }
+
+    const domainPartCount = new Map<string, number>()
+    for (const s of domainSets) {
+      for (const d of s) {
+        domainPartCount.set(d, (domainPartCount.get(d) ?? 0) + 1)
       }
     }
-  }, [scrapedData, isDifferentPartsSameVendor, scrapedVendorFilter])
+    return [...domainPartCount.entries()]
+      .filter(([, count]) => count >= 2)
+      .map(([d]) => d)
+      .sort()
+  }, [compareMode, effectiveVendorFilteredParts, scrapedDataByPart])
+  const comparedPartLabels = useMemo(() => {
+    if (compareMode !== 'different-same-vendor') return []
+    return Array.from(
+      new Set(
+        effectiveVendorFilteredParts.map((i) => {
+          const label = (i.title ?? '').trim()
+          return label || '—'
+        })
+      )
+    )
+  }, [compareMode, effectiveVendorFilteredParts])
+
+  const comparePartChips = useMemo<ComparePartChip[]>(() => {
+    const fileData = selectedFilesData.find((f) => f.fileId === (activeFileId ?? selectedFilesData[0]?.fileId))
+    if (fileData && fileData.content.length > 1) {
+      const selectedIds = new Set(fileBackedItems.map((i) => i.id))
+      const chips: ComparePartChip[] = []
+      for (let rowIdx = 0; rowIdx < fileData.content.length - 1; rowIdx++) {
+        const row = fileData.content[rowIdx + 1]
+        if (!row) continue
+        const label = primaryTextFromDataRow(row)
+        if (!label) continue
+        const id = `file-${fileData.fileId}-${rowIdx}`
+        chips.push({
+          id,
+          label,
+          vendorCount: (scrapedDataByPart[id] ?? []).length,
+          selected: selectedIds.has(id),
+          inPortfolio: portfolioPartNumbers.has(label.trim().toLowerCase()),
+        })
+      }
+      return chips
+    }
+    return effectiveVendorFilteredParts.map((item) => {
+      const label = (item.title ?? item.id).trim() || item.id
+      return {
+        id: item.id,
+        label,
+        vendorCount: (scrapedDataByPart[item.id] ?? []).length,
+        selected: fileBackedItems.some((i) => i.id === item.id),
+      }
+    })
+  }, [
+    selectedFilesData,
+    activeFileId,
+    fileBackedItems,
+    scrapedDataByPart,
+    effectiveVendorFilteredParts,
+    portfolioPartNumbers,
+  ])
+
+  /** Bar + table summary + mind map: vendors per part, overlap, prices from scraped numeric/price fields */
+  const vendorOverviewPayload = useMemo(() => {
+    if (!selectedRowForScraped) return null
+    const MAX_MAP_VENDORS = 32
+    const fmtUsd = (n: number) =>
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+
+    function vendorsForMindMap(
+      partKey: string,
+      list: ScrapedDataItem[],
+      commonDomainSet: Set<string> | null
+    ) {
+      const byDomain = new Map<string, number | null>()
+      for (const d of list) {
+        const dom = extractDomain(d.url)
+        if (!dom) continue
+        const nums = collectPricesFromScrapedData(d.data as Record<string, unknown>)
+        const p = nums.length ? Math.min(...nums) : null
+        const prev = byDomain.get(dom)
+        if (prev === undefined) byDomain.set(dom, p)
+        else {
+          const next = p != null && (prev == null || p < prev) ? p : prev
+          byDomain.set(dom, next)
+        }
+      }
+      const sorted = Array.from(byDomain.entries()).sort(([a], [b]) => a.localeCompare(b))
+      const slice = sorted.slice(0, MAX_MAP_VENDORS)
+      const vendors = slice.map(([domain, price]) => ({
+        key: `${partKey}:${domain}`,
+        domain,
+        priceLabel: price != null ? fmtUsd(price) : null,
+        isCommon: commonDomainSet ? commonDomainSet.has(domain) : false,
+      }))
+      if (sorted.length > MAX_MAP_VENDORS) {
+        vendors.push({
+          key: `${partKey}:+more`,
+          domain: `+${sorted.length - MAX_MAP_VENDORS} more vendors`,
+          priceLabel: null,
+          isCommon: false,
+        })
+      }
+      return vendors
+    }
+
+    if (compareMode === 'different-same-vendor') {
+      if (effectiveVendorFilteredParts.length === 0 || commonVendorsLoading) return null
+      const partRows = effectiveVendorFilteredParts.map((item) => {
+        const list = scrapedDataByPart[item.id] ?? []
+        const domains = new Set(list.map((d) => extractDomain(d.url)).filter(Boolean))
+        const prices: number[] = []
+        for (const d of list) {
+          prices.push(...collectPricesFromScrapedData(d.data as Record<string, unknown>))
+        }
+        const minP = prices.length ? Math.min(...prices) : null
+        const maxP = prices.length ? Math.max(...prices) : null
+        const avgP = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null
+        return {
+          id: item.id,
+          label: (item.title || '—').trim() || '—',
+          vendorCount: domains.size,
+          sourceCount: list.length,
+          minPrice: minP,
+          maxPrice: maxP,
+          avgPrice: avgP,
+        }
+      })
+      const maxVendorCount = Math.max(1, ...partRows.map((r) => r.vendorCount))
+      const commonVendorRows =
+        effectiveVendorFilteredParts.length > 1 && commonVendorDomains.length > 0
+          ? commonVendorDomains.map((domain) => {
+              const priceByPartId: Record<string, string> = {}
+              const urlByPartId: Record<string, string | null> = {}
+              for (const item of effectiveVendorFilteredParts) {
+                const list = scrapedDataByPart[item.id] ?? []
+                const match = list.find((d) => extractDomain(d.url) === domain)
+                const nums = match ? collectPricesFromScrapedData(match.data as Record<string, unknown>) : []
+                const p = nums.length ? Math.min(...nums) : null
+                priceByPartId[item.id] =
+                  p != null
+                    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(p)
+                    : '—'
+                urlByPartId[item.id] = match?.url ? String(match.url) : null
+              }
+              return { domain, priceByPartId, urlByPartId }
+            })
+          : null
+      const commonDomainSetForMap = effectiveVendorFilteredParts.length > 1 ? new Set(commonVendorDomains) : null
+      const mindMap = {
+        rootLabel:
+          effectiveVendorFilteredParts.length > 1
+            ? 'Compare parts'
+            : ((effectiveVendorFilteredParts[0]?.title || '—').trim() || 'Compare'),
+        parts: effectiveVendorFilteredParts.map((item, idx) => ({
+          id: item.id,
+          label: (item.title || '—').trim() || '—',
+          colorIndex: idx,
+          vendors: vendorsForMindMap(item.id, scrapedDataByPart[item.id] ?? [], commonDomainSetForMap),
+        })),
+      }
+      return {
+        partRows,
+        maxVendorCount,
+        commonVendorCount:
+          effectiveVendorFilteredParts.length > 1 ? commonVendorDomains.length : null,
+        commonVendorRows,
+        mindMap,
+      }
+    }
+    if (compareMode === 'same-part') {
+      if (scrapedDataLoading || !scrapedData?.length) return null
+      const list = scrapedData
+      const domains = new Set(list.map((d) => extractDomain(d.url)).filter(Boolean))
+      const prices: number[] = []
+      for (const d of list) {
+        prices.push(...collectPricesFromScrapedData(d.data as Record<string, unknown>))
+      }
+      const minP = prices.length ? Math.min(...prices) : null
+      const maxP = prices.length ? Math.max(...prices) : null
+      const avgP = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null
+      const partLabel = (selectedRowForScraped.partLabel || 'Selected part').trim() || 'Selected part'
+      const mindMap = {
+        rootLabel: partLabel,
+        parts: [
+          {
+            id: 'vendor-offers',
+            label: 'Vendor offers',
+            colorIndex: 0,
+            vendors: vendorsForMindMap('vendor-offers', list, null),
+          },
+        ],
+      }
+      return {
+        partRows: [
+          {
+            id: 'same-part',
+            label: partLabel,
+            vendorCount: domains.size,
+            sourceCount: list.length,
+            minPrice: minP,
+            maxPrice: maxP,
+            avgPrice: avgP,
+          },
+        ],
+        maxVendorCount: Math.max(1, domains.size),
+        commonVendorCount: null,
+        commonVendorRows: null,
+        mindMap,
+      }
+    }
+    return null
+  }, [
+    selectedRowForScraped,
+    compareMode,
+    effectiveVendorFilteredParts,
+    scrapedDataByPart,
+    commonVendorDomains,
+    commonVendorsLoading,
+    scrapedData,
+    scrapedDataLoading,
+  ])
+
+  // If the chosen vendor no longer exists in the current scraped dataset, fall back to all.
+  useEffect(() => {
+    if (scrapedVendorFilter === 'all') return
+    if (compareMode === 'different-same-vendor' && commonVendorsLoading) return
+    const domains =
+      compareMode === 'different-same-vendor'
+        ? new Set(commonVendorDomains)
+        : new Set((scrapedData ?? []).map((d) => extractDomain(d.url)).filter(Boolean))
+    if (!domains.has(scrapedVendorFilter)) setScrapedVendorFilter('all')
+  }, [compareMode, scrapedData, commonVendorDomains, scrapedVendorFilter])
+
+  // In "different-same-vendor", keep the selected part aligned with the currently selected vendor.
+  useEffect(() => {
+    if (compareMode !== 'different-same-vendor') return
+    if (scrapedVendorFilter === 'all') return
+    if (!selectedRowForScraped) return
+    if (effectiveVendorFilteredParts.length === 0) return
+
+    const currentId = `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
+    const currentInEffective = effectiveVendorFilteredParts.some((p) => p.id === currentId)
+    if (currentInEffective) return
+
+    const nextPart = effectiveVendorFilteredParts[0]
+    const parsed = nextPart ? parseFileItemId(nextPart.id) : null
+    if (!parsed) return
+
+    updateActiveTabData((d) => ({
+      ...d,
+          selectedRowForScraped: {
+            fileId: parsed.fileId,
+            tabId: null,
+            rowIdx: parsed.rowIdx,
+            partLabel: nextPart.title || '—',
+          },
+    }))
+  }, [
+    compareMode,
+    scrapedVendorFilter,
+    selectedRowForScraped,
+    effectiveVendorFilteredParts,
+    updateActiveTabData,
+  ])
 
   /** Rows shown in the scraped comparison table (same filter as before, lifted for column reorder state). */
-  const scrapedTableRows = useMemo(() => {
+  const scrapedTableRows = useMemo<StructuredScrapedRow[]>(() => {
+    const effectiveFilter = scrapedVendorFilter === 'all' ? null : scrapedVendorFilter
+
+    if (compareMode === 'different-same-vendor') {
+      // Decision workspace / multi-part tabs: show ALL vendors for the active part.
+      // Fall back to structured part view (including "all") when no active part is set.
+      const activeId = selectedPartItemId
+      const sourceParts = activeId
+        ? effectiveVendorFilteredParts.filter((item) => item.id === activeId)
+        : showingAllStructuredParts
+          ? effectiveVendorFilteredParts
+          : effectiveVendorFilteredParts.filter((item) => item.id === structuredPartSelectValue)
+
+      let baseRows = sourceParts.flatMap((part) =>
+        (scrapedDataByPart[part.id] ?? []).map((item, idx) => ({
+          ...item,
+          sourceKey: `${part.id}::${item.url}::${idx}`,
+          partId: part.id,
+          partLabel: (part.title || '—').trim() || '—',
+        }))
+      )
+
+      // While per-part scrape map is still loading, fall back to the single-part scrape cache.
+      if (
+        baseRows.length === 0 &&
+        activeId &&
+        scrapedData?.length &&
+        selectedPartItemId === activeId
+      ) {
+        const partLabel = (selectedRowForScraped?.partLabel || 'Selected part').trim() || 'Selected part'
+        baseRows = scrapedData.map((item, idx) => ({
+          ...item,
+          sourceKey: `single::${item.url}::${idx}`,
+          partId: activeId,
+          partLabel,
+        }))
+      }
+
+      return effectiveFilter
+        ? baseRows.filter((row) => extractDomain(row.url) === effectiveFilter)
+        : baseRows
+    }
+
     if (!scrapedData?.length) return []
-    const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
-    const effectiveFilter =
-      scrapedVendorFilter === 'all'
-        ? null
-        : scrapedVendorFilter || (isDifferentPartsSameVendor && domains[0] ? domains[0] : null)
+    const partLabel = (selectedRowForScraped?.partLabel || 'Selected part').trim() || 'Selected part'
+    const baseRows = scrapedData.map((item, idx) => ({
+      ...item,
+      sourceKey: `single::${item.url}::${idx}`,
+      partId: selectedPartItemId ?? 'selected-part',
+      partLabel,
+    }))
     return effectiveFilter
-      ? scrapedData.filter((d) => extractDomain(d.url) === effectiveFilter)
-      : scrapedData
-  }, [scrapedData, scrapedVendorFilter, isDifferentPartsSameVendor])
+      ? baseRows.filter((row) => extractDomain(row.url) === effectiveFilter)
+      : baseRows
+  }, [
+    scrapedVendorFilter,
+    compareMode,
+    showingAllStructuredParts,
+    effectiveVendorFilteredParts,
+    structuredPartSelectValue,
+    scrapedDataByPart,
+    scrapedData,
+    selectedRowForScraped,
+    selectedPartItemId,
+  ])
 
   const scrapedTableSignature = useMemo(
-    () => scrapedTableRows.map((d) => d.url).join('\n'),
+    () => scrapedTableRows.map((d) => d.sourceKey).join('\n'),
     [scrapedTableRows]
   )
 
+  const decisionRows = useMemo<CompareDecisionRow[]>(() => {
+    return scrapedTableRows.map((item, idx) => {
+      const data = (item.data ?? {}) as Record<string, unknown>
+      const vendor = getVendorNameFromSourceData(data, item.url)
+      const priceRaw = pickFirstFieldValue(data, [/^price$/i, /price/i, /cost/i, /amount/i, /msrp/i])
+      const shippingRaw = pickFirstFieldValue(data, [/shipping/i, /delivery.?cost/i, /freight/i])
+      const availabilityRaw = pickFirstFieldValue(data, [/availability/i, /stock/i, /status/i]) ?? 'Unknown'
+      const ratingRaw = pickFirstFieldValue(data, [/rating/i, /score/i, /stars?/i])
+      const delivery = pickFirstFieldValue(data, [/delivery/i, /eta/i, /lead.?time/i]) ?? '—'
+      const location = pickFirstFieldValue(data, [/location/i, /country/i, /city/i, /region/i]) ?? '—'
+      const contact = pickFirstFieldValue(data, [/contact/i, /phone/i, /email/i, /support/i]) ?? '—'
+      const priceNumber = parseMoneyValue(priceRaw)
+      const shippingNumber = parseMoneyValue(shippingRaw)
+      const ratingNumber = ratingRaw ? Number(ratingRaw.replace(/[^\d.]/g, '')) : null
+      const imageUrl = extractImageFromScrapedData(data)
+      return {
+        id: `${item.url}-${idx}`,
+        url: item.url,
+        vendor,
+        price: priceNumber,
+        priceLabel: priceRaw ?? '—',
+        shipping: shippingNumber,
+        shippingLabel: shippingRaw ?? '—',
+        availability: availabilityRaw,
+        rating: Number.isFinite(ratingNumber ?? NaN) ? ratingNumber : null,
+        ratingLabel: ratingRaw ?? '—',
+        delivery,
+        location,
+        contact,
+        imageUrl,
+        rawData: data,
+      }
+    })
+  }, [scrapedTableRows])
+
+  const [decisionVendorFilter, setDecisionVendorFilter] = useState('all')
+  const [decisionOnlyAvailable, setDecisionOnlyAvailable] = useState(false)
+  const [decisionPriceRange, setDecisionPriceRange] = useState<[number, number]>([0, 0])
+  const [decisionSelectedIds, setDecisionSelectedIds] = useState<Set<string>>(new Set())
+  const [decisionView, setDecisionView] = useState<'table' | 'insights' | 'mindmap'>('table')
+
+  const decisionVendors = useMemo(
+    () => Array.from(new Set(decisionRows.map((r) => r.vendor).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [decisionRows]
+  )
+  const decisionPriceBounds = useMemo<[number, number]>(() => {
+    const nums = decisionRows.map((r) => r.price).filter((n): n is number => n != null)
+    if (nums.length === 0) return [0, 0]
+    return [Math.min(...nums), Math.max(...nums)]
+  }, [decisionRows])
+  useEffect(() => {
+    setDecisionPriceRange(decisionPriceBounds)
+  }, [decisionPriceBounds])
+
+  const decisionFilteredRows = useMemo(() => {
+    const [minPrice, maxPrice] = decisionPriceRange
+    return decisionRows.filter((row) => {
+      if (decisionVendorFilter !== 'all' && row.vendor !== decisionVendorFilter) return false
+      if (decisionOnlyAvailable && !/in stock|available|low stock/i.test(row.availability)) return false
+      if (row.price != null && (row.price < minPrice || row.price > maxPrice)) return false
+      return true
+    })
+  }, [decisionRows, decisionVendorFilter, decisionOnlyAvailable, decisionPriceRange])
+  const scrapedFieldKeys = useMemo(() => {
+    const allKeys = new Set<string>()
+    for (const item of scrapedTableRows) {
+      if (item.data && typeof item.data === 'object') {
+        flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
+      }
+    }
+    return Array.from(allKeys).sort()
+  }, [scrapedTableRows])
+  const scrapedFieldSignature = useMemo(() => scrapedFieldKeys.join('\n'), [scrapedFieldKeys])
+
   const [scrapedColumnOrder, setScrapedColumnOrder] = useState<number[]>([])
+  const [scrapedFieldOrder, setScrapedFieldOrder] = useState<number[]>([])
+  const [scrapedRowFieldColWidth, setScrapedRowFieldColWidth] = useState(188)
+  const [scrapedColumnViewSourceColWidth, setScrapedColumnViewSourceColWidth] = useState(220)
+  const [scrapedSourceColWidths, setScrapedSourceColWidths] = useState<Record<string, number>>({})
+  const [scrapedFieldColWidths, setScrapedFieldColWidths] = useState<Record<string, number>>({})
+  const [selectedBucketSourceUrls, setSelectedBucketSourceUrls] = useState<Set<string>>(new Set())
+  const [bucketSourceUrlsInSession, setBucketSourceUrlsInSession] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     setScrapedColumnOrder(scrapedTableRows.map((_, i) => i))
   }, [scrapedTableSignature])
+  useEffect(() => {
+    setScrapedFieldOrder(scrapedFieldKeys.map((_, i) => i))
+  }, [scrapedFieldSignature])
+  useEffect(() => {
+    // Keep all discovered fields visible in the decision table.
+    setScrapedSelectedFields(scrapedFieldKeys)
+  }, [scrapedFieldKeys])
 
-  const handleScrapedHeaderDragStart = useCallback(
+  const handleScrapedSourceDragStart = useCallback(
     (e: DragEvent<HTMLTableCellElement>, displayIndex: number) => {
       e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData('text/plain', String(displayIndex))
+      e.dataTransfer.setData('text/scraped-source-index', String(displayIndex))
     },
     []
   )
 
-  const handleScrapedHeaderDragOver = useCallback((e: DragEvent<HTMLTableCellElement>) => {
+  const handleScrapedDragOver = useCallback((e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }, [])
 
-  const handleScrapedHeaderDrop = useCallback(
-    (e: DragEvent<HTMLTableCellElement>, toDisplayIndex: number) => {
+  const handleScrapedSourceDrop = useCallback(
+    (e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>, toDisplayIndex: number) => {
       e.preventDefault()
-      const from = Number(e.dataTransfer.getData('text/plain'))
+      const from = Number(e.dataTransfer.getData('text/scraped-source-index'))
       if (Number.isNaN(from) || from === toDisplayIndex) return
       setScrapedColumnOrder((prev) => {
         if (prev.length !== scrapedTableRows.length) return prev
@@ -372,23 +1490,90 @@ export function ComparePage() {
     [scrapedTableRows.length]
   )
 
-  // When "Same part across vendors" with items but no part selected, default to first part
+  const handleScrapedFieldDragStart = useCallback(
+    (e: DragEvent<HTMLTableCellElement>, displayIndex: number) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/scraped-field-index', String(displayIndex))
+    },
+    []
+  )
+
+  const handleScrapedFieldDrop = useCallback(
+    (e: DragEvent<HTMLTableCellElement | HTMLTableRowElement>, toDisplayIndex: number) => {
+      e.preventDefault()
+      const from = Number(e.dataTransfer.getData('text/scraped-field-index'))
+      if (Number.isNaN(from) || from === toDisplayIndex) return
+      setScrapedFieldOrder((prev) => {
+        if (prev.length !== scrapedFieldKeys.length) return prev
+        const next = [...prev]
+        const [removed] = next.splice(from, 1)
+        next.splice(toDisplayIndex, 0, removed)
+        return next
+      })
+    },
+    [scrapedFieldKeys.length]
+  )
+
+  const toggleBucketSourceSelection = useCallback((url: string, checked: boolean) => {
+    setSelectedBucketSourceUrls((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(url)
+      else next.delete(url)
+      return next
+    })
+  }, [])
+
+  const startColumnResize = useCallback(
+    (
+      e: ReactMouseEvent<HTMLSpanElement>,
+      kind: 'row-field' | 'row-source' | 'column-source' | 'column-field',
+      key: string,
+      startWidth: number
+    ) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const startX = e.clientX
+      const MIN_W = 120
+      const onMove = (ev: globalThis.MouseEvent) => {
+        const next = Math.max(MIN_W, startWidth + (ev.clientX - startX))
+        if (kind === 'row-field') setScrapedRowFieldColWidth(next)
+        else if (kind === 'row-source')
+          setScrapedSourceColWidths((prev) => ({ ...prev, [key]: next }))
+        else if (kind === 'column-source') setScrapedColumnViewSourceColWidth(next)
+        else setScrapedFieldColWidths((prev) => ({ ...prev, [key]: next }))
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    []
+  )
+
+  // When scraped compare modes have items but no part selected, default to first part.
   useEffect(() => {
-    if (compareMode === 'same-part' && items.length > 0 && !selectedRowForScraped) {
-      const first = items[0]
+    if (
+      (compareMode === 'same-part' || compareMode === 'different-same-vendor') &&
+      effectiveVendorFilteredParts.length > 0 &&
+      !selectedRowForScraped
+    ) {
+      const first = effectiveVendorFilteredParts[0]
       const parsed = first ? parseFileItemId(first.id) : null
       if (parsed && first) {
         updateActiveTabData((d) => ({
           ...d,
           selectedRowForScraped: {
             fileId: parsed.fileId,
+            tabId: null,
             rowIdx: parsed.rowIdx,
             partLabel: first.title || '—',
           },
         }))
       }
     }
-  }, [compareMode, items, selectedRowForScraped, updateActiveTabData])
+  }, [compareMode, effectiveVendorFilteredParts, selectedRowForScraped, updateActiveTabData])
 
   const buildItemsFromFileRows = useCallback(
     (fileData: LoadedFile, rowIndices: number[]): ComparisonItem[] => {
@@ -397,7 +1582,7 @@ export function ComparePage() {
         .map((rowIdx) => {
           const row = fileData.content[rowIdx + 1]
           if (!row) return null
-          const title = String(row[0] ?? '')
+          const title = primaryTextFromDataRow(row) ?? ''
           const specs = headers.map((label, i) => ({
             label: (label || `Column ${i + 1}`).trim(),
             value: String(row[i] ?? '—'),
@@ -416,66 +1601,43 @@ export function ComparePage() {
     []
   )
 
-  const handleAddSelectedFileRows = useCallback(
-    (fileId: number) => {
-      const fileData = selectedFilesData.find((f: LoadedFile) => f.fileId === fileId)
-      const rows = selectedFileRows[fileId] ?? []
-      if (!fileData || rows.length === 0) return
-      const newItems = buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b))
-      if (newItems.length > 0) {
-        addItems(newItems)
-        comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    },
-    [selectedFilesData, selectedFileRows, buildItemsFromFileRows, addItems]
-  )
+  useEffect(() => {
+    if (!activeTab) return
+    const external = externalItemsByTab[activeTab.id] ?? []
+    if (activeTab.data.selectedFilesData.length === 0) {
+      // Only push external items when present. Never openWithItems([]) here —
+      // that wiped Research/Portfolio handoffs that lived only in ComparisonContext.
+      if (external.length > 0) openWithItems(external)
+      return
+    }
+    const restored: ComparisonItem[] = []
+    const rowsByFile = activeTab.data.selectedFileRows
+    for (const fileData of activeTab.data.selectedFilesData) {
+      const rows = rowsByFile[fileData.fileId] ?? []
+      if (rows.length === 0) continue
+      restored.push(...buildItemsFromFileRows(fileData, [...rows].sort((a, b) => a - b)))
+    }
+    if (restored.length === 0) {
+      if (external.length > 0) openWithItems(external)
+      else openWithItems([])
+      return
+    }
+    const merged = [...external, ...restored]
+    const deduped = merged.filter((item, idx) => merged.findIndex((x) => x.id === item.id) === idx)
+    openWithItems(deduped)
+  }, [
+    activeTab?.id,
+    activeTab?.data.selectedFilesData,
+    activeTab?.data.selectedFileRows,
+    buildItemsFromFileRows,
+    openWithItems,
+    externalItemsByTab,
+  ])
 
   const totalSelectedAcrossFiles = selectedFilesData.reduce(
     (sum: number, f: LoadedFile) => sum + (selectedFileRows[f.fileId]?.length ?? 0),
     0
   )
-  const filesWithSelection = selectedFilesData.filter(
-    (f: LoadedFile) => (selectedFileRows[f.fileId]?.length ?? 0) > 0
-  ).length
-
-  const handleAddAllSelectedFromAllFiles = useCallback(() => {
-    const allItems: ComparisonItem[] = []
-    for (const fileData of selectedFilesData) {
-      const rows = selectedFileRows[fileData.fileId] ?? []
-      if (rows.length === 0) continue
-      const items = buildItemsFromFileRows(
-        fileData,
-        [...rows].sort((a, b) => a - b)
-      )
-      allItems.push(...items)
-    }
-    if (allItems.length > 0) {
-      addItems(allItems)
-      comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [selectedFilesData, selectedFileRows, buildItemsFromFileRows, addItems])
-
-  const handleAddSingleRow = useCallback(
-    (fileId: number, rowIdx: number) => {
-      const fileData = selectedFilesData.find((f: LoadedFile) => f.fileId === fileId)
-      if (!fileData) return
-      const newItems = buildItemsFromFileRows(fileData, [rowIdx])
-      if (newItems.length > 0) {
-        addItems(newItems)
-        updateActiveTabData((d) => {
-          const arr = d.selectedFileRows[fileId] ?? []
-          if (arr.includes(rowIdx)) return d
-          return {
-            ...d,
-            selectedFileRows: { ...d.selectedFileRows, [fileId]: [...arr, rowIdx] },
-          }
-        })
-        comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    },
-    [selectedFilesData, buildItemsFromFileRows, addItems, updateActiveTabData]
-  )
-
   const toggleFileRow = useCallback((fileId: number, rowIdx: number, checked: boolean) => {
     updateActiveTabData((d) => {
       const arr = d.selectedFileRows[fileId] ?? []
@@ -485,28 +1647,71 @@ export function ComparePage() {
       return {
         ...d,
         selectedFileRows: { ...d.selectedFileRows, [fileId]: nextArr },
+        selectedRowForScraped:
+          !checked &&
+          d.selectedRowForScraped?.fileId === fileId &&
+          d.selectedRowForScraped?.rowIdx === rowIdx
+            ? null
+            : d.selectedRowForScraped,
       }
     })
   }, [updateActiveTabData])
 
-  const handleRemoveComparisonItem = useCallback(
-    (itemId: string) => {
-      removeItem(itemId)
-      const match = itemId.match(/^file-(\d+)-(\d+)$/)
-      if (match) {
-        const fileId = Number(match[1])
-        const rowIdx = Number(match[2])
-        updateActiveTabData((d) => {
-          const arr = (d.selectedFileRows[fileId] ?? []).filter((i) => i !== rowIdx)
-          return {
-            ...d,
-            selectedFileRows: { ...d.selectedFileRows, [fileId]: arr },
-          }
-        })
+  const handlePartChipToggle = useCallback(
+    (id: string) => {
+      const parsed = parseFileItemId(id)
+      if (!parsed) {
+        handleStructuredPartViewChange(id)
+        return
+      }
+      const isSelected = fileBackedItems.some((i) => i.id === id)
+      if (isSelected) {
+        // Already in the multi-part list: activate to show its vendors.
+        // Click the active chip again to remove it from the selection.
+        if (selectedPartItemId !== id || structuredPartView !== id) {
+          handleStructuredPartViewChange(id)
+          return
+        }
+        toggleFileRow(parsed.fileId, parsed.rowIdx, false)
+        const next = fileBackedItems.find((i) => i.id !== id)
+        if (next) handleStructuredPartViewChange(next.id)
+        else {
+          updateActiveTabData((d) => ({ ...d, selectedRowForScraped: null }))
+        }
+      } else {
+        toggleFileRow(parsed.fileId, parsed.rowIdx, true)
+        handleStructuredPartViewChange(id)
       }
     },
-    [removeItem, updateActiveTabData]
+    [
+      fileBackedItems,
+      toggleFileRow,
+      selectedPartItemId,
+      structuredPartView,
+      handleStructuredPartViewChange,
+      updateActiveTabData,
+    ]
   )
+
+  const handleClearPartSelection = useCallback(() => {
+    const tabId = activeTab?.id
+    if (tabId) {
+      setExternalItemsByTab((prev) => {
+        if ((prev[tabId] ?? []).length === 0) return prev
+        return { ...prev, [tabId]: [] }
+      })
+    }
+    updateActiveTabData((d) => ({
+      ...d,
+      selectedFileRows: {},
+      selectedRowForScraped: null,
+    }))
+    openWithItems([])
+    setStructuredPartView('all')
+    setDecisionSelectedIds(new Set())
+    setDecisionVendorFilter('all')
+    setScrapedVendorFilter('all')
+  }, [activeTab?.id, updateActiveTabData, openWithItems])
 
   /** Parse file-{fileId}-{rowIdx} to get fileId and rowIdx for scraped data lookup */
   function parseFileItemId(itemId: string): { fileId: number; rowIdx: number } | null {
@@ -515,432 +1720,158 @@ export function ComparePage() {
     return { fileId: Number(match[1]), rowIdx: Number(match[2]) }
   }
 
+  const toggleDecisionSelection = useCallback((id: string) => {
+    setDecisionSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const handleAddDecisionRowToBucket = useCallback((id: string) => {
+    const row = decisionRows.find((r) => r.id === id)
+    if (!row) return
+    const result = addBucketItem({
+      id: `compare-source-${encodeURIComponent(row.url)}`,
+      title: row.vendor || compactSourceUrlLabel(row.url),
+      manufacturer: row.vendor || 'Vendor',
+      price: row.priceLabel,
+      rowIndex: 0,
+      tabId: undefined,
+    })
+    if (result.added) showBucketToast('Source added to Bucket')
+    else showBucketToast('Source already exists in Bucket')
+  }, [decisionRows, addBucketItem, showBucketToast])
+
+  const handleAddSelectedDecisionRowsToBucket = useCallback(() => {
+    const targets = decisionFilteredRows.filter((r) => decisionSelectedIds.has(r.id))
+    if (targets.length === 0) {
+      showBucketToast('Select at least one vendor row')
+      return
+    }
+    let added = 0
+    for (const row of targets) {
+      const result = addBucketItem({
+        id: `compare-source-${encodeURIComponent(row.url)}`,
+        title: row.vendor || compactSourceUrlLabel(row.url),
+        manufacturer: row.vendor || 'Vendor',
+        price: row.priceLabel,
+        rowIndex: 0,
+        tabId: undefined,
+      })
+      if (result.added) added += 1
+    }
+    showBucketToast(added > 0 ? `Added ${added} source${added === 1 ? '' : 's'} to Bucket` : 'Selected sources are already in Bucket')
+  }, [decisionFilteredRows, decisionSelectedIds, addBucketItem, showBucketToast])
+
   return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-8">
-      <div className="text-center">
-        <p className="text-xl font-semibold uppercase tracking-wide text-gray-500">Compare</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">
-          Which product is right for you?
-        </h1>
-      
-      </div>
+    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-slate-50 text-slate-900`}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 sm:px-6">
 
-      {/* Tab bar - like Research page: tabs + New tab dropdown */}
-      <div className="mt-6 mb-3 flex flex-wrap items-center gap-1 border-b border-gray-200">
-        {compareTabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tab"
-            aria-selected={tab.id === activeCompareTabId}
-            className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-              tab.id === activeCompareTabId
-                ? 'border-gray-300 bg-white text-gray-900'
-                : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setActiveCompareTabId(tab.id)}
-              className="font-medium"
-            >
-              {tab.name}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => closeCompareTab(e, tab.id)}
-              className="rounded p-0.5 text-gray-400 hover:bg-gray-300 hover:text-gray-600"
-              aria-label="Close tab"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        ))}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setNewTabMenuOpen((o) => !o)}
-            className="rounded-t border border-transparent px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            title="New tab"
-          >
-            + New tab
-          </button>
-          {newTabMenuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-1 min-w-[200px] rounded-b border border-gray-200 bg-white py-1 shadow-lg">
-              <button
-                type="button"
-                onClick={addNewCompareTab}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">+</span>
-                New sheet
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTabMenuOpen(false)
-                  setFilePickerOpen(true)
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <span className="text-gray-400">↺</span>
-                Open file…
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Select file from workspace */}
-      <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Select file from workspace</h3>
-        <p className="mt-1 text-xs text-gray-600">
-          Choose files from the Home page. Select multiple rows from one file to compare different parts from the same vendor, or select rows from multiple files to compare across vendors.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setFilePickerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            Choose file…
-          </button>
-          {fileContentLoading.size > 0 && (
-            <span className="text-sm text-gray-500">Loading file…</span>
-          )}
-          {selectedFilesData.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              {(compareMode === 'different-same-vendor'
-                ? selectedFilesData.slice(0, 1)
-                : selectedFilesData
-              ).map((file: LoadedFile) => {
-                const isActive = file.fileId === (activeFileId ?? selectedFilesData[0]?.fileId)
-                return (
-                  <span
-                    key={file.fileId}
-                    onClick={() => updateActiveTabData((d) => ({ ...d, activeFileId: file.fileId }))}
-                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
-                      isActive
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className="font-medium">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleRemoveFile(file.fileId)
-                      }}
-                      className="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                      aria-label={`Remove ${file.name}`}
-                    >
-                      ×
-                    </button>
-                  </span>
+      <div ref={comparisonSectionRef}>
+            <CompareDecisionWorkspace
+              partLabel={currentComparedPartLabel}
+              partCategory={
+                compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1
+                  ? 'Multi-part'
+                  : undefined
+              }
+              rows={decisionRows}
+              filteredRows={decisionFilteredRows}
+              vendorFilter={decisionVendorFilter}
+              vendors={decisionVendors}
+              onVendorFilterChange={setDecisionVendorFilter}
+              onlyAvailable={decisionOnlyAvailable}
+              onOnlyAvailableChange={setDecisionOnlyAvailable}
+              minPrice={decisionPriceBounds[0]}
+              maxPrice={decisionPriceBounds[1]}
+              priceRange={decisionPriceRange}
+              onPriceRangeChange={setDecisionPriceRange}
+              selectedIds={decisionSelectedIds}
+              onToggleSelected={toggleDecisionSelection}
+              onAddSelectedToBucket={handleAddSelectedDecisionRowsToBucket}
+              onCompareSelected={() => {
+                const selectedCount = decisionFilteredRows.filter((r) => decisionSelectedIds.has(r.id)).length
+                showBucketToast(
+                  selectedCount > 0
+                    ? `${selectedCount} vendor row${selectedCount === 1 ? '' : 's'} selected for comparison`
+                    : 'Select vendor rows to compare'
                 )
-              })}
-            </div>
-          )}
-        </div>
-        {selectedFilesData.length > 0 && (() => {
-          const filesToUse = compareMode === 'different-same-vendor' ? selectedFilesData.slice(0, 1) : selectedFilesData
-          const fileData = filesToUse.find(
-            (f: LoadedFile) => f.fileId === (activeFileId ?? filesToUse[0]?.fileId)
-          )
-          if (!fileData) return null
-          return (
-          <div key={fileData.fileId} className="mt-4">
-            <p className="mb-1 text-xs font-medium text-gray-600">{fileData.name}</p>
-            {fileData.content.length > 1 ? (
-              <div className="max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white">
-                <p className="border-b border-gray-200 px-3 py-2 text-xs font-medium text-gray-600">
-                  Select rows to compare different parts from this vendor (header row excluded)
+              }}
+              onAddSingleToBucket={handleAddDecisionRowToBucket}
+              availableFields={scrapedFieldKeys}
+              selectedFields={scrapedSelectedFields}
+              onSelectedFieldsChange={setScrapedSelectedFields}
+              view={decisionView}
+              onViewChange={setDecisionView}
+              mindMapModel={vendorOverviewPayload?.mindMap ?? null}
+              onSelectVendorFromMindMap={(domain) => {
+                setDecisionVendorFilter(domain)
+                setScrapedVendorFilter(domain)
+              }}
+              commonVendorDomains={commonVendorDomains}
+              partChips={comparePartChips}
+              activePartId={selectedPartItemId ?? effectiveVendorFilteredParts[0]?.id ?? null}
+              onActivePartChange={handleStructuredPartViewChange}
+              onPartChipToggle={handlePartChipToggle}
+              onClearPartSelection={handleClearPartSelection}
+              selectedPartCount={totalSelectedAcrossFiles}
+              fileName={selectedFilesData[0]?.name}
+              onChangeFile={() => setFilePickerOpen(true)}
+              loadedFiles={selectedFilesData.map((f) => ({ fileId: f.fileId, name: f.name }))}
+              activeFileId={activeFileId}
+              onSelectFile={(fileId) => updateActiveTabData((d) => ({ ...d, activeFileId: fileId }))}
+              onRemoveFile={handleRemoveFile}
+            />
+
+        {items.length === 0 && selectedFilesData.length === 0 && (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-slate-800">No comparison loaded</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Use Change file to load a parts list, or send parts from Research.
+            </p>
+          </div>
+        )}
+
+        {/* Scraped vendor data (field matrix when no vendor rows yet) */}
+        {decisionRows.length === 0 && (compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
+          <div className={items.length > 0 ? 'mt-6' : 'mt-5'}>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+              <div>
+                <p className="mt-0.5 text-base font-semibold text-slate-900">
+                  {compareMode === 'different-same-vendor' ? 'Shared vendor fields' : 'Structured fields'}
+                  {compareMode !== 'different-same-vendor' && selectedRowForScraped ? (
+                    <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
+                  ) : null}
                 </p>
-                <div className="divide-y divide-gray-100">
-                  {fileData.content.slice(1).map((row: string[], idx: number) => {
-                    const rowIdx = idx
-                    const label = String(row[0] ?? row[1] ?? `Row ${rowIdx + 1}`)
-                    const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
-                    const isSelectedForScraped =
-                      selectedRowForScraped?.fileId === fileData.fileId &&
-                      selectedRowForScraped?.rowIdx === rowIdx
-                    return (
-                      <div
-                        key={rowIdx}
-                        className={`flex items-center gap-3 px-3 py-2 hover:bg-gray-50 ${
-                          isSelectedForScraped ? 'bg-emerald-50/70' : ''
-                        }`}
-                      >
-                        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => toggleFileRow(fileData.fileId, rowIdx, e.target.checked)}
-                            className="rounded border-gray-300"
-                          />
-                          <span className="truncate text-sm text-gray-900">{label}</span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            updateActiveTabData((d) => ({
-                              ...d,
-                              selectedRowForScraped: { fileId: fileData.fileId, rowIdx, partLabel: label },
-                            }))
-                            comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }}
-                          className={`shrink-0 rounded p-1 ${
-                            isSelectedForScraped
-                              ? 'bg-emerald-100 text-emerald-600'
-                              : 'text-gray-400 hover:bg-blue-100 hover:text-blue-600'
-                          }`}
-                          title="View  data"
-                          aria-label="View scraped data"
-                        >
-                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleAddSingleRow(fileData.fileId, rowIdx)
-                          }}
-                          className="shrink-0 rounded p-1 text-gray-400 hover:bg-emerald-100 hover:text-emerald-600"
-                          title="Add to comparison"
-                          aria-label="Add to comparison"
-                        >
-                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                          </svg>
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="border-t border-gray-200 px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleAddSelectedFileRows(fileData.fileId)}
-                    disabled={!(selectedFileRows[fileData.fileId]?.length ?? 0)}
-                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {(selectedFileRows[fileData.fileId]?.length ?? 0) > 0
-                      ? `Add ${selectedFileRows[fileData.fileId]?.length ?? 0} selected to comparison`
-                      : 'Select rows above to add'}
-                  </button>
-                </div>
+                {compareMode === 'different-same-vendor' && (
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Parts: {comparedPartLabels.join(', ')}
+                    {effectiveVendorFilteredParts.length > 1
+                      ? ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} appear on ≥2 parts (shared)`
+                      : ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} scraped`}
+                  </p>
+                )}
               </div>
-            ) : (
-              <p className="text-sm text-gray-500">No data rows in this file.</p>
-            )}
-          </div>
-          )
-        })()}
-      
-        {compareMode !== 'different-same-vendor' && selectedFilesData.length > 1 && totalSelectedAcrossFiles > 0 && (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <h4 className="text-sm font-semibold text-emerald-900">Different parts from different vendors</h4>
-            <p className="mt-1 text-xs text-emerald-700">
-              {totalSelectedAcrossFiles} row{totalSelectedAcrossFiles !== 1 ? 's' : ''} selected from {filesWithSelection} file{filesWithSelection !== 1 ? 's' : ''}. Add all to compare side-by-side.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleAddAllSelectedFromAllFiles}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                </svg>
-                Add all selected to comparison
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  closeAndClear()
-                  updateActiveTabData((d) => ({ ...d, selectedFileRows: {} }))
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Comparison section: same part across vendors OR different parts */}
-      <div ref={comparisonSectionRef} className="mt-8">
-        {items.length > 0 && (
-          <>
-            <h3 className="mb-1 text-lg font-semibold text-gray-900">Compare parts</h3>
-            <p className="mb-4 text-sm text-gray-600">
-              Same part across vendors • Different parts from same vendor • Different parts from different vendors
-            </p>
-            <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
-                      Spec
-                    </th>
-                    {items.map((item) => (
-                      <th key={item.id} className="min-w-[140px] border-l border-gray-200 px-4 py-3 text-left sm:min-w-[180px]">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-gray-900">{item.title || '—'}</p>
-                            {item.sourceName && (
-                              <p className="truncate text-xs font-normal text-gray-500">{item.sourceName}</p>
-                            )}
-                            {parseFileItemId(item.id) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const parsed = parseFileItemId(item.id)
-                                  if (parsed) {
-                                    updateActiveTabData((d) => ({
-                                      ...d,
-                                      selectedRowForScraped: {
-                                        fileId: parsed.fileId,
-                                        rowIdx: parsed.rowIdx,
-                                        partLabel: item.title || '—',
-                                      },
-                                    }))
-                                    comparisonSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                  }
-                                }}
-                                className="mt-1 text-xs text-blue-600 hover:underline"
-                              >
-                                View data
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveComparisonItem(item.id)}
-                            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                            aria-label={`Remove ${item.title}`}
-                          >
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(() => {
-                    const allLabels = new Set<string>()
-                    for (const item of items) {
-                      for (const s of item.specs) allLabels.add(s.label)
-                    }
-                    const labels = Array.from(allLabels)
-                    return labels.map((label) => (
-                      <tr key={label} className="hover:bg-gray-50/50">
-                        <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
-                          {label.replace(/_/g, ' ')}
-                        </td>
-                        {items.map((item) => {
-                          const spec = item.specs.find((s) => s.label === label)
-                          const value = spec?.value ?? '—'
-                          return (
-                            <td key={item.id} className="border-l border-gray-100 px-4 py-2 text-gray-900">
-                              {value}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-              {selectedFilesData.length > 0 && (
-        <div className="mt-6 mb-3">
-          <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
-            {(
-              [
-                { id: 'same-part' as const, label: 'Same part across vendors' },
-                { id: 'different-same-vendor' as const, label: 'Different parts from same vendor' },
-                { id: 'different-different-vendors' as const, label: 'Different parts from different vendors' },
-              ] as const
-            ).map(({ id, label }) => {
-              const isActive = compareMode === id
-              return (
-                <div
-                  key={id}
-                  role="tab"
-                  aria-selected={isActive}
-                  className={`flex items-center gap-1.5 rounded-t border border-b-0 px-3 py-2 text-sm ${
-                    isActive
-                      ? 'border-gray-300 bg-white text-gray-900'
-                      : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCompareMode(id)}
-                    className="font-medium"
-                  >
-                    {label}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        )}
-
-        {/* Scraped data - shown when "Same part across vendors" tab is selected */}
-        {compareMode === 'same-part' && (
-          <div className={items.length > 0 ? 'mt-8' : ''}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Scraped data{selectedRowForScraped ? `: ${selectedRowForScraped.partLabel}` : ''}
-              </h3>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {items.length > 0 && (
-                  <label className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-600">Part:</span>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <span className="font-medium">Part</span>
                     <select
-                      value={(() => {
-                        const currentId = selectedRowForScraped
-                          ? `file-${selectedRowForScraped.fileId}-${selectedRowForScraped.rowIdx}`
-                          : null
-                        const inItems = currentId && items.some((i) => i.id === currentId)
-                        return inItems ? currentId : (items[0]?.id ?? '')
-                      })()}
-                      onChange={(e) => {
-                        const id = e.target.value
-                        const parsed = parseFileItemId(id)
-                        const item = items.find((i) => i.id === id)
-                        if (parsed && item) {
-                          updateActiveTabData((d) => ({
-                            ...d,
-                            selectedRowForScraped: {
-                              fileId: parsed.fileId,
-                              rowIdx: parsed.rowIdx,
-                              partLabel: item.title || '—',
-                            },
-                          }))
-                        }
-                      }}
-                      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                      value={
+                        compareMode === 'different-same-vendor'
+                          ? structuredPartSelectValue
+                          : (selectedPartItemId ?? '')
+                      }
+                      onChange={(e) => handleStructuredPartViewChange(e.target.value)}
+                      className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     >
-                      {items.map((item) => (
+                      {compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1 && (
+                        <option value="all">All selected parts</option>
+                      )}
+                      {effectiveVendorFilteredParts.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.title || '—'}
                           {item.sourceName ? ` (${item.sourceName})` : ''}
@@ -949,16 +1880,19 @@ export function ComparePage() {
                     </select>
                   </label>
                 )}
-                {scrapedData && scrapedData.length > 0 && (() => {
-                  const domains = [...new Set(scrapedData.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
-                  if (domains.length < 2) return null
+                {scrapedTableRows.length > 0 && (() => {
+                  const domains =
+                    compareMode === 'different-same-vendor'
+                      ? commonVendorDomains
+                      : [...new Set(scrapedTableRows.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
+                  if (domains.length === 0) return null
                   return (
-                    <label className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-600">Vendor:</span>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <span className="font-medium">Vendor</span>
                       <select
-                        value={scrapedVendorFilter ?? (isDifferentPartsSameVendor && domains[0] ? domains[0] : 'all')}
-                        onChange={(e) => setScrapedVendorFilter(e.target.value === 'all' ? 'all' : e.target.value)}
-                        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                        value={scrapedVendorFilter}
+                        onChange={(e) => setScrapedVendorFilter(e.target.value)}
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                       >
                         <option value="all">All vendors</option>
                         {domains.map((d) => (
@@ -970,158 +1904,643 @@ export function ComparePage() {
                     </label>
                   )
                 })()}
+                {scrapedTableRows.length > 0 && (
+                  <>
+                    <button
+                      ref={fieldPickerBtnRef}
+                      type="button"
+                      onClick={() => setFieldPickerOpen((v) => !v)}
+                      className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                    >
+                      Fields {scrapedSelectedFields.length > 0 ? `(${scrapedSelectedFields.length})` : '(All)'}
+                    </button>
+                    {fieldPickerOpen && createPortal(
+                      <div
+                        ref={fieldPickerDropRef}
+                        style={{
+                          position: 'fixed',
+                          zIndex: 9999,
+                          top: (fieldPickerBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                          left: fieldPickerBtnRef.current?.getBoundingClientRect().left ?? 0,
+                        }}
+                      className="w-60 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+                      >
+                        <input
+                          type="search"
+                          value={scrapedFieldPickerSearch}
+                          onChange={(e) => setScrapedFieldPickerSearch(e.target.value)}
+                          placeholder="Search fields…"
+                          autoFocus
+                          className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                        />
+                        <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                          <button
+                            type="button"
+                            onClick={() => setScrapedSelectedFields(scrapedFieldKeys)}
+                            className="hover:text-slate-700"
+                          >
+                            Select all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScrapedSelectedFields([])}
+                            className="hover:text-slate-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                          {scrapedFieldKeys
+                            .filter((k) =>
+                              scrapedFieldPickerSearch.trim()
+                                ? k.toLowerCase().includes(scrapedFieldPickerSearch.trim().toLowerCase())
+                                : true
+                            )
+                            .map((k) => {
+                              const checked = scrapedSelectedFields.includes(k)
+                              return (
+                                <label key={k} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setScrapedSelectedFields((prev) =>
+                                        e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)
+                                      )
+                                    }
+                                    className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                  />
+                                  <span className="truncate text-slate-700" title={k}>
+                                    {k}
+                                  </span>
+                                </label>
+                              )
+                            })}
+                        </div>
+                      </div>,
+                      document.body,
+                    )}
+                    <input
+                      type="search"
+                      value={scrapedValueSearch}
+                      onChange={(e) => setScrapedValueSearch(e.target.value)}
+                      placeholder="Filter values…"
+                      className="w-36 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                    />
+                    <label className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 shadow-sm">
+                      <input
+                        type="checkbox"
+                        checked={scrapedNonEmptyOnly}
+                        onChange={(e) => setScrapedNonEmptyOnly(e.target.checked)}
+                        className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                      />
+                      Non-empty only
+                    </label>
+                  </>
+                )}
               </div>
             </div>
+            {vendorOverviewPayload &&
+              selectedRowForScraped &&
+              !scrapedDataLoading &&
+              !(compareMode === 'different-same-vendor' && commonVendorsLoading) && (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-slate-500">Coverage view</span>
+                    <div className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setVendorCoverageView('map')}
+                        className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          vendorCoverageView === 'map'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        Mind map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVendorCoverageView('overview')}
+                        className={`border-l border-slate-300 px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          vendorCoverageView === 'overview'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        Table & bars
+                      </button>
+                    </div>
+                  </div>
+                  {vendorCoverageView === 'map' ? (
+                    <CompareVendorMindMap
+                      model={vendorOverviewPayload.mindMap}
+                      onSelectVendor={(domain) => setScrapedVendorFilter(domain)}
+                      onAddVendorToBucket={({ domain, parts }) => {
+                        let added = 0
+                        for (const part of parts) {
+                          const id = `mindmap-${domain}-${part.partId}`
+                          const result = addBucketItem({
+                            id,
+                            title: part.partLabel,
+                            manufacturer: domain,
+                            price: part.priceLabel ?? '',
+                            rowIndex: 0,
+                            tabId: undefined,
+                          })
+                          if (result.added) added += 1
+                        }
+                        if (added > 0) {
+                          showBucketToast(
+                            `${added} offer${added === 1 ? '' : 's'} added to Bucket from mind map`
+                          )
+                        } else {
+                          showBucketToast('Vendor already in Bucket from mind map')
+                        }
+                      }}
+                    />
+                  ) : (
+                    <CompareVendorOverview
+                      partRows={vendorOverviewPayload.partRows}
+                      maxVendorCount={vendorOverviewPayload.maxVendorCount}
+                      commonVendorCount={vendorOverviewPayload.commonVendorCount}
+                      commonVendorRows={vendorOverviewPayload.commonVendorRows}
+                    />
+                  )}
+                </div>
+              )}
             {!selectedRowForScraped ? (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                Select a part above to view scraped data across vendors.
+              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-xs text-slate-600 ring-1 ring-slate-950/5">
+                Select a part row in the workspace list to load scraped vendor fields.
               </p>
-            ) : scrapedDataLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+            ) : scrapedDataLoading || (compareMode === 'different-same-vendor' && commonVendorsLoading) ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-7 text-xs text-slate-600 ring-1 ring-slate-950/5">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
                 </svg>
                 <span>Loading scraped data…</span>
               </div>
-            ) : scrapedData && scrapedData.length > 0 ? (
+            ) : compareMode === 'different-same-vendor' && commonVendorDomains.length === 0 ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-xs text-amber-900 ring-1 ring-amber-100">
+                {effectiveVendorFilteredParts.length > 1
+                  ? 'No vendor domain appears on more than one selected part yet. Add overlapping research sources or pick parts that share suppliers.'
+                  : 'No scraped vendors for this part yet. Run Research to collect sources.'}
+              </p>
+            ) : scrapedTableRows.length > 0 ? (
               (() => {
                 const colOrder =
                   scrapedColumnOrder.length === scrapedTableRows.length
                     ? scrapedColumnOrder
                     : scrapedTableRows.map((_, i) => i)
                 const displayScrapedRows = colOrder.map((i) => scrapedTableRows[i]!)
-                return (
-                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-gray-50">
-                          <th className="min-w-[120px] px-4 py-3 text-left font-medium text-gray-700 sm:min-w-[140px]">
-                            Spec
-                          </th>
-                          {displayScrapedRows.map((item, displayIdx) => (
-                            <th
-                              key={item.url}
-                              draggable
-                              onDragStart={(e) => handleScrapedHeaderDragStart(e, displayIdx)}
-                              onDragOver={handleScrapedHeaderDragOver}
-                              onDrop={(e) => handleScrapedHeaderDrop(e, displayIdx)}
-                              className="min-w-[140px] cursor-grab border-l border-gray-200 px-4 py-3 text-left active:cursor-grabbing sm:min-w-[180px]"
-                              title="Drag to reorder sources"
+                const fieldOrder =
+                  scrapedFieldOrder.length === scrapedFieldKeys.length
+                    ? scrapedFieldOrder
+                    : scrapedFieldKeys.map((_, i) => i)
+                const orderedFieldKeys = fieldOrder.map((i) => scrapedFieldKeys[i]!)
+                const valueNeedle = scrapedValueSearch.trim().toLowerCase()
+                const visibleFieldKeys = orderedFieldKeys.filter((key) => {
+                  if (scrapedSelectedFields.length > 0 && !scrapedSelectedFields.includes(key)) return false
+                  if (!valueNeedle && !scrapedNonEmptyOnly) return true
+                  const hasMatch = displayScrapedRows.some((item) => {
+                    const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
+                    const printable =
+                      val == null
+                        ? ''
+                        : typeof val === 'string'
+                          ? val
+                          : typeof val === 'object'
+                            ? JSON.stringify(val)
+                            : String(val)
+                    if (scrapedNonEmptyOnly && !printable.trim()) return false
+                    return valueNeedle ? printable.toLowerCase().includes(valueNeedle) : true
+                  })
+                  return hasMatch
+                })
+                const sourceWidth = (sourceKey: string) => scrapedSourceColWidths[sourceKey] ?? 188
+                const fieldWidth = (key: string) => scrapedFieldColWidths[key] ?? 160
+                const highlightNeedle = (text: string): React.ReactNode => {
+                  if (!valueNeedle || !text) return text
+                  const lower = text.toLowerCase()
+                  const idx = lower.indexOf(valueNeedle)
+                  if (idx === -1) return text
+                  const parts: React.ReactNode[] = []
+                  let cursor = 0
+                  let pos = idx
+                  let keyIdx = 0
+                  while (pos !== -1) {
+                    if (pos > cursor) parts.push(text.slice(cursor, pos))
+                    parts.push(
+                      <mark key={keyIdx++} className="rounded-sm bg-yellow-200 px-0.5 text-inherit">
+                        {text.slice(pos, pos + valueNeedle.length)}
+                      </mark>
+                    )
+                    cursor = pos + valueNeedle.length
+                    pos = lower.indexOf(valueNeedle, cursor)
+                  }
+                  if (cursor < text.length) parts.push(text.slice(cursor))
+                  return <>{parts}</>
+                }
+                const renderScrapedCell = (item: ScrapedDataItem, key: string) => {
+                  const val = getNestedValue((item.data ?? {}) as Record<string, unknown>, key)
+                  const imageUrls = Array.isArray(val)
+                    ? (val as unknown[]).filter((v): v is string => typeof v === 'string' && isImageUrl(v))
+                    : isImageUrl(val)
+                      ? [String(val)]
+                      : []
+                  const showAsImage = (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
+                  const strVal =
+                    val == null
+                      ? '—'
+                      : typeof val === 'string'
+                        ? val
+                        : typeof val === 'object'
+                          ? JSON.stringify(val)
+                          : String(val)
+                  if (showAsImage) {
+                    return (
+                      <span className="inline-flex flex-wrap gap-2">
+                        {imageUrls.map((imgSrc, i) => (
+                          <span key={i} className="relative">
+                            <img
+                              src={imgSrc}
+                              alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
+                              className="max-h-24 rounded-lg border border-slate-200 object-contain"
+                              loading="lazy"
+                              onError={(e) => {
+                                const el = e.currentTarget
+                                el.style.display = 'none'
+                                const fallback = el.nextElementSibling
+                                if (fallback) (fallback as HTMLElement).classList.remove('hidden')
+                              }}
+                            />
+                            <a
+                              href={imgSrc}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hidden max-w-[200px] truncate text-xs text-sky-700 hover:underline"
+                              title={imgSrc}
                             >
-                              <div className="flex min-w-0 items-start gap-2">
-                                <span className="mt-0.5 shrink-0 text-gray-400 select-none" aria-hidden>
-                                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                                    <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
-                                  </svg>
-                                </span>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-xs font-medium text-gray-500">
-                                    Source {displayIdx + 1}
-                                  </p>
-                                  <a
-                                    href={item.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    draggable={false}
-                                    onDragStart={(e) => e.stopPropagation()}
-                                    className="mt-0.5 block truncate text-xs text-blue-600 hover:underline"
-                                    title={item.url}
-                                  >
-                                    {item.url}
-                                  </a>
-                                </div>
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {(() => {
-                          const allKeys = new Set<string>()
-                          for (const item of displayScrapedRows) {
-                            if (item.data && typeof item.data === 'object') {
-                              flattenObjectKeys(item.data as Record<string, unknown>).forEach((k) => allKeys.add(k))
-                            }
-                          }
-                          const keys = Array.from(allKeys).sort()
-                          return keys.map((key) => (
-                            <tr key={key} className="hover:bg-gray-50/50">
-                              <td className="min-w-[120px] px-4 py-2 font-medium text-gray-600 sm:min-w-[140px]">
-                                {key.replace(/_/g, ' ').replace(/\./g, ' › ')}
-                              </td>
-                              {displayScrapedRows.map((item) => {
-                                const val = getNestedValue(
-                                  (item.data ?? {}) as Record<string, unknown>,
-                                  key
-                                )
-                                const imageUrls = Array.isArray(val)
-                                  ? (val as unknown[]).filter(
-                                      (v): v is string => typeof v === 'string' && isImageUrl(v)
-                                    )
-                                  : isImageUrl(val)
-                                    ? [String(val)]
-                                    : []
-                                const showAsImage =
-                                  (isImageKey(key) || imageUrls.length > 0) && imageUrls.length > 0
-                                const strVal =
-                                  val == null
-                                    ? '—'
-                                    : typeof val === 'string'
-                                      ? val
-                                      : typeof val === 'object'
-                                        ? JSON.stringify(val)
-                                        : String(val)
-                                return (
-                                  <td
-                                    key={item.url}
-                                    className="border-l border-gray-100 px-4 py-2 text-gray-900 align-top"
-                                  >
-                                    {showAsImage ? (
-                                      <span className="inline-flex flex-wrap gap-2">
-                                        {imageUrls.map((imgSrc, i) => (
-                                          <span key={i} className="relative">
-                                            <img
-                                              src={imgSrc}
-                                              alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                                              className="max-h-24 rounded border border-gray-200 object-contain"
-                                              loading="lazy"
-                                              onError={(e) => {
-                                                const el = e.currentTarget
-                                                el.style.display = 'none'
-                                                const fallback = el.nextElementSibling
-                                                if (fallback)
-                                                  (fallback as HTMLElement).classList.remove('hidden')
-                                              }}
-                                            />
-                                            <a
-                                              href={imgSrc}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="hidden max-w-[200px] truncate text-xs text-blue-600 hover:underline"
-                                              title={imgSrc}
-                                            >
-                                              {imgSrc}
-                                            </a>
-                                          </span>
-                                        ))}
-                                      </span>
-                                    ) : (
-                                      typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
-                                    )}
-                                  </td>
-                                )
-                              })}
+                              {imgSrc}
+                            </a>
+                          </span>
+                        ))}
+                      </span>
+                    )
+                  }
+                  const display = typeof val === 'object' && val !== null ? strVal : String(val ?? '—')
+                  return highlightNeedle(display)
+                }
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-[11px] font-medium text-slate-500">Table view</span>
+                      <div className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setScrapedViewMode('row')}
+                          className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            scrapedViewMode === 'row'
+                              ? 'bg-slate-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          Row view
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScrapedViewMode('column')}
+                          className={`border-l border-slate-300 px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            scrapedViewMode === 'column'
+                              ? 'bg-slate-900 text-white'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          Column view
+                        </button>
+                      </div>
+                    </div>
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5 max-h-[58vh] flex flex-col">
+                    <div className="overflow-x-auto overflow-y-auto flex-1">
+                      {visibleFieldKeys.length === 0 ? (
+                        <div className="px-5 py-8 text-center text-sm text-slate-500">
+                          No fields match the current filters.
+                        </div>
+                      ) : scrapedViewMode === 'row' ? (
+                        <table className="min-w-full border-separate border-spacing-0 text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                              <th
+                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
+                              >
+                                Field
+                                <span
+                                  onMouseDown={(e) =>
+                                    startColumnResize(e, 'row-field', 'field', scrapedRowFieldColWidth)
+                                  }
+                                  className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                  title="Resize column"
+                                />
+                              </th>
+                              {displayScrapedRows.map((item, displayIdx) => (
+                                <th
+                                  key={item.sourceKey}
+                                  draggable
+                                  onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
+                                  onDragOver={handleScrapedDragOver}
+                                  onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
+                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-3 py-2.5 text-left"
+                                  style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
+                                  title="Drag to reorder sources"
+                                >
+                                  <div className="flex min-w-0 items-start gap-2">
+                                    <span className="mt-0.5 shrink-0 text-slate-400 select-none" aria-hidden>
+                                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                        <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+                                      </svg>
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                          checked={selectedBucketSourceUrls.has(item.sourceKey)}
+                                          onChange={(e) =>
+                                            toggleBucketSourceSelection(item.sourceKey, e.target.checked)
+                                          }
+                                          aria-label={`Select Source ${displayIdx + 1} for Bucket`}
+                                        />
+                                        <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                          Source {displayIdx + 1}
+                                        </p>
+                                      </div>
+                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                        <span className="font-medium text-slate-500">Part:</span>{' '}
+                                        <span className="font-medium">{item.partLabel}</span>
+                                      </p>
+                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                        <span className="font-medium text-slate-500">Vendor:</span>{' '}
+                                        <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
+                                      </p>
+                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                        <span className="font-medium text-slate-500">URL:</span>{' '}
+                                        <a
+                                          href={item.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          draggable={false}
+                                          onDragStart={(e) => e.stopPropagation()}
+                                          className="font-medium text-sky-700 hover:text-sky-900 hover:underline"
+                                          title={item.url}
+                                        >
+                                          {compactSourceUrlLabel(item.url)}
+                                        </a>
+                                      </p>
+                                      {bucketSourceUrlsInSession.has(item.sourceKey) && (
+                                        <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
+                                          In Bucket
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span
+                                    onMouseDown={(e) =>
+                                      startColumnResize(e, 'row-source', item.sourceKey, sourceWidth(item.sourceKey))
+                                    }
+                                    className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                    title="Resize column"
+                                  />
+                                </th>
+                              ))}
                             </tr>
-                          ))
-                        })()}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {visibleFieldKeys.map((key, displayFieldIdx) => (
+                              <tr
+                                key={key}
+                                onDragOver={handleScrapedDragOver}
+                                onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
+                                className="group transition-colors hover:bg-slate-50/60"
+                              >
+                                <td
+                                  draggable
+                                  onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
+                                  title="Drag to reorder fields"
+                                >
+                                  {formatFieldLabel(key)}
+                                </td>
+                                {displayScrapedRows.map((item) => (
+                                  <td
+                                    key={`${item.sourceKey}-${key}`}
+                                    className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
+                                    style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
+                                  >
+                                    {renderScrapedCell(item, key)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="min-w-full border-separate border-spacing-0 text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                              <th
+                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                style={{
+                                  width: scrapedColumnViewSourceColWidth,
+                                  minWidth: scrapedColumnViewSourceColWidth,
+                                }}
+                              >
+                                Source
+                                <span
+                                  onMouseDown={(e) =>
+                                    startColumnResize(
+                                      e,
+                                      'column-source',
+                                      'source',
+                                      scrapedColumnViewSourceColWidth
+                                    )
+                                  }
+                                  className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                  title="Resize column"
+                                />
+                              </th>
+                              {visibleFieldKeys.map((key, displayFieldIdx) => (
+                                <th
+                                  key={key}
+                                  draggable
+                                  onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
+                                  onDragOver={handleScrapedDragOver}
+                                  onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
+                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-3 py-2.5 text-left text-[11px] font-semibold tracking-wide text-slate-500"
+                                  style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
+                                  title="Drag to reorder fields"
+                                >
+                                  {formatFieldLabel(key)}
+                                  <span
+                                    onMouseDown={(e) =>
+                                      startColumnResize(e, 'column-field', key, fieldWidth(key))
+                                    }
+                                    className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                                    title="Resize column"
+                                  />
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {displayScrapedRows.map((item, displayIdx) => (
+                              <tr
+                                key={item.sourceKey}
+                                onDragOver={handleScrapedDragOver}
+                                onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
+                                className="group transition-colors hover:bg-slate-50/60"
+                              >
+                                <td
+                                  draggable
+                                  onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-3 py-2 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  style={{
+                                    width: scrapedColumnViewSourceColWidth,
+                                    minWidth: scrapedColumnViewSourceColWidth,
+                                  }}
+                                  title="Drag to reorder sources"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                      checked={selectedBucketSourceUrls.has(item.sourceKey)}
+                                      onChange={(e) =>
+                                        toggleBucketSourceSelection(item.sourceKey, e.target.checked)
+                                      }
+                                      aria-label={`Select Source ${displayIdx + 1} for Bucket`}
+                                    />
+                                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      Source {displayIdx + 1}
+                                    </p>
+                                  </div>
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                    <span className="font-medium text-slate-500">Part:</span>{' '}
+                                    <span className="font-medium">{item.partLabel}</span>
+                                  </p>
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                    <span className="font-medium text-slate-500">Vendor:</span>{' '}
+                                    <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
+                                  </p>
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
+                                    <span className="font-medium text-slate-500">URL:</span>{' '}
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-sky-700 hover:text-sky-900 hover:underline"
+                                      title={item.url}
+                                    >
+                                      {compactSourceUrlLabel(item.url)}
+                                    </a>
+                                  </p>
+                                  {bucketSourceUrlsInSession.has(item.sourceKey) && (
+                                    <p className="mt-0.5 text-[10px] font-medium text-emerald-700">
+                                      In Bucket
+                                    </p>
+                                  )}
+                                </td>
+                                {visibleFieldKeys.map((key) => (
+                                  <td
+                                    key={`${item.sourceKey}-${key}`}
+                                    className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
+                                    style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
+                                  >
+                                    {renderScrapedCell(item, key)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                    {scrapedTableRows.length > 0 && (
+                      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/95 px-4 py-3">
+                        <p className="text-[11px] text-slate-500">
+                          {bucketSourceUrlsInSession.size > 0
+                            ? `${bucketSourceUrlsInSession.size} source${
+                                bucketSourceUrlsInSession.size === 1 ? '' : 's'
+                              } already in Bucket from this view`
+                            : 'No sources from this view in Bucket yet'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const selectedKeys = [...selectedBucketSourceUrls].filter(Boolean)
+                            if (selectedKeys.length === 0) {
+                              showBucketToast('Select at least one source')
+                              return
+                            }
+                            const selectedRows = scrapedTableRows.filter((row) => selectedKeys.includes(row.sourceKey))
+                            if (selectedRows.length === 0) return
+                            let added = 0
+                            const newlyAdded: string[] = []
+                            for (const row of selectedRows) {
+                              const parsedPart = parseFileItemId(row.partId)
+                              if (!parsedPart) continue
+                              const data = (row.data ?? {}) as Record<string, unknown>
+                              const id = `file-${parsedPart.fileId}-${parsedPart.rowIdx}-s-${row.url}-${row.sourceKey}`
+                              const title =
+                                getFirstPartNumber(data) ??
+                                row.partLabel
+                              const domain = extractDomain(row.url)
+                              const priceSpecs = collectScalarSpecs(data).filter((s) =>
+                                /price|cost|amount|msrp|usd|\$/i.test(s.label)
+                              )
+                              const price = priceSpecs.length ? priceSpecs[0]!.value : ''
+                              const result = addBucketItem({
+                                id,
+                                title: String(title),
+                                manufacturer: domain || '',
+                                price: String(price),
+                                rowIndex: parsedPart.rowIdx,
+                                tabId: undefined,
+                              })
+                              if (result.added) {
+                                added += 1
+                                newlyAdded.push(row.sourceKey)
+                              }
+                            }
+                            if (newlyAdded.length > 0) {
+                              setBucketSourceUrlsInSession((prev) => {
+                                const next = new Set(prev)
+                                for (const u of newlyAdded) next.add(u)
+                                return next
+                              })
+                            }
+                            if (added > 0) {
+                              showBucketToast(
+                                `${added} source${added === 1 ? '' : 's'} added to Bucket`
+                              )
+                            } else {
+                              showBucketToast('Selected sources are already in Bucket')
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800"
+                        >
+                          Add selected sources to Bucket
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   </div>
                 )
               })()
             ) : (
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                No scraped data for this part. Run Research on the Research page first to scrape vendor data.
+              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
+                No scraped data for this part. Run Research on the Research page to collect vendor data.
               </p>
             )}
           </div>
@@ -1132,92 +2551,18 @@ export function ComparePage() {
 
 
 
-      {/* File picker modal */}
-      {filePickerOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setFilePickerOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="compare-file-picker-title"
-        >
-          <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 id="compare-file-picker-title" className="text-base font-semibold text-gray-900">
-                Select file from workspace
-              </h3>
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Close"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              {filePickerLoading && (
-                <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
-              )}
-              {filePickerError && (
-                <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
-                <p className="py-8 text-center text-sm text-gray-500">No files in workspace. Upload files on the Home page first.</p>
-              )}
-              {!filePickerLoading && !filePickerError && filePickerFiles.length > 0 && (
-                <>
-                  <p className="mb-2 px-2 text-xs text-gray-500">Click files to add. Close when done.</p>
-                  <ul className="space-y-0.5">
-                  {filePickerFiles.map((file: FileEntry) => {
-                    const isSelected = selectedFilesData.some((f: LoadedFile) => f.fileId === file.id)
-                    const isLoading = fileContentLoading.has(file.id)
-                    return (
-                    <li key={file.id}>
-                      <button
-                        type="button"
-                        onClick={() => handleFilePickerFileClick(file)}
-                        disabled={isSelected || isLoading}
-                        className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm ${
-                          isSelected
-                            ? 'cursor-default bg-gray-100 text-gray-500'
-                            : isLoading
-                              ? 'cursor-wait text-gray-500'
-                              : 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-800'
-                        }`}
-                      >
-                        <span className="truncate w-full font-medium">{file.name}</span>
-                        {file.folderPath && (
-                          <span className="truncate w-full text-xs text-gray-500">{file.folderPath}</span>
-                        )}
-                        {isSelected && (
-                          <span className="text-xs text-emerald-600">Added</span>
-                        )}
-                      </button>
-                    </li>
-                  )
-                  })}
-                </ul>
-                </>
-              )}
-            </div>
-            <div className="border-t border-gray-200 px-4 py-2">
-              <button
-                type="button"
-                onClick={() => setFilePickerOpen(false)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Done
-              </button>
-            </div>
+      <CompareFilePickerModal
+        open={filePickerOpen}
+        filePickerLoading={filePickerLoading}
+        filePickerError={filePickerError}
+        filePickerFiles={filePickerFiles}
+        selectedFilesData={selectedFilesData}
+        fileContentLoading={fileContentLoading}
+        onClose={() => setFilePickerOpen(false)}
+        onFileClick={handleFilePickerFileClick}
+      />
           </div>
         </div>
-      )}
     </div>
   )
 }
