@@ -13,11 +13,11 @@ import {
   GitCompare,
   History,
   LayoutGrid,
+  MapPin,
   Pencil,
   Plus,
   Search,
   Sparkles,
-  Table2,
   Trash2,
   X,
 } from 'lucide-react'
@@ -877,6 +877,89 @@ const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
 const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
 const RESEARCH_TABS_KEY = 'research-tabs'
+const RESEARCH_LOCATIONS_KEY = 'ir-research-locations-v1'
+const MAX_SAVED_RESEARCH_ADDRESSES = 8
+
+type ResearchSavedAddress = {
+  id: string
+  zip: string
+  address: string
+}
+
+type ResearchLocationsStore = {
+  lastZip: string
+  lastAddress: string
+  saved: ResearchSavedAddress[]
+}
+
+function emptyResearchLocations(): ResearchLocationsStore {
+  return { lastZip: '', lastAddress: '', saved: [] }
+}
+
+function loadResearchLocations(): ResearchLocationsStore {
+  try {
+    const raw = localStorage.getItem(workspaceStorageKey(RESEARCH_LOCATIONS_KEY))
+    if (!raw) return emptyResearchLocations()
+    const parsed = JSON.parse(raw) as Partial<ResearchLocationsStore>
+    const saved = Array.isArray(parsed.saved)
+      ? parsed.saved
+          .filter(
+            (row): row is ResearchSavedAddress =>
+              Boolean(row) &&
+              typeof row === 'object' &&
+              typeof row.id === 'string' &&
+              typeof row.zip === 'string' &&
+              typeof row.address === 'string'
+          )
+          .slice(0, MAX_SAVED_RESEARCH_ADDRESSES)
+      : []
+    return {
+      lastZip: typeof parsed.lastZip === 'string' ? parsed.lastZip : '',
+      lastAddress: typeof parsed.lastAddress === 'string' ? parsed.lastAddress : '',
+      saved,
+    }
+  } catch {
+    return emptyResearchLocations()
+  }
+}
+
+function persistResearchLocation(zip: string, address: string): ResearchLocationsStore {
+  const nextZip = zip.trim().slice(0, 20)
+  const nextAddress = address.trim().slice(0, 300)
+  const store = loadResearchLocations()
+  const saved = [...store.saved]
+  const duplicate = saved.find(
+    (row) =>
+      row.zip.trim().toLowerCase() === nextZip.toLowerCase() &&
+      row.address.trim().toLowerCase() === nextAddress.toLowerCase()
+  )
+  if (!duplicate && (nextZip || nextAddress)) {
+    saved.unshift({
+      id: `loc-${Date.now()}`,
+      zip: nextZip,
+      address: nextAddress,
+    })
+  }
+  const next: ResearchLocationsStore = {
+    lastZip: nextZip,
+    lastAddress: nextAddress,
+    saved: saved.slice(0, MAX_SAVED_RESEARCH_ADDRESSES),
+  }
+  try {
+    localStorage.setItem(workspaceStorageKey(RESEARCH_LOCATIONS_KEY), JSON.stringify(next))
+  } catch {
+    // ignore quota
+  }
+  return next
+}
+
+function researchLocationLabel(zip: string, address: string): string {
+  const a = address.trim()
+  const z = zip.trim()
+  if (a && z && !a.toLowerCase().includes(z.toLowerCase())) return `${a}, ${z}`
+  if (a) return a
+  return z
+}
 
 const INSPECTOR_MIN_WIDTH = 280
 const INSPECTOR_MAX_WIDTH = 900
@@ -1129,6 +1212,14 @@ export function ResearchPage() {
   const [researchAiQueryInput, setResearchAiQueryInput] = useState(
     'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
   )
+  const [researchZipInput, setResearchZipInput] = useState(() => loadResearchLocations().lastZip)
+  const [researchAddressInput, setResearchAddressInput] = useState(
+    () => loadResearchLocations().lastAddress
+  )
+  const [researchSavedAddresses, setResearchSavedAddresses] = useState<ResearchSavedAddress[]>(
+    () => loadResearchLocations().saved
+  )
+  const [researchSavedAddressId, setResearchSavedAddressId] = useState('')
   const [cellFillPopupOpen, setCellFillPopupOpen] = useState(false)
   const [cellFillPrompt, setCellFillPrompt] = useState('')
   const [cellFillMode, setCellFillMode] = useState<'internal' | 'external'>('internal')
@@ -1172,7 +1263,7 @@ export function ResearchPage() {
   } = useComparison()
   const [comparePreviewModalOpen, setComparePreviewModalOpen] = useState(false)
   const comparePreviewNavigateStateRef = useRef<unknown>(null)
-  const [comparePreviewLayout, setComparePreviewLayout] = useState<'matrix' | 'cards'>('matrix')
+  const [comparePreviewLayout, setComparePreviewLayout] = useState<'matrix' | 'cards'>('cards')
   /** Matrix view: field labels whose rows are minimized (content hidden). */
   const [compareMatrixCollapsedFields, setCompareMatrixCollapsedFields] = useState<Set<string>>(
     () => new Set()
@@ -1197,6 +1288,7 @@ export function ResearchPage() {
         initialComparisonItems: items,
       }
       setComparePreviewModalOpen(true)
+      setComparePreviewLayout(items.length >= 2 ? 'matrix' : 'cards')
       showToast('Comparison preview ready')
     },
     [clearComparison, openComparison, showToast]
@@ -1204,7 +1296,7 @@ export function ResearchPage() {
 
   useEffect(() => {
     if (!comparePreviewModalOpen) return
-    setComparePreviewLayout(comparisonItems.length >= 2 ? 'matrix' : 'cards')
+    if (comparisonItems.length < 2) setComparePreviewLayout('cards')
   }, [comparePreviewModalOpen, comparisonItems.length])
 
   useEffect(() => {
@@ -1295,11 +1387,20 @@ export function ResearchPage() {
   }, [clearResearchProgressTicker])
 
   const runSelectedResearch = useCallback(
-    async (aiQuery?: string, options?: { rowIndices?: number[] }) => {
+    async (
+      aiQuery?: string,
+      options?: { rowIndices?: number[]; zipCode?: string; address?: string }
+    ) => {
       if (!content) return
       const token = getToken()
       if (!token) {
         showToast('Sign in to research selected')
+        return
+      }
+      const zipCode = (options?.zipCode ?? researchZipInput).trim().slice(0, 20)
+      const address = (options?.address ?? researchAddressInput).trim().slice(0, 300)
+      if (!zipCode && !address) {
+        showToast('Enter a ZIP code or address so research can target that location')
         return
       }
       const colIndices =
@@ -1348,7 +1449,11 @@ export function ResearchPage() {
           token
         )
         setResearchProgress(45)
-        const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery?.trim() || null)
+        const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery?.trim() || null, {
+          zipCode,
+          address,
+          location: researchLocationLabel(zipCode, address),
+        })
         setResearchProgress(100)
         setResearchVersion((v) => v + 1)
         showToast(
@@ -1371,6 +1476,8 @@ export function ResearchPage() {
       clearResearchProgressTicker,
       content,
       effectiveTabId,
+      researchAddressInput,
+      researchZipInput,
       selectedColumns,
       selectedRows,
       showToast,
@@ -2752,7 +2859,11 @@ export function ResearchPage() {
               `Prefer fields matching these sheet columns: ${targetColumns.join(', ')}.`,
               'Return structured JSON with clear keys and short cell-ready values.',
             ].join(' ')
-            await searchSelectionAndStoreUrls(saved.id, token, extractionQuery)
+            await searchSelectionAndStoreUrls(saved.id, token, extractionQuery, {
+              zipCode: researchZipInput.trim() || null,
+              address: researchAddressInput.trim() || null,
+              location: researchLocationLabel(researchZipInput, researchAddressInput) || null,
+            })
             setResearchVersion((v) => v + 1)
           } catch {
             failed += 1
@@ -2845,6 +2956,8 @@ export function ResearchPage() {
     content,
     effectiveTabId,
     parseCellFillUpdates,
+    researchAddressInput,
+    researchZipInput,
     selectedColumns,
     selectedRows,
     showToast,
@@ -3331,6 +3444,84 @@ export function ResearchPage() {
   const totalPages = Math.max(1, Math.ceil(totalDataRows / rowsPerPage))
   const currentPage = Math.min(page, totalPages)
   const startRow = (currentPage - 1) * rowsPerPage
+
+  const openCompareForResearchRows = useCallback(
+    (rowIndicesToCompare: number[]) => {
+      if (!content || !effectiveTabId || rowIndicesToCompare.length === 0) return
+      const fileId = activeTab?.fileId ?? null
+      const chosen = [...rowIndicesToCompare].sort((a, b) => a - b)
+      const items = chosen
+        .map((rowIndex) => {
+          const row = content[rowIndex + 1]
+          if (!row) return null
+          const title = String(row[0] ?? '')
+          return {
+            id: fileId != null ? `file-${fileId}-${rowIndex}` : `${effectiveTabId}-${rowIndex}`,
+            title,
+            imageUrl: null as string | null,
+            specs: headers.map((label, i) => ({
+              label: (label || `Column ${i + 1}`).trim(),
+              value: String(row[i] ?? '—'),
+            })),
+            rowIndex,
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null)
+      if (items.length === 0) {
+        showToast('Select at least one item to compare')
+        return
+      }
+
+      const comparisonItemsForNav = items.map(({ rowIndex: _rowIndex, ...item }) => item)
+      const restoreResearchSelection = {
+        selectedRows: Array.from(selectedRows),
+        activeTabId: effectiveTabId,
+        page: currentPage,
+        rowsPerPage,
+      }
+
+      if (items.length < 2) {
+        openComparePreviewModal(comparisonItemsForNav, {
+          returnTo: '/research',
+          restoreResearchSelection,
+        })
+        return
+      }
+
+      clearComparison()
+      openComparison(comparisonItemsForNav)
+      navigate(`${RESEARCH_COMPARE_PATH}?flow=rfq&step=compare`, {
+        state: {
+          rfqFlow: true,
+          initialComparisonItems: comparisonItemsForNav,
+          returnTo: '/research',
+          restoreResearchSelection,
+          researchPartRefs: items.map((item) => ({
+            id: item.id,
+            title: item.title,
+            fileId,
+            tabId: effectiveTabId,
+            rowIndex: item.rowIndex,
+          })),
+        },
+      })
+    },
+    [
+      content,
+      effectiveTabId,
+      activeTab?.fileId,
+      headers,
+      selectedRows,
+      currentPage,
+      rowsPerPage,
+      openComparePreviewModal,
+      clearComparison,
+      openComparison,
+      navigate,
+      showToast,
+    ]
+  )
+
   const endRow = Math.min(startRow + rowsPerPage, totalDataRows)
   const rowIndices = viewRowIndices.slice(startRow, endRow)
   const sheetBodyItems = useMemo(() => {
@@ -4017,43 +4208,11 @@ export function ResearchPage() {
                       ? 'No sources loaded'
                       : comparisonItems.length === 1
                         ? '1 source — review fields below'
-                        : `${comparisonItems.length} sources — scroll vertically for fields, horizontally for vendors`}
+                        : `${comparisonItems.length} sources — review the matrix, then open full Compare`}
                   </p>
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {comparisonItems.length >= 2 && (
-                  <div
-                    className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
-                    role="group"
-                    aria-label="Comparison layout"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setComparePreviewLayout('matrix')}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                        comparePreviewLayout === 'matrix'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Table2 className="h-3.5 w-3.5" aria-hidden />
-                      Matrix
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setComparePreviewLayout('cards')}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                        comparePreviewLayout === 'cards'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
-                      Cards
-                    </button>
-                  </div>
-                )}
                 <button
                   type="button"
                   onClick={() => setComparePreviewModalOpen(false)}
@@ -4318,22 +4477,101 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setResearchFieldsPopupOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="research-fields-title" className="text-sm font-semibold text-gray-900">
-              AI extraction query
+              Start research
             </h2>
             <p className="mt-1 text-sm text-gray-600">
-              Describe in natural language what you want to extract from each search result.
+              Describe what to extract, then set a ZIP or address. Search results prefer vendors
+              and listings near that location.
             </p>
+            <label htmlFor="research-ai-query" className="mt-3 block text-xs font-semibold text-gray-700">
+              AI extraction query
+            </label>
             <textarea
+              id="research-ai-query"
               value={researchAiQueryInput}
               onChange={(e) => setResearchAiQueryInput(e.target.value)}
               placeholder="Describe in natural language what you want to extract from each search result"
               rows={3}
-              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+                <MapPin className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                Search location
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-gray-500">
+                ZIP code is enough. You can also pick a saved address or type a full address.
+              </p>
+              {researchSavedAddresses.length > 0 && (
+                <div className="mt-3">
+                  <label htmlFor="research-saved-address" className="block text-xs font-medium text-gray-700">
+                    Saved address
+                  </label>
+                  <select
+                    id="research-saved-address"
+                    value={researchSavedAddressId}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      setResearchSavedAddressId(id)
+                      const found = researchSavedAddresses.find((row) => row.id === id)
+                      if (!found) return
+                      setResearchZipInput(found.zip)
+                      setResearchAddressInput(found.address)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">Type a new address</option>
+                    {researchSavedAddresses.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {researchLocationLabel(row.zip, row.address) || 'Saved address'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="mt-3 grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                <div>
+                  <label htmlFor="research-zip" className="block text-xs font-medium text-gray-700">
+                    ZIP code
+                  </label>
+                  <input
+                    id="research-zip"
+                    type="text"
+                    autoComplete="postal-code"
+                    maxLength={20}
+                    value={researchZipInput}
+                    onChange={(e) => {
+                      setResearchSavedAddressId('')
+                      setResearchZipInput(e.target.value)
+                    }}
+                    placeholder="75201"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="research-address" className="block text-xs font-medium text-gray-700">
+                    Address
+                  </label>
+                  <input
+                    id="research-address"
+                    type="text"
+                    autoComplete="street-address"
+                    maxLength={300}
+                    value={researchAddressInput}
+                    onChange={(e) => {
+                      setResearchSavedAddressId('')
+                      setResearchAddressInput(e.target.value)
+                    }}
+                    placeholder="Street, city, state"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+            </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -4344,8 +4582,21 @@ export function ResearchPage() {
               </button>
               <button
                 type="button"
-                disabled={storeSelectionLoading}
-                onClick={() => void runSelectedResearch(researchAiQueryInput)}
+                disabled={
+                  storeSelectionLoading ||
+                  (!researchZipInput.trim() && !researchAddressInput.trim())
+                }
+                onClick={() => {
+                  const zip = researchZipInput.trim()
+                  const address = researchAddressInput.trim()
+                  if (!zip && !address) {
+                    showToast('Enter a ZIP code or address so research can target that location')
+                    return
+                  }
+                  const stored = persistResearchLocation(zip, address)
+                  setResearchSavedAddresses(stored.saved)
+                  void runSelectedResearch(researchAiQueryInput, { zipCode: zip, address })
+                }}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {storeSelectionLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
@@ -5188,34 +5439,8 @@ export function ResearchPage() {
           <button
             type="button"
             onClick={() => {
-              if (selectedRows.size === 0 || !content || !effectiveTabId) return
-              const items = Array.from(selectedRows)
-                .map((rowIndex) => {
-                  const row = content[rowIndex + 1]
-                  if (!row) return null
-                  const title = String(row[0] ?? '')
-                  const specs = headers.map((label, i) => ({
-                    label: (label || `Column ${i + 1}`).trim(),
-                    value: String(row[i] ?? '—'),
-                  }))
-                  const imageUrl = null
-                  return {
-                    id: `${effectiveTabId}-${rowIndex}`,
-                    title,
-                    imageUrl,
-                    specs,
-                  }
-                })
-                .filter((x): x is NonNullable<typeof x> => x != null)
-              openComparePreviewModal(items, {
-                returnTo: '/research',
-                restoreResearchSelection: {
-                  selectedRows: Array.from(selectedRows),
-                  activeTabId: effectiveTabId,
-                  page: currentPage,
-                  rowsPerPage,
-                },
-              })
+              if (selectedRows.size === 0) return
+              void openCompareForResearchRows(Array.from(selectedRows))
             }}
             disabled={selectedRows.size === 0}
             className={researchToolbarBtnClass(false, selectedRows.size === 0)}
@@ -5471,6 +5696,22 @@ export function ResearchPage() {
           </div>
 
           {/* Footer: Add row + pagination */}
+          {selectedRows.size >= 2 && (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-emerald-200 bg-emerald-50 px-4 py-2.5">
+              <p className="text-sm text-emerald-900">
+                <span className="font-semibold">{selectedRows.size} parts</span> selected — compare data,
+                pick winners, then auto-create an approved RFQ PDF.
+              </p>
+              <button
+                type="button"
+                onClick={() => void openCompareForResearchRows(Array.from(selectedRows))}
+                className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                Compare &amp; create RFQ
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          )}
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-2">
             <div className="flex items-center gap-4">
               <button
@@ -5779,42 +6020,12 @@ export function ResearchPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (!content || !effectiveTabId) return
                           const chosen = Array.from(inspectorCompareSelection).sort((a, b) => a - b)
                           if (chosen.length === 0) {
                             showToast('Select at least one item to compare')
                             return
                           }
-                          const items = chosen
-                            .map((rowIndex) => {
-                              const row = content[rowIndex + 1]
-                              if (!row) return null
-                              return {
-                                id: `${effectiveTabId}-${rowIndex}`,
-                                title: String(row[0] ?? ''),
-                                imageUrl: null,
-                                specs: headers.map((label, i) => ({
-                                  label: (label || `Column ${i + 1}`).trim(),
-                                  value: String(row[i] ?? '—'),
-                                })),
-                              }
-                            })
-                            .filter((x): x is NonNullable<typeof x> => x != null)
-                          openComparePreviewModal(items, {
-                            returnTo: '/research',
-                            restoreInspector: {
-                              mode: 'multi' as const,
-                              selectedRowIndex,
-                              multiRowIndices: inspectorMultiRowIndices,
-                              compareSelection: chosen,
-                            },
-                            restoreResearchSelection: {
-                              selectedRows: Array.from(selectedRows),
-                              activeTabId: effectiveTabId,
-                              page: currentPage,
-                              rowsPerPage,
-                            },
-                          })
+                          void openCompareForResearchRows(chosen)
                         }}
                         className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >

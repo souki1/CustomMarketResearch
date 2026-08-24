@@ -37,4 +37,6 @@ export type CompareDecisionRow = {
   location: string
   contact: string
   rawData: Record<string, unknown>
+  partId?: string
+  partLabel?: string
 }

@@ -9,6 +9,7 @@ import { HomePage } from '@/pages/HomePage'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
 import { PurchaseOrderPage } from '@/pages/PurchaseOrderPage'
 import { BucketPage } from '@/pages/BucketPage'
+import { PartsCatalogPage } from '@/pages/PartsCatalogPage'
 import { ResearchPage } from '@/pages/ResearchPage'
 
 import { SettingsLayout } from '@/pages/SettingsLayout'
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'files', element: <HomePage /> },
       { path: 'research', element: <ResearchPage /> },
+      { path: 'parts-catalog', element: <PartsCatalogPage /> },
       { path: 'research/compare', element: <ComparePage /> },
       { path: 'compare', element: <Navigate to={RESEARCH_COMPARE_PATH} replace /> },
       { path: 'reports', element: <GenerateReportPage /> },

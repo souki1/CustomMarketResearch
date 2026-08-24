@@ -1495,14 +1495,13 @@ export function PortfolioPage() {
                       : "border-slate-200/90 hover:shadow-md"
                   }`}
                 >
-                  {/* Card header */}
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
-                    <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => togglePartSelected(g.rowId)}
-                        className="h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
                         aria-label={`Select ${g.part_number ?? "part"}`}
                       />
                       <div className="min-w-0">
@@ -1510,15 +1509,12 @@ export function PortfolioPage() {
                           {g.part_number ?? "Unknown Part"}
                         </h3>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {g.entries.length} vendor
-                          {g.entries.length === 1 ? "" : "s"}
+                          {g.entries.length} vendor{g.entries.length === 1 ? "" : "s"}
                           {minForGroup != null && (
                             <>
                               {" "}
                               &middot; Best:{" "}
-                              <span className="font-semibold text-emerald-600">
-                                {formatUsd(minForGroup)}
-                              </span>
+                              <span className="font-semibold text-emerald-600">{formatUsd(minForGroup)}</span>
                             </>
                           )}
                         </p>
@@ -1561,118 +1557,105 @@ export function PortfolioPage() {
                     </div>
                   </div>
 
-                  {/* Vendor offers table */}
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/30 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                          <th className="py-2.5 pl-5 pr-3">Vendor</th>
-                          <th className="px-3 py-2.5">Price</th>
-                          <th className="px-3 py-2.5">Qty</th>
-                          <th className="px-3 py-2.5">Source</th>
-                          <th className="py-2.5 pl-3 pr-5 text-right">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.entries.map((e, vi) => {
-                          const n = parsePrice(e.price)
-                          const isBest =
-                            n != null &&
-                            minForGroup != null &&
-                            n === minForGroup
-                          const safeUrl = portfolioOfferImageSrc(e.url)
-                          return (
-                            <tr
-                              key={`${g.rowId}-v-${vi}`}
-                              className="border-b border-slate-50 transition last:border-0 hover:bg-slate-50/50"
-                            >
-                              <td className="py-3 pl-5 pr-3">
-                                <div className="flex items-center gap-2.5">
-                                  <OfferThumb imageUrl={e.image_url} />
-                                  <div className="min-w-0">
-                                    <p className="truncate font-medium text-slate-800">
-                                      {e.vendor_name ?? "—"}
-                                    </p>
-                                    {isBest && (
-                                      <span className="mt-0.5 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                        <DollarSign className="h-2.5 w-2.5" />
-                                        Best
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 font-medium tabular-nums text-slate-900">
-                                {displayPrice(e.price, n)}
-                              </td>
-                              <td className="px-3 py-3 tabular-nums text-slate-600">
-                                {e.quantity != null
-                                  ? e.quantity.toLocaleString()
-                                  : "—"}
-                              </td>
-                              <td className="px-3 py-3">
-                                {safeUrl ? (
-                                  <a
-                                    href={safeUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline"
-                                  >
-                                    <ExternalLink className="h-3 w-3 shrink-0" />
-                                    <span className="max-w-32 truncate">
-                                      {vendorUrlLinkLabel(safeUrl)}
-                                    </span>
-                                  </a>
-                                ) : (
-                                  <span className="text-xs text-slate-400">
-                                    —
+                  <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {g.entries.map((e, vi) => {
+                      const n = parsePrice(e.price)
+                      const isBest = n != null && minForGroup != null && n === minForGroup
+                      const safeUrl = portfolioOfferImageSrc(e.url)
+                      return (
+                        <div
+                          key={`${g.rowId}-v-${vi}`}
+                          className={`rounded-xl border bg-white p-3 shadow-sm transition ${
+                            isBest
+                              ? "border-emerald-200 ring-1 ring-emerald-500/20"
+                              : "border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <OfferThumb imageUrl={e.image_url} />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-800">
+                                  {e.vendor_name ?? "—"}
+                                </p>
+                                {isBest && (
+                                  <span className="mt-1 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                    <DollarSign className="h-2.5 w-2.5" />
+                                    Best offer
                                   </span>
                                 )}
-                              </td>
-                              <td className="py-3 pl-3 pr-5">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => addToBucket(g, e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                    title="Add to bucket"
-                                  >
-                                    <ShoppingBag className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDetailEntry(e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                    title="View details"
-                                  >
-                                    <Info className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setDeleteTarget({
-                                        partNumber: g.part_number,
-                                        excludeEntirePart: false,
-                                        vendorName: e.vendor_name ?? null,
-                                        url: e.url ?? null,
-                                        price: e.price ?? null,
-                                        quantity: e.quantity ?? null,
-                                      })
-                                    }
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                                    title="Remove this vendor offer"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                              <p className="font-medium uppercase tracking-wider text-slate-500">Price</p>
+                              <p className="mt-1 font-semibold tabular-nums text-slate-900">
+                                {displayPrice(e.price, n)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                              <p className="font-medium uppercase tracking-wider text-slate-500">Qty</p>
+                              <p className="mt-1 font-semibold tabular-nums text-slate-900">
+                                {e.quantity != null ? e.quantity.toLocaleString() : "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between gap-2">
+                            {safeUrl ? (
+                              <a
+                                href={safeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex min-w-0 items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline"
+                              >
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                                <span className="max-w-32 truncate">{vendorUrlLinkLabel(safeUrl)}</span>
+                              </a>
+                            ) : (
+                              <span className="text-xs text-slate-400">No source URL</span>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => addToBucket(g, e)}
+                                className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                title="Add to bucket"
+                              >
+                                <ShoppingBag className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDetailEntry(e)}
+                                className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                title="View details"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    partNumber: g.part_number,
+                                    excludeEntirePart: false,
+                                    vendorName: e.vendor_name ?? null,
+                                    url: e.url ?? null,
+                                    price: e.price ?? null,
+                                    quantity: e.quantity ?? null,
+                                  })
+                                }
+                                className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                                title="Remove this vendor offer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </article>
               )

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve env files relative to this file so it works when running from project root or backend/
@@ -10,6 +10,15 @@ _ENV_FILES = (
     str(_BACKEND_DIR / ".env.development"),
     str(_BACKEND_DIR / ".env"),
 )
+
+# Groq retired these IDs on 2026-08-16; remap stale GROQ_MODEL env values.
+RETIRED_GROQ_MODELS = {
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "qwen/qwen3-32b": "openai/gpt-oss-120b",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "openai/gpt-oss-120b",
+    "meta-llama/llama-4-maverick-17b-128e-instruct": "openai/gpt-oss-120b",
+}
 
 
 class Settings(BaseSettings):
@@ -35,9 +44,16 @@ class Settings(BaseSettings):
     # Serper.dev Google Search API
     serper_api_key: str = Field(default="", validation_alias="SERPER_API_KEY")
 
-    # Groq / Llama 3.3 70B (cleans structured data; free: 1k req/day, 12k TPM; https://console.groq.com/)
+    # Groq (structured-data cleanup and in-app AI; https://console.groq.com/)
     groq_api_key: str = Field(default="", validation_alias="GROQ_API_KEY")
-    groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
+    groq_model: str = Field(default="openai/gpt-oss-120b", validation_alias="GROQ_MODEL")
+
+    @field_validator("groq_model", mode="before")
+    @classmethod
+    def _remap_retired_groq_model(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return RETIRED_GROQ_MODELS.get(value.strip(), value)
 
     # Firecrawl web scraping API (get key at https://firecrawl.dev/)
     firecrawl_api_key: str = Field(default="", validation_alias="FIRECRAWL_API_KEY")

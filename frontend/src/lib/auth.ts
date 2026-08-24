@@ -17,6 +17,7 @@ export const WORKSPACE_RESET_EVENT = 'cmr-workspace-reset'
 const LEGACY_WORKSPACE_LOCAL_KEYS = [
   'research-tabs',
   'research-page-state',
+  'ir-research-locations-v1',
   'ir-compare-page-state-v1',
   'ir-compare-vendor-coverage-view',
   'ir-wishlist-board-lists',

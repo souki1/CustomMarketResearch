@@ -1,6 +1,8 @@
 import asyncio
+import re
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -24,7 +26,72 @@ from schemas import (
 )
 from data.groq_client import clean_structured_data
 from data.firecrawl_client import scrape_url_with_ai_extraction
-from data.serper_client import extract_organic_results_from_serper_response, search_serper
+from data.serper_client import (
+    extract_organic_results_from_serper_response,
+    resolve_serper_location,
+    search_serper,
+)
+
+
+def _normalize_source_url_key(url: object) -> str:
+    """Canonical key so the same page matches across research runs (query/fragment ignored)."""
+    if url is None:
+        return ""
+    s = str(url).strip()
+    if not s:
+        return ""
+    try:
+        p = urlparse(s)
+        if p.scheme not in ("http", "https"):
+            return s.lower()
+        netloc = (p.netloc or "").lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        path = (p.path or "").rstrip("/") or "/"
+        return urlunparse((p.scheme.lower(), netloc, path, "", "", ""))
+    except Exception:
+        return s.lower()
+
+
+def _dedupe_urls_prefer_order(urls: list[str], *, limit: int = 15) -> list[str]:
+    """Keep first occurrence of each normalized URL, capped for scrape budget."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in urls:
+        u = str(raw or "").strip()
+        if not u.startswith(("http://", "https://")):
+            continue
+        key = _normalize_source_url_key(u)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(u)
+        if len(out) >= limit:
+            break
+    return out
+
+
+_US_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
+
+
+def _printable_clip(value: object, max_len: int) -> str:
+    text = "".join(ch for ch in str(value or "") if ch.isprintable()).strip()
+    return text[:max_len]
+
+
+def _compose_research_location(body: ResearchSearchBody | None) -> str:
+    if body is None:
+        return ""
+    zip_code = _printable_clip(body.zip_code, 20)
+    address = _printable_clip(body.address, 300)
+    location = _printable_clip(body.location, 300)
+    if address and zip_code and zip_code.lower() not in address.lower():
+        return f"{address}, {zip_code}"
+    if address:
+        return address
+    if zip_code:
+        return zip_code
+    return location
 
 
 router = APIRouter(prefix="/datasheet", tags=["datasheet"])
@@ -237,6 +304,20 @@ async def search_selection_and_store_urls(
             }
         )
 
+        location_label = _compose_research_location(body)
+        serper_location = location_label or None
+        serper_gl: str | None = None
+        if location_label:
+            canonical, country = await resolve_serper_location(
+                location_label, settings.serper_api_key
+            )
+            if canonical:
+                serper_location = canonical
+            if country:
+                serper_gl = country
+            elif _US_ZIP_RE.match(_printable_clip(body.zip_code if body else "", 20)):
+                serper_gl = "us"
+
         for row_index, row_data in enumerate(rows):
             row_values = [str(v).strip() for v in row_data if v]
             if not row_values:
@@ -254,10 +335,16 @@ async def search_selection_and_store_urls(
 
             # Use space-separated values only (no header-based logic)
             search_query = " ".join(row_values)
+            if location_label:
+                search_query = f"{search_query} near {location_label}"
 
             try:
                 result = await search_serper(
-                    settings.serper_api_key, search_query, num=10
+                    settings.serper_api_key,
+                    search_query,
+                    num=10,
+                    location=serper_location,
+                    gl=serper_gl,
                 )
                 organic_results = extract_organic_results_from_serper_response(result)
             except Exception as e:
@@ -266,10 +353,23 @@ async def search_selection_and_store_urls(
                     detail=f"Serper API error for row {row_index + 1}: {e!s}",
                 )
 
-            urls = [r["link"] for r in organic_results]
+            serper_urls = [r["link"] for r in organic_results]
             table_row_index = row_indices[row_index] if row_index < len(row_indices) else row_index
             now = datetime.utcnow()
             new_id = await get_next_sequence(mongo_db, "research_urls")
+
+            # On re-research, re-scrape known sources first so Field tracking can
+            # compare against the previous run (Serper alone often returns new URLs).
+            prior_source_urls = await _list_prior_source_urls_for_row(
+                mongo_db,
+                owner_id=user.id,
+                file_id=selection.get("file_id"),
+                tab_id=selection.get("tab_id"),
+                table_row_index=table_row_index,
+                exclude_research_url_id=new_id,
+            )
+            urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=15)
+
             doc = {
                 "id": new_id,
                 "owner_id": user.id,
@@ -279,6 +379,7 @@ async def search_selection_and_store_urls(
                 "tab_id": selection.get("tab_id"),
                 "file_id": selection.get("file_id"),
                 "search_query": search_query,
+                "search_location": location_label or None,
                 "urls": urls,
                 "results": organic_results,
                 "headers": headers,
@@ -289,6 +390,12 @@ async def search_selection_and_store_urls(
             ai_query = (body.ai_query if body else None) or ""
             if not ai_query.strip():
                 ai_query = "Extract product specifications, pricing (keep prices with currency symbols like $, €, £), availability, part numbers, and key information from this page. Return as structured JSON."
+            if location_label:
+                ai_query = (
+                    f"{ai_query.strip()}\nPrefer vendors, stock, pricing, and delivery "
+                    f"available to {location_label}. Include local availability and lead time "
+                    "for this ZIP or address when present."
+                )
             if urls and settings.firecrawl_api_key:
                 sem = asyncio.Semaphore(5)
 
@@ -313,6 +420,7 @@ async def search_selection_and_store_urls(
                         file_id=selection.get("file_id"),
                         tab_id=selection.get("tab_id"),
                         table_row_index=table_row_index,
+                        exclude_research_url_id=new_id,
                     )
                     base_data: dict = {}
                     prior_log = None
@@ -604,6 +712,77 @@ def _append_change_log(existing_log: object, field_changes: list[dict], *, limit
     return [entry, *log][:limit]
 
 
+async def _prior_research_url_ids_for_row(
+    mongo_db: AsyncIOMotorDatabase,
+    *,
+    owner_id: int,
+    file_id: int | None,
+    tab_id: str | None,
+    table_row_index: int | None,
+    exclude_research_url_id: int | None = None,
+) -> list[int]:
+    """Prior research_url ids for this sheet row (newest first), optionally excluding the current run."""
+    if table_row_index is None:
+        return []
+    ru_query: dict = {"owner_id": owner_id, "table_row_index": table_row_index}
+    if file_id is not None:
+        ru_query["file_id"] = file_id
+    elif tab_id:
+        ru_query["tab_id"] = tab_id
+    else:
+        return []
+    prior_research = (
+        await mongo_db["research_urls"]
+        .find(ru_query, {"id": 1})
+        .sort([("created_at", -1)])
+        .to_list(length=50)
+    )
+    out: list[int] = []
+    for d in prior_research:
+        rid = d.get("id")
+        if rid is None:
+            continue
+        if exclude_research_url_id is not None and rid == exclude_research_url_id:
+            continue
+        out.append(rid)
+    return out
+
+
+async def _list_prior_source_urls_for_row(
+    mongo_db: AsyncIOMotorDatabase,
+    *,
+    owner_id: int,
+    file_id: int | None,
+    tab_id: str | None,
+    table_row_index: int | None,
+    exclude_research_url_id: int | None = None,
+) -> list[str]:
+    """Known source URLs from earlier research runs on this row (for re-scrape + field tracking)."""
+    prior_ids = await _prior_research_url_ids_for_row(
+        mongo_db,
+        owner_id=owner_id,
+        file_id=file_id,
+        tab_id=tab_id,
+        table_row_index=table_row_index,
+        exclude_research_url_id=exclude_research_url_id,
+    )
+    if not prior_ids:
+        return []
+    scraped = (
+        await mongo_db["research_scraped_data"]
+        .find(
+            {"owner_id": owner_id, "research_url_id": {"$in": prior_ids}},
+            {"url": 1, "updated_at": 1, "created_at": 1},
+        )
+        .sort([("updated_at", -1), ("created_at", -1)])
+        .to_list(length=200)
+    )
+    return _dedupe_urls_prefer_order(
+        [str(s.get("url") or "") for s in scraped],
+        limit=15,
+    )
+
+
 async def _find_prior_scraped_for_url(
     mongo_db: AsyncIOMotorDatabase,
     *,
@@ -612,27 +791,28 @@ async def _find_prior_scraped_for_url(
     file_id: int | None,
     tab_id: str | None,
     table_row_index: int | None,
+    exclude_research_url_id: int | None = None,
 ) -> dict | None:
     """Most recent scraped doc for the same source URL on this sheet row (any prior research run)."""
     if not url or table_row_index is None:
         return None
-    ru_query: dict = {"owner_id": owner_id, "table_row_index": table_row_index}
-    if file_id is not None:
-        ru_query["file_id"] = file_id
-    elif tab_id:
-        ru_query["tab_id"] = tab_id
-    else:
-        return None
-    prior_research = (
-        await mongo_db["research_urls"]
-        .find(ru_query, {"id": 1})
-        .sort([("created_at", -1)])
-        .to_list(length=50)
+    prior_ids = await _prior_research_url_ids_for_row(
+        mongo_db,
+        owner_id=owner_id,
+        file_id=file_id,
+        tab_id=tab_id,
+        table_row_index=table_row_index,
+        exclude_research_url_id=exclude_research_url_id,
     )
-    prior_ids = [d["id"] for d in prior_research if d.get("id") is not None]
     if not prior_ids:
         return None
-    return await mongo_db["research_scraped_data"].find_one(
+
+    target_key = _normalize_source_url_key(url)
+    if not target_key:
+        return None
+
+    # Exact match first (fast path).
+    exact = await mongo_db["research_scraped_data"].find_one(
         {
             "owner_id": owner_id,
             "url": url,
@@ -640,6 +820,20 @@ async def _find_prior_scraped_for_url(
         },
         sort=[("updated_at", -1), ("created_at", -1)],
     )
+    if exact:
+        return exact
+
+    # Fall back to normalized URL match (Serper often varies query strings / www).
+    candidates = (
+        await mongo_db["research_scraped_data"]
+        .find({"owner_id": owner_id, "research_url_id": {"$in": prior_ids}})
+        .sort([("updated_at", -1), ("created_at", -1)])
+        .to_list(length=200)
+    )
+    for doc in candidates:
+        if _normalize_source_url_key(doc.get("url")) == target_key:
+            return doc
+    return None
 
 
 async def _attach_scraped_for_docs(

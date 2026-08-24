@@ -28,6 +28,7 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 }
 
 const REPORT_TYPE_STYLES: Record<string, { bg: string; text: string }> = {
+  RFQ: { bg: 'bg-emerald-50', text: 'text-emerald-800' },
   Comparison: { bg: 'bg-blue-50', text: 'text-blue-700' },
   Vendor: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
   Insights: { bg: 'bg-amber-50', text: 'text-amber-700' },
@@ -38,6 +39,7 @@ const REPORT_TYPE_STYLES: Record<string, { bg: string; text: string }> = {
 
 function inferReportType(title: string, index: number): string {
   const t = title.toLowerCase()
+  if (t.includes('rfq') || t.includes('approved')) return 'RFQ'
   if (t.includes('comparison') || t.includes('compare')) return 'Comparison'
   if (t.includes('vendor') || t.includes('scorecard')) return 'Vendor'
   if (t.includes('insight') || t.includes('intelligence')) return 'Insights'
