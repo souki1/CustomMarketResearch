@@ -11,6 +11,12 @@ from routers import ai, auth, compare, datasheet, purchase_orders, reports, rese
 from portfolio.PortfolioApi import router as portfolio_router
 
 settings = get_settings()
+_frontend_origin = (settings.frontend_url or "").rstrip("/")
+_cors_origins = [
+    origin
+    for origin in (_frontend_origin, "http://localhost:5173", "http://127.0.0.1:5173")
+    if origin
+]
 
 
 @asynccontextmanager
@@ -38,11 +44,12 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,
     same_site="lax",
+    https_only=_frontend_origin.startswith("https://"),
     max_age=3600 * 24,
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

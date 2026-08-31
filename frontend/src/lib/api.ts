@@ -1,6 +1,6 @@
 import { getToken } from './auth'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
 /** Always read JWT from storage so requests never use a stale token captured in React closures. */
 function bearerAuthHeader(): Record<string, string> {
