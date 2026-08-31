@@ -52,7 +52,6 @@ services:
   - type: web
     name: inteligentresearch-web
     runtime: static
-    region: oregon
     branch: NewFeature
     rootDir: frontend
     buildCommand: npm ci && npm run build
