@@ -318,158 +318,217 @@ async def search_selection_and_store_urls(
             elif _US_ZIP_RE.match(_printable_clip(body.zip_code if body else "", 20)):
                 serper_gl = "us"
 
-        for row_index, row_data in enumerate(rows):
-            row_values = [str(v).strip() for v in row_data if v]
-            if not row_values:
+        row_sema = asyncio.Semaphore(max(1, min(int(settings.research_row_concurrency), 10)))
+        progress_lock = asyncio.Lock()
+        research_url_ids_by_row: list[int | None] = [None] * len(rows)
+        pending_scrapes: list[tuple[int, int, int, str, str]] = []
+        row_scrape_remaining: list[int] = [0] * len(rows)
+
+        base_ai_query = (body.ai_query if body else None) or ""
+        if not base_ai_query.strip():
+            base_ai_query = (
+                "Extract product specifications, pricing (keep prices with currency "
+                "symbols like $, €, £), availability, part numbers, and key information "
+                "from this page. Return as structured JSON."
+            )
+        if location_label:
+            base_ai_query = (
+                f"{base_ai_query.strip()}\nPrefer vendors, stock, pricing, and delivery "
+                f"available to {location_label}. Include local availability and lead time "
+                "for this ZIP or address when present."
+            )
+
+        async def mark_row_done() -> None:
+            nonlocal completed_rows
+            async with progress_lock:
                 completed_rows += 1
                 await mongo_db["research_jobs"].update_one(
                     {"id": job_id, "owner_id": user.id},
                     {
                         "$set": {
                             "completed_rows": completed_rows,
+                            "total_urls": total_urls,
                             "updated_at": datetime.utcnow(),
                         }
                     },
                 )
-                continue
 
-            # Use space-separated values only (no header-based logic)
-            search_query = " ".join(row_values)
-            if location_label:
-                search_query = f"{search_query} near {location_label}"
-
-            try:
-                result = await search_serper(
-                    settings.serper_api_key,
-                    search_query,
-                    num=10,
-                    location=serper_location,
-                    gl=serper_gl,
-                )
-                organic_results = extract_organic_results_from_serper_response(result)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Serper API error for row {row_index + 1}: {e!s}",
-                )
-
-            serper_urls = [r["link"] for r in organic_results]
-            table_row_index = row_indices[row_index] if row_index < len(row_indices) else row_index
-            now = datetime.utcnow()
-            new_id = await get_next_sequence(mongo_db, "research_urls")
-
-            # On re-research, re-scrape known sources first so Field tracking can
-            # compare against the previous run (Serper alone often returns new URLs).
-            prior_source_urls = await _list_prior_source_urls_for_row(
+        async def persist_scraped(
+            *,
+            research_url_id: int,
+            scraped_url: str,
+            scraped: dict,
+            table_row_index: int,
+        ) -> None:
+            now_scrape = datetime.utcnow()
+            prior = await _find_prior_scraped_for_url(
                 mongo_db,
                 owner_id=user.id,
+                url=scraped_url,
                 file_id=selection.get("file_id"),
                 tab_id=selection.get("tab_id"),
                 table_row_index=table_row_index,
-                exclude_research_url_id=new_id,
+                exclude_research_url_id=research_url_id,
             )
-            urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=15)
-
-            doc = {
-                "id": new_id,
-                "owner_id": user.id,
-                "selection_id": selection_id,
-                "row_index": row_index,
-                "table_row_index": table_row_index,
-                "tab_id": selection.get("tab_id"),
-                "file_id": selection.get("file_id"),
-                "search_query": search_query,
-                "search_location": location_label or None,
-                "urls": urls,
-                "results": organic_results,
-                "headers": headers,
-                "row_data": row_data,
-                "created_at": now,
-            }
-            await mongo_db["research_urls"].insert_one(doc)
-            ai_query = (body.ai_query if body else None) or ""
-            if not ai_query.strip():
-                ai_query = "Extract product specifications, pricing (keep prices with currency symbols like $, €, £), availability, part numbers, and key information from this page. Return as structured JSON."
-            if location_label:
-                ai_query = (
-                    f"{ai_query.strip()}\nPrefer vendors, stock, pricing, and delivery "
-                    f"available to {location_label}. Include local availability and lead time "
-                    "for this ZIP or address when present."
+            base_data: dict = {}
+            prior_log = None
+            if prior and isinstance(prior.get("data"), dict):
+                prior_cleaned = await mongo_db["research_cleaned_data"].find_one(
+                    {"research_scraped_id": prior.get("id"), "owner_id": user.id},
+                    sort=[("created_at", -1)],
                 )
-            if urls and settings.firecrawl_api_key:
-                sem = asyncio.Semaphore(5)
+                if prior_cleaned and isinstance(prior_cleaned.get("data"), dict):
+                    base_data = prior_cleaned["data"]
+                else:
+                    base_data = prior["data"]
+                prior_log = prior.get("change_log")
 
-                async def scrape_one(u: str):
-                    async with sem:
-                        data = await scrape_url_with_ai_extraction(
-                            settings.firecrawl_api_key,
-                            u,
-                            ai_query,
-                        )
-                        return (u, data) if (data and isinstance(data, dict) and len(data) > 0) else None
-
-                raw_results = await asyncio.gather(*[scrape_one(u) for u in urls])
-                results = [(r[0], r[1]) for r in raw_results if r is not None]
-
-                for scraped_url, scraped in results:
-                    now_scrape = datetime.utcnow()
-                    prior = await _find_prior_scraped_for_url(
-                        mongo_db,
-                        owner_id=user.id,
-                        url=scraped_url,
-                        file_id=selection.get("file_id"),
-                        tab_id=selection.get("tab_id"),
-                        table_row_index=table_row_index,
-                        exclude_research_url_id=new_id,
-                    )
-                    base_data: dict = {}
-                    prior_log = None
-                    if prior and isinstance(prior.get("data"), dict):
-                        # Prefer cleaned view of prior source when available.
-                        prior_cleaned = await mongo_db["research_cleaned_data"].find_one(
-                            {"research_scraped_id": prior.get("id"), "owner_id": user.id},
-                            sort=[("created_at", -1)],
-                        )
-                        if prior_cleaned and isinstance(prior_cleaned.get("data"), dict):
-                            base_data = prior_cleaned["data"]
-                        else:
-                            base_data = prior["data"]
-                        prior_log = prior.get("change_log")
-
-                    merged, _updated, _added, field_changes = _merge_scraped_field_dicts(
-                        base_data, scraped
-                    )
-                    # No prior scrape for this source means this is the first-ever
-                    # capture, not a change worth tracking as "added" noise.
-                    if prior is None:
-                        field_changes = []
-                    change_log = _append_change_log(prior_log, field_changes)
-                    scraped_id = await get_next_sequence(mongo_db, "research_scraped_data")
-                    scraped_doc = {
-                        "id": scraped_id,
-                        "owner_id": user.id,
-                        "research_url_id": new_id,
-                        "url": scraped_url,
-                        "data": merged,
-                        "created_at": now_scrape,
-                        "updated_at": now_scrape,
-                        "change_log": change_log,
-                        "last_field_changes": field_changes,
-                    }
-                    await mongo_db["research_scraped_data"].insert_one(scraped_doc)
-            research_url_ids.append(new_id)
-            total_urls += len(urls)
-            completed_rows += 1
-            await mongo_db["research_jobs"].update_one(
-                {"id": job_id, "owner_id": user.id},
-                {
-                    "$set": {
-                        "completed_rows": completed_rows,
-                        "total_urls": total_urls,
-                        "updated_at": datetime.utcnow(),
-                    }
-                },
+            merged, _updated, _added, field_changes = _merge_scraped_field_dicts(
+                base_data, scraped
             )
+            if prior is None:
+                field_changes = []
+            change_log = _append_change_log(prior_log, field_changes)
+            scraped_id = await get_next_sequence(mongo_db, "research_scraped_data")
+            await mongo_db["research_scraped_data"].insert_one(
+                {
+                    "id": scraped_id,
+                    "owner_id": user.id,
+                    "research_url_id": research_url_id,
+                    "url": scraped_url,
+                    "data": merged,
+                    "created_at": now_scrape,
+                    "updated_at": now_scrape,
+                    "change_log": change_log,
+                    "last_field_changes": field_changes,
+                }
+            )
+
+        async def search_row(row_index: int, row_data: object) -> None:
+            row_values = [str(v).strip() for v in row_data if v]
+            if not row_values:
+                await mark_row_done()
+                return
+
+            async with row_sema:
+                search_query = " ".join(row_values)
+                if location_label:
+                    search_query = f"{search_query} near {location_label}"
+
+                try:
+                    result = await search_serper(
+                        settings.serper_api_key,
+                        search_query,
+                        num=10,
+                        location=serper_location,
+                        gl=serper_gl,
+                    )
+                    organic_results = extract_organic_results_from_serper_response(result)
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Serper API error for row {row_index + 1}: {e!s}",
+                    ) from e
+
+                serper_urls = [r["link"] for r in organic_results]
+                table_row_index = (
+                    row_indices[row_index] if row_index < len(row_indices) else row_index
+                )
+                now = datetime.utcnow()
+                new_id = await get_next_sequence(mongo_db, "research_urls")
+
+                prior_source_urls = await _list_prior_source_urls_for_row(
+                    mongo_db,
+                    owner_id=user.id,
+                    file_id=selection.get("file_id"),
+                    tab_id=selection.get("tab_id"),
+                    table_row_index=table_row_index,
+                    exclude_research_url_id=new_id,
+                )
+                urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=15)
+
+                await mongo_db["research_urls"].insert_one(
+                    {
+                        "id": new_id,
+                        "owner_id": user.id,
+                        "selection_id": selection_id,
+                        "row_index": row_index,
+                        "table_row_index": table_row_index,
+                        "tab_id": selection.get("tab_id"),
+                        "file_id": selection.get("file_id"),
+                        "search_query": search_query,
+                        "search_location": location_label or None,
+                        "urls": urls,
+                        "results": organic_results,
+                        "headers": headers,
+                        "row_data": row_data,
+                        "created_at": now,
+                    }
+                )
+                research_url_ids_by_row[row_index] = new_id
+                if not urls:
+                    await mark_row_done()
+                    return
+                row_scrape_remaining[row_index] = len(urls)
+                pending_scrapes.extend(
+                    (row_index, new_id, table_row_index, source_url, base_ai_query)
+                    for source_url in urls
+                )
+
+        async with asyncio.TaskGroup() as tg:
+            for row_index, row_data in enumerate(rows):
+                tg.create_task(search_row(row_index, row_data))
+
+        total_urls = len(pending_scrapes)
+        await mongo_db["research_jobs"].update_one(
+            {"id": job_id, "owner_id": user.id},
+            {
+                "$set": {
+                    "total_urls": total_urls,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
+        async def scrape_one(
+            row_index: int,
+            research_url_id: int,
+            table_row_index: int,
+            source_url: str,
+            ai_query: str,
+        ) -> None:
+            if settings.firecrawl_api_key:
+                data = await scrape_url_with_ai_extraction(
+                    settings.firecrawl_api_key,
+                    source_url,
+                    ai_query,
+                )
+                if data and isinstance(data, dict) and len(data) > 0:
+                    await persist_scraped(
+                        research_url_id=research_url_id,
+                        scraped_url=source_url,
+                        scraped=data,
+                        table_row_index=table_row_index,
+                    )
+            async with progress_lock:
+                row_scrape_remaining[row_index] -= 1
+                done = row_scrape_remaining[row_index] <= 0
+            if done:
+                await mark_row_done()
+
+        if pending_scrapes and settings.firecrawl_api_key:
+            await asyncio.gather(
+                *[
+                    scrape_one(row_index, research_url_id, table_row_index, source_url, ai_query)
+                    for row_index, research_url_id, table_row_index, source_url, ai_query in pending_scrapes
+                ]
+            )
+        elif pending_scrapes:
+            for row_index, remaining in enumerate(row_scrape_remaining):
+                if remaining > 0:
+                    await mark_row_done()
+
+        research_url_ids.extend(rid for rid in research_url_ids_by_row if rid is not None)
 
         await mongo_db["research_jobs"].update_one(
             {"id": job_id, "owner_id": user.id},
@@ -484,6 +543,11 @@ async def search_selection_and_store_urls(
             },
         )
     except Exception as e:
+        if isinstance(e, BaseExceptionGroup) and e.exceptions:
+            e = next(
+                (ex for ex in e.exceptions if isinstance(ex, HTTPException)),
+                e.exceptions[0],
+            )
         if job_id is not None:
             err_msg = e.detail if isinstance(e, HTTPException) else str(e)
             if not isinstance(err_msg, str):
@@ -500,7 +564,7 @@ async def search_selection_and_store_urls(
                     }
                 },
             )
-        raise
+        raise e
 
     return ResearchSearchResponse(
         selection_id=selection_id,

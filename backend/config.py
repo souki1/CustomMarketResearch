@@ -1,8 +1,23 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ORIGIN_SPLIT = re.compile(r"[\s,;|]+")
+
+
+def parse_frontend_urls(value: str) -> list[str]:
+    """Split FRONTEND_URL into origin list (comma, space, or | separated)."""
+    urls: list[str] = []
+    seen: set[str] = set()
+    for part in _ORIGIN_SPLIT.split(value or ""):
+        origin = part.strip().rstrip("/")
+        if origin.startswith(("http://", "https://")) and origin not in seen:
+            seen.add(origin)
+            urls.append(origin)
+    return urls
 
 # Resolve env files relative to this file so it works when running from project root or backend/
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -37,6 +52,14 @@ class Settings(BaseSettings):
     google_client_secret: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
     frontend_url: str = Field(default="", validation_alias="FRONTEND_URL")
 
+    @field_validator("frontend_url", mode="before")
+    @classmethod
+    def _normalize_frontend_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        urls = parse_frontend_urls(value)
+        return urls[0] if urls else value.strip().rstrip("/")
+
     # MongoDB (optional, for document storage / analytics, etc.)
     mongo_url: str = Field(default="", validation_alias="MONGO_URL")
     mongo_db_name: str = Field(default="", validation_alias="MONGO_DB_NAME")
@@ -57,6 +80,14 @@ class Settings(BaseSettings):
 
     # Firecrawl web scraping API (get key at https://firecrawl.dev/)
     firecrawl_api_key: str = Field(default="", validation_alias="FIRECRAWL_API_KEY")
+    # Overlapping extract POSTs. Lower this if logs show 429 Too Many Requests.
+    firecrawl_max_concurrency: int = Field(
+        default=4, ge=1, le=8, validation_alias="FIRECRAWL_MAX_CONCURRENCY"
+    )
+    # How many sheet rows to Google-search in parallel (scrapes use Firecrawl concurrency).
+    research_row_concurrency: int = Field(
+        default=6, ge=1, le=10, validation_alias="RESEARCH_ROW_CONCURRENCY"
+    )
 
     # Optional email delivery for OTP / verification codes
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")

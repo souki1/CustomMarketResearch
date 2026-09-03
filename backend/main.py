@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from config import get_settings
+from config import get_settings, parse_frontend_urls
 from database import init_db
 from mongo import get_mongo_db
 from models import User  # noqa: F401 - register model for create_all
@@ -11,12 +11,32 @@ from routers import ai, auth, compare, datasheet, purchase_orders, reports, rese
 from portfolio.PortfolioApi import router as portfolio_router
 
 settings = get_settings()
+_LOCAL_VITE_ORIGINS = (
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+)
+_LOCAL_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    host = origin.split("://", 1)[-1].split("/")[0].split(":")[0]
+    return host in {"localhost", "127.0.0.1"}
+
+
 _frontend_origin = (settings.frontend_url or "").rstrip("/")
-_cors_origins = [
-    origin
-    for origin in (_frontend_origin, "http://localhost:5173", "http://127.0.0.1:5173")
-    if origin
-]
+_configured_origins = parse_frontend_urls(_frontend_origin)
+_use_local_cors = not _configured_origins or all(_is_loopback_origin(o) for o in _configured_origins)
+_cors_origins = list(
+    dict.fromkeys(
+        [
+            *(_configured_origins or []),
+            *( _LOCAL_VITE_ORIGINS if _use_local_cors else () ),
+        ]
+    )
+)
+_cors_origin_regex = _LOCAL_ORIGIN_REGEX if _use_local_cors else None
 
 
 @asynccontextmanager
@@ -50,8 +70,9 @@ app.add_middleware(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

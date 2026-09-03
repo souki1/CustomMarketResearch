@@ -1,4 +1,4 @@
-# Run backend (no Redis/Celery - uses asyncio for 5 concurrent scrapes)
+# Run backend (no Redis/Celery - Firecrawl extract concurrency is in FIRECRAWL_MAX_CONCURRENCY)
 # Run from backend folder: .\run.ps1
 
 $env:PYTHONDONTWRITEBYTECODE = "1"

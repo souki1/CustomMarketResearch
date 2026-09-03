@@ -1340,38 +1340,6 @@ export function ResearchPage() {
     sheetSyncSuppressUntilRef.current.set(fileId, Date.now() + suppressMs)
   }, [])
 
-  /**
-   * Pull latest CSV from Mongo for a file-backed tab.
-   * Skips when this browser has unsaved local edits so we don't clobber them.
-   */
-  const reloadFileTabFromServer = useCallback(async (fileId: number) => {
-    if (!Number.isFinite(fileId) || fileId <= 0) return
-    if (userHasEditedRef.current) return
-    const suppressUntil = sheetSyncSuppressUntilRef.current.get(fileId) ?? 0
-    if (Date.now() < suppressUntil) return
-    const token = getToken()
-    if (!token) return
-
-    const generation = sheetSyncGenerationRef.current.get(fileId) ?? 0
-    try {
-      const text = await getWorkspaceFileContent(fileId, token)
-      if (userHasEditedRef.current) return
-      if ((sheetSyncGenerationRef.current.get(fileId) ?? 0) !== generation) return
-      if (Date.now() < (sheetSyncSuppressUntilRef.current.get(fileId) ?? 0)) return
-      const parsed = parseCsv(text)
-      const nextData = parsed.length > 0 ? parsed : [['']]
-      const nextCsv = serializeToCsv(nextData)
-      setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.fileId === fileId)
-        if (idx < 0) return prev
-        if (serializeToCsv(prev[idx].data) === nextCsv) return prev
-        return prev.map((t, i) => (i === idx ? { ...t, data: nextData } : t))
-      })
-    } catch {
-      // Soft-fail: keep local cache if the network/API blips during background sync.
-    }
-  }, [])
-
   const clearResearchProgressTicker = useCallback(() => {
     if (researchProgressIntervalRef.current) {
       clearInterval(researchProgressIntervalRef.current)
@@ -2070,8 +2038,8 @@ export function ResearchPage() {
     }
   }, [activeTab?.fileId, effectiveTabId, researchVersion])
 
-  // Cross-browser sync: poll active research jobs + refresh "N found" counts.
-  // Same user opening Research in another browser should see in-progress rows and badges.
+  // Poll jobs + "N found" counts only while research is running.
+  // Idle sheets already load grid-summary once (effect above); do not keep hitting the API.
   useEffect(() => {
     const fileId = activeTab?.fileId ?? null
     const tabId = fileId ? null : effectiveTabId
@@ -2095,7 +2063,7 @@ export function ResearchPage() {
         }
         setResearchRowSummaryByIndex(next)
       } catch {
-        // Soft-fail; next poll retries.
+        // Soft-fail; next poll retries while a job is still running.
       }
     }
 
@@ -2108,6 +2076,13 @@ export function ResearchPage() {
         if (!localResearchInFlightRef.current) setResearchProgress(0)
       }, 400)
       setResearchVersion((v) => v + 1)
+    }
+
+    const scheduleNext = () => {
+      if (cancelled) return
+      timer = window.setTimeout(() => {
+        void tick()
+      }, 2500)
     }
 
     const tick = async () => {
@@ -2137,40 +2112,29 @@ export function ResearchPage() {
             clearResearchProgressTicker()
           }
           await refreshGridSummary(token)
+          scheduleNext()
         } else if (syncedResearchJobIdRef.current != null) {
           syncedResearchJobIdRef.current = null
           applyRemoteJobClear()
           await refreshGridSummary(token)
-        } else if (!localResearchInFlightRef.current) {
-          // Keep badges current even when no job is running (other browser finished earlier).
-          await refreshGridSummary(token)
+        } else if (localResearchInFlightRef.current || storeSelectionLoading) {
+          // Local research started; job row may not be visible yet.
+          scheduleNext()
         }
       } catch {
-        // Soft-fail; next poll retries.
-      }
-
-      if (!cancelled) {
-        const hasJob = syncedResearchJobIdRef.current != null || localResearchInFlightRef.current
-        timer = window.setTimeout(() => {
-          void tick()
-        }, hasJob ? 2500 : 6000)
+        if (!cancelled && (localResearchInFlightRef.current || storeSelectionLoading)) {
+          scheduleNext()
+        }
       }
     }
 
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void tick()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('focus', onVisible)
     void tick()
 
     return () => {
       cancelled = true
       if (timer) window.clearTimeout(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('focus', onVisible)
     }
-  }, [activeTab?.fileId, clearResearchProgressTicker, effectiveTabId])
+  }, [activeTab?.fileId, clearResearchProgressTicker, effectiveTabId, storeSelectionLoading])
 
   // Show loading in preview while research is running (until all rows scraped)
   useEffect(() => {
@@ -2196,12 +2160,10 @@ export function ResearchPage() {
       return
     }
 
-    const existing = tabs.find((t) => t.fileId === numericId)
+    const existing = tabsRef.current.find((t) => t.fileId === numericId)
     if (existing) {
       setActiveTabId(existing.id)
       setError(null)
-      // Tab exists in this browser's cache — still refresh from server for multi-browser sync.
-      void reloadFileTabFromServer(numericId)
       return
     }
     setLoading(true)
@@ -2239,36 +2201,11 @@ export function ResearchPage() {
     fileIdParam,
     nameFromUrl,
     folderFromUrl,
-    tabs,
     setSearchParams,
-    reloadFileTabFromServer,
   ])
 
-  // Keep file-backed sheets in sync across browsers for the same user.
-  useEffect(() => {
-    const fileId = activeTab?.fileId ?? null
-    if (fileId == null) return
-
-    void reloadFileTabFromServer(fileId)
-
-    const onVisibleOrFocus = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      void reloadFileTabFromServer(fileId)
-    }
-    document.addEventListener('visibilitychange', onVisibleOrFocus)
-    window.addEventListener('focus', onVisibleOrFocus)
-
-    const pollId = window.setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      void reloadFileTabFromServer(fileId)
-    }, 15000)
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibleOrFocus)
-      window.removeEventListener('focus', onVisibleOrFocus)
-      window.clearInterval(pollId)
-    }
-  }, [activeTab?.fileId, reloadFileTabFromServer])
+  // File CSV is loaded on hydrate / when the URL fileId changes. Do not poll it
+  // in the background — idle sheets already have their data in tab state.
 
   const addNewTab = useCallback(() => {
     setNewSheetNameDraft('')
