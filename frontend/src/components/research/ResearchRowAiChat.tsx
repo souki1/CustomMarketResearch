@@ -126,10 +126,10 @@ export function ResearchRowAiChat({
           <Bot className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} strokeWidth={2} aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <p className={`truncate font-semibold text-gray-900 ${compact ? 'text-[11px]' : 'text-xs'}`}>
+          <p className={`truncate font-semibold text-app-label ${compact ? 'text-[11px]' : 'text-xs'}`}>
             {compact ? 'Source assistant' : 'Row assistant'}
           </p>
-          <p className={`truncate text-gray-500 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+          <p className={`truncate text-app-secondary ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
             Ask questions or add columns to the sheet.
           </p>
         </div>
@@ -147,13 +147,13 @@ export function ResearchRowAiChat({
         aria-live="polite"
       >
         {loadingSession && !hasThread && (
-          <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-app-secondary">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Loading conversation…
           </div>
         )}
         {!loadingSession && !hasThread && (
-          <div className={`rounded-lg border border-dashed border-gray-200 bg-white/80 text-center text-gray-600 ${compact ? 'px-2 py-4 text-xs' : 'px-3 py-6 text-sm'}`}>
+          <div className={`rounded-lg border border-dashed border-app-separator bg-app-surface/80 text-center text-app-secondary ${compact ? 'px-2 py-4 text-xs' : 'px-3 py-6 text-sm'}`}>
             Ask about this source, compare vendors, or say &quot;add price and vendor to my sheet&quot;.
           </div>
         )}
@@ -161,7 +161,7 @@ export function ResearchRowAiChat({
           if (msg.role === 'user') {
             return (
               <div key={`${i}-u`} className="flex justify-end">
-                <div className={`max-w-[min(92%,18rem)] rounded-2xl bg-gray-100 text-gray-900 ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'} leading-relaxed`}>
+                <div className={`max-w-[min(92%,18rem)] rounded-2xl bg-app-fill text-app-label ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'} leading-relaxed`}>
                   <span className="block whitespace-pre-wrap wrap-break-word">{msg.content}</span>
                 </div>
               </div>
@@ -175,7 +175,7 @@ export function ResearchRowAiChat({
             <div key={`${i}-a`} className="flex justify-start">
               <div className="w-full min-w-0 space-y-2">
                 {visible && (
-                  <div className={`leading-relaxed text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}>
+                  <div className={`leading-relaxed text-app-label ${compact ? 'text-xs' : 'text-sm'}`}>
                     <span className="block whitespace-pre-wrap wrap-break-word">{visible}</span>
                   </div>
                 )}
@@ -194,23 +194,23 @@ export function ResearchRowAiChat({
           )
         })}
         {loading && (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-app-secondary">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Thinking…
           </div>
         )}
       </div>
 
-      <div className={`shrink-0 space-y-2 border-t border-gray-100 bg-white ${compact ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+      <div className={`shrink-0 space-y-2 border-t border-app-separator bg-app-surface ${compact ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-center text-xs text-red-800">
             {error}
           </div>
         )}
-        <div className={`flex items-end gap-2 rounded-xl border border-gray-200 bg-gray-50/80 ${compact ? 'px-1.5 py-1.5' : 'px-2 py-2'}`}>
+        <div className={`flex items-end gap-2 rounded-xl border border-app-separator bg-app-fill/80 ${compact ? 'px-1.5 py-1.5' : 'px-2 py-2'}`}>
           <textarea
             rows={compact ? 1 : 2}
-            className={`w-full flex-1 resize-none border-0 bg-transparent text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 disabled:opacity-40 ${compact ? 'max-h-20 min-h-[32px] px-1 py-0.5 text-xs' : 'max-h-28 min-h-[40px] px-1 py-1 text-sm'}`}
+            className={`w-full flex-1 resize-none border-0 bg-transparent text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-0 disabled:opacity-40 ${compact ? 'max-h-20 min-h-[32px] px-1 py-0.5 text-xs' : 'max-h-28 min-h-[40px] px-1 py-1 text-sm'}`}
             placeholder="Message…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -234,7 +234,7 @@ export function ResearchRowAiChat({
           </button>
         </div>
         {!compact && (
-          <p className="text-center text-[10px] text-gray-400">AI can make mistakes. Verify important details.</p>
+          <p className="text-center text-[10px] text-app-tertiary">AI can make mistakes. Verify important details.</p>
         )}
       </div>
     </div>

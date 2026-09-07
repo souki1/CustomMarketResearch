@@ -268,11 +268,11 @@ export function PartsCatalogPage() {
     pageItems.length > 0 && pageItems.every((item) => selected.has(item.id))
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] w-full min-w-0 flex-col overflow-hidden bg-slate-50">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5">
-        <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900">
+    <div className="flex h-[calc(100vh-3.5rem)] w-full min-w-0 flex-col overflow-hidden bg-app-bg">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-app-separator bg-app-surface px-5">
+        <h1 className="truncate text-[22px] font-semibold tracking-[-0.03em] text-app-label">
           Catalog Browser
-          <span className="ml-2 font-medium text-slate-400">
+          <span className="ml-2 font-medium text-app-tertiary">
             ({filtered.length.toLocaleString()} parts)
           </span>
         </h1>
@@ -285,7 +285,7 @@ export function PartsCatalogPage() {
           )}
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-tertiary"
               aria-hidden
             />
             <input
@@ -293,7 +293,7 @@ export function PartsCatalogPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by ID, vendor, or description…"
-              className="w-56 rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:w-80"
+              className="w-56 rounded-md border border-app-separator bg-app-surface py-2 pl-9 pr-3 text-sm text-app-label outline-none transition-shadow placeholder:text-app-tertiary focus:border-app-accent focus:ring-1 focus:ring-app-accent sm:w-80"
               aria-label="Search catalog"
             />
           </div>
@@ -301,21 +301,21 @@ export function PartsCatalogPage() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-5">
-        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-lg border border-app-separator bg-app-surface p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-app-tertiary">
               Active filters
             </span>
             {FILTER_OPTIONS.filter((opt) => filters[opt.key]).map((opt) => (
               <div
                 key={opt.key}
-                className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700"
+                className="inline-flex items-center gap-1 rounded-full border border-app-accent/30 bg-app-accent-soft px-3 py-1.5 text-xs font-medium text-app-accent"
               >
                 {opt.label}
                 <button
                   type="button"
                   onClick={() => toggleFilter(opt.key)}
-                  className="ml-0.5 text-blue-500 hover:text-red-600"
+                  className="ml-0.5 text-app-accent hover:text-red-600"
                   aria-label={`Remove ${opt.label} filter`}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -323,12 +323,12 @@ export function PartsCatalogPage() {
               </div>
             ))}
             {search.trim() && (
-              <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+              <div className="inline-flex items-center gap-1 rounded-full border border-app-separator bg-app-fill px-3 py-1.5 text-xs text-app-secondary">
                 Search: {search.trim()}
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="ml-0.5 text-slate-400 hover:text-red-600"
+                  className="ml-0.5 text-app-tertiary hover:text-red-600"
                   aria-label="Clear search"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -339,16 +339,16 @@ export function PartsCatalogPage() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="ml-1 text-xs font-medium text-blue-600 hover:underline"
+                className="ml-1 text-xs font-medium text-app-accent hover:underline"
               >
                 Clear all
               </button>
             )}
-            {!hasActiveChips && <span className="text-xs text-slate-400">None</span>}
+            {!hasActiveChips && <span className="text-xs text-app-tertiary">None</span>}
           </div>
 
           <div className="flex items-center gap-3">
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 transition-colors hover:bg-slate-50">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-app-separator bg-app-surface px-3 py-1.5 transition-colors hover:bg-app-fill">
               <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
                 <input
                   type="checkbox"
@@ -356,11 +356,11 @@ export function PartsCatalogPage() {
                   checked={smartSuggestions}
                   onChange={(e) => setSmartSuggestions(e.target.checked)}
                 />
-                <span className="h-5 w-9 rounded-full bg-slate-300 transition-colors peer-checked:bg-blue-600 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-400" />
-                <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+                <span className="h-5 w-9 rounded-full bg-app-fill-strong transition-colors peer-checked:bg-app-accent peer-focus-visible:ring-2 peer-focus-visible:ring-app-accent" />
+                <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-app-surface shadow transition-transform peer-checked:translate-x-4" />
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-700">
-                <Sparkles className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-app-secondary">
+                <Sparkles className="h-3.5 w-3.5 text-app-accent" aria-hidden />
                 Smart suggestions
               </span>
             </label>
@@ -370,15 +370,15 @@ export function PartsCatalogPage() {
                   type="button"
                   className={`relative inline-flex items-center justify-center rounded-md border p-1.5 transition-colors ${
                     activeFilterCount > 0
-                      ? 'border-blue-300 bg-blue-50 text-blue-700'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'border-blue-300 bg-app-accent-soft text-app-accent'
+                      : 'border-app-separator text-app-secondary hover:bg-app-fill'
                   }`}
                   title="Catalog filters"
                   aria-label="Catalog filters"
                 >
                   <Filter className="h-4 w-4" />
                   {activeFilterCount > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-app-accent px-1 text-[10px] font-semibold text-white">
                       {activeFilterCount}
                     </span>
                   )}
@@ -401,16 +401,16 @@ export function PartsCatalogPage() {
                       <span
                         className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                           on
-                            ? 'border-blue-600 bg-blue-600 text-white'
-                            : 'border-slate-300 bg-white text-transparent'
+                            ? 'border-app-accent bg-app-accent text-white'
+                            : 'border-app-separator bg-app-surface text-transparent'
                         }`}
                         aria-hidden
                       >
                         <Check className="h-3 w-3" strokeWidth={3} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium text-slate-800">{opt.label}</span>
-                        <span className="block text-xs text-slate-500">{opt.hint}</span>
+                        <span className="block text-sm font-medium text-app-label">{opt.label}</span>
+                        <span className="block text-xs text-app-secondary">{opt.hint}</span>
                       </span>
                     </DropdownMenuItem>
                   )
@@ -420,7 +420,7 @@ export function PartsCatalogPage() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onSelect={() => setFilters(EMPTY_FILTERS)}
-                      className="cursor-pointer text-blue-700 focus:text-blue-800"
+                      className="cursor-pointer text-app-accent focus:text-app-accent"
                     >
                       Clear filters
                     </DropdownMenuItem>
@@ -431,23 +431,23 @@ export function PartsCatalogPage() {
           </div>
         </div>
 
-        <div className="flex min-h-105 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="flex min-h-105 flex-1 flex-col overflow-hidden rounded-lg border border-app-separator bg-app-surface">
           {loading ? (
-            <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500">
+            <div className="flex flex-1 items-center justify-center gap-2 text-sm text-app-secondary">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               Loading catalog…
             </div>
           ) : error ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-              <p className="text-sm font-medium text-slate-700">{error}</p>
-              <p className="text-xs text-slate-400">
+              <p className="text-sm font-medium text-app-secondary">{error}</p>
+              <p className="text-xs text-app-tertiary">
                 Run Research or add Portfolio items to populate the catalog.
               </p>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-              <p className="text-sm font-medium text-slate-700">No parts match</p>
-              <p className="text-xs text-slate-400">
+              <p className="text-sm font-medium text-app-secondary">No parts match</p>
+              <p className="text-xs text-app-tertiary">
                 {items.length === 0
                   ? 'Research vendors or add portfolio parts to build your catalog.'
                   : 'Try clearing filters or search.'}
@@ -457,14 +457,14 @@ export function PartsCatalogPage() {
             <>
               <div className="min-h-0 flex-1 overflow-auto">
                 <table className="w-full min-w-180 border-collapse text-left">
-                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
+                  <thead className="sticky top-0 z-10 border-b border-app-separator bg-app-fill">
                     <tr>
                       <th className="w-12 px-3 py-2.5 text-center">
                         <input
                           type="checkbox"
                           checked={pageAllSelected}
                           onChange={toggleAllPage}
-                          className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
+                          className="h-3.5 w-3.5 cursor-pointer rounded accent-app-accent"
                           aria-label="Select all on page"
                         />
                       </th>
@@ -472,7 +472,7 @@ export function PartsCatalogPage() {
                         (h) => (
                           <th
                             key={h || 'actions'}
-                            className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 ${
+                            className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-app-tertiary ${
                               h === 'Price (USD)' ? 'text-right' : 'text-left'
                             }`}
                           >
@@ -490,8 +490,8 @@ export function PartsCatalogPage() {
                       return (
                         <tr
                           key={item.id}
-                          className={`transition-colors hover:bg-slate-50 ${
-                            isSel ? 'bg-blue-50/60' : 'bg-white'
+                          className={`transition-colors hover:bg-app-fill ${
+                            isSel ? 'bg-app-accent-soft/60' : 'bg-app-surface'
                           }`}
                         >
                           <td className="px-3 py-2 text-center">
@@ -499,22 +499,22 @@ export function PartsCatalogPage() {
                               type="checkbox"
                               checked={isSel}
                               onChange={() => toggleSel(item.id)}
-                              className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
+                              className="h-3.5 w-3.5 cursor-pointer rounded accent-app-accent"
                               aria-label={`Select ${item.part}`}
                             />
                           </td>
-                          <td className="px-3 py-2 font-mono text-[12px] font-medium text-slate-900">
+                          <td className="px-3 py-2 font-mono text-[12px] font-medium text-app-label">
                             {item.part}
                           </td>
-                          <td className="max-w-xs truncate px-3 py-2 text-slate-700">
+                          <td className="max-w-xs truncate px-3 py-2 text-app-secondary">
                             {item.companyBrand && item.companyBrand !== item.part
                               ? item.companyBrand
                               : '—'}
                           </td>
-                          <td className="px-3 py-2 text-slate-700">{item.vendor}</td>
+                          <td className="px-3 py-2 text-app-secondary">{item.vendor}</td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-slate-700">{item.delivery || '—'}</span>
+                              <span className="text-app-secondary">{item.delivery || '—'}</span>
                               {isFastest && (
                                 <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-700">
                                   <Bolt className="h-3 w-3 fill-current" aria-hidden />
@@ -526,12 +526,12 @@ export function PartsCatalogPage() {
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-2">
                               {isBestPrice && (
-                                <span className="inline-flex items-center gap-0.5 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700">
+                                <span className="inline-flex items-center gap-0.5 rounded-full border border-app-accent/30 bg-app-accent-soft px-2 py-0.5 text-[10px] font-semibold tracking-wide text-app-accent">
                                   <Tag className="h-3 w-3" aria-hidden />
                                   Best price
                                 </span>
                               )}
-                              <span className="font-mono text-[12px] text-slate-800">
+                              <span className="font-mono text-[12px] text-app-label">
                                 {money(item.price)}
                               </span>
                             </div>
@@ -542,14 +542,14 @@ export function PartsCatalogPage() {
                                 href={item.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex rounded p-1 text-slate-400 hover:text-slate-800"
+                                className="inline-flex rounded p-1 text-app-tertiary hover:text-app-label"
                                 title="Open source"
                                 aria-label={`Open source for ${item.part}`}
                               >
                                 <MoreVertical className="h-4 w-4" />
                               </a>
                             ) : (
-                              <span className="inline-flex p-1 text-slate-300" aria-hidden>
+                              <span className="inline-flex p-1 text-app-tertiary" aria-hidden>
                                 <MoreVertical className="h-4 w-4" />
                               </span>
                             )}
@@ -561,8 +561,8 @@ export function PartsCatalogPage() {
                 </table>
               </div>
 
-              <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-2.5">
-                <span className="text-xs font-semibold text-slate-600">
+              <div className="flex items-center justify-between border-t border-app-separator bg-app-fill px-3 py-2.5">
+                <span className="text-xs font-semibold text-app-secondary">
                   Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of{' '}
                   {filtered.length.toLocaleString()} parts
                 </span>
@@ -571,19 +571,19 @@ export function PartsCatalogPage() {
                     type="button"
                     disabled={safePage <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="rounded border border-slate-200 bg-white p-1 text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                    className="rounded border border-app-separator bg-app-surface p-1 text-app-secondary transition-colors hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:text-app-tertiary"
                     aria-label="Previous page"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="px-1 text-xs text-slate-600">
+                  <span className="px-1 text-xs text-app-secondary">
                     Page {safePage} of {totalPages.toLocaleString()}
                   </span>
                   <button
                     type="button"
                     disabled={safePage >= totalPages}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="rounded border border-slate-200 bg-white p-1 text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                    className="rounded border border-app-separator bg-app-surface p-1 text-app-secondary transition-colors hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:text-app-tertiary"
                     aria-label="Next page"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -605,7 +605,7 @@ export function PartsCatalogPage() {
         <button
           type="button"
           onClick={compareSelected}
-          className="inline-flex items-center gap-3 rounded-full border border-slate-800/20 bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition-colors hover:bg-slate-800"
+          className="inline-flex items-center gap-3 rounded-full border border-slate-800/20 bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition-colors hover:bg-app-fill-strong"
         >
           Compare selected ({selected.size})
         </button>

@@ -161,7 +161,7 @@ export function BucketProvider({ children }: { children: ReactNode }) {
       {children}
       {toast && (
         <div
-          className="fixed bottom-4 right-4 z-[100] rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-lg text-sm font-medium text-gray-900"
+          className="fixed bottom-4 right-4 z-[100] rounded-lg border border-app-separator bg-app-surface px-4 py-3 shadow-lg text-sm font-medium text-app-label"
           role="status"
         >
           {toast}

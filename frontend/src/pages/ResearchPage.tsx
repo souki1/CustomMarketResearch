@@ -1,23 +1,33 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowUpDown,
   Bot,
   ChevronDown,
   ChevronRight,
+  Clock,
   Copy,
+  DollarSign,
+  ExternalLink,
   EyeOff,
+  FileText,
   Filter,
   FolderInput,
   FolderOpen,
+  FolderPlus,
   GitCompare,
   History,
   LayoutGrid,
+  Maximize2,
+  Minimize2,
   MapPin,
+  Package,
   Pencil,
   Plus,
   Search,
   Sparkles,
+  Star,
+  Timer,
   Trash2,
   X,
 } from 'lucide-react'
@@ -347,7 +357,7 @@ function StructuredFieldEditor({
 }) {
   const text = scalarEditText(value)
   const fieldClass =
-    'w-full min-w-[100px] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-sm text-slate-900 hover:border-slate-300 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30'
+    'w-full min-w-[100px] rounded border border-app-separator bg-app-surface px-1.5 py-0.5 text-sm text-app-label hover:border-app-separator focus:border-app-accent focus:outline-none focus:ring-1 focus:ring-app-accent/30'
   if (needsMultilineEdit(text)) {
     return (
       <textarea
@@ -407,7 +417,7 @@ function formatRelativeTime(iso: string): string {
 function FieldChangeChip({ change }: { change: ResearchFieldChange }) {
   const isAdded = change.kind === 'added'
   return (
-    <li className="flex items-start gap-2 text-xs text-slate-800">
+    <li className="flex items-start gap-2 text-xs text-app-label">
       <span
         className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none ${
           isAdded ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
@@ -417,23 +427,23 @@ function FieldChangeChip({ change }: { change: ResearchFieldChange }) {
         {isAdded ? '+' : '~'}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-slate-700">{change.field.replace(/_/g, ' ')}</span>
-        <span className="mx-1.5 text-slate-300">·</span>
+        <span className="font-medium text-app-secondary">{change.field.replace(/_/g, ' ')}</span>
+        <span className="mx-1.5 text-app-tertiary">·</span>
         {isAdded ? (
           <span className="inline-flex flex-wrap items-center gap-1 align-middle">
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-emerald-900">
               {formatTrackValue(change.after)}
             </span>
-            <span className="rounded bg-emerald-200/70 px-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-900">
+            <span className="rounded bg-emerald-200/70 px-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-900">
               new
             </span>
           </span>
         ) : (
           <span className="inline-flex flex-wrap items-center gap-1 align-middle">
-            <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-500 line-through decoration-slate-400">
+            <span className="rounded bg-app-surface px-1.5 py-0.5 font-mono text-[11px] text-app-secondary line-through decoration-slate-400">
               {formatTrackValue(change.before)}
             </span>
-            <span className="text-slate-400" aria-hidden>
+            <span className="text-app-tertiary" aria-hidden>
               →
             </span>
             <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-900">
@@ -492,7 +502,7 @@ function FieldChangeTracking({
             <button
               type="button"
               onClick={() => setHistoryOpen((o) => !o)}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/70 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-white"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-app-surface/70 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-app-surface"
               aria-expanded={historyOpen}
             >
               History ({history.length})
@@ -590,7 +600,7 @@ function StructuredFieldCell({
             <img
               src={imgSrc}
               alt={`${fieldKey.replace(/_/g, ' ')} ${i + 1}`}
-              className="max-h-24 rounded border border-gray-200 object-contain"
+              className="max-h-24 rounded border border-app-separator object-contain"
               loading="lazy"
               onError={(e) => {
                 const el = e.currentTarget
@@ -603,7 +613,7 @@ function StructuredFieldCell({
               href={imgSrc}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden max-w-[200px] truncate text-xs text-blue-600 hover:underline"
+              className="hidden max-w-[200px] truncate text-xs text-app-accent hover:underline"
               title={imgSrc}
             >
               {imgSrc}
@@ -623,6 +633,557 @@ function extractDomain(url: string): string {
   } catch {
     return url.slice(0, 48)
   }
+}
+
+function isHttpUrl(url: string | null | undefined): string | null {
+  if (url == null || typeof url !== 'string') return null
+  const t = url.trim()
+  if (t.length > 2048) return null
+  if (!/^https?:\/\//i.test(t)) return null
+  return t
+}
+
+function isPdfUrl(url: string | null | undefined): string | null {
+  const href = isHttpUrl(url)
+  if (!href) return null
+  return /\.pdf(\?|#|$)/i.test(href) ? href : null
+}
+
+function normalizeScrapedKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function pickScrapedField(data: Record<string, unknown>, aliases: string[]): unknown {
+  const wanted = new Set(aliases.map(normalizeScrapedKey))
+  for (const [k, v] of Object.entries(data)) {
+    if (wanted.has(normalizeScrapedKey(k))) return v
+  }
+  return undefined
+}
+
+function asDisplayText(val: unknown): string | null {
+  if (val == null) return null
+  if (typeof val === 'string') {
+    const t = val.trim()
+    return t ? t : null
+  }
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val)
+  return null
+}
+
+function parseMaybeRecord(val: unknown): Record<string, unknown> | null {
+  if (val != null && typeof val === 'object' && !Array.isArray(val)) {
+    return val as Record<string, unknown>
+  }
+  if (typeof val !== 'string') return null
+  const t = val.trim()
+  if (!t.startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(t) as unknown
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    /* ignore invalid JSON */
+  }
+  return null
+}
+
+function parseScrapedPrice(val: unknown): number | null {
+  const s = asDisplayText(val)
+  if (!s) return null
+  const cleaned = s.replace(/[^0-9.]/g, '')
+  if (!cleaned) return null
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function formatUsd(n: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+}
+
+function compactNestedText(val: unknown): string | null {
+  const rec = parseMaybeRecord(val)
+  if (rec) {
+    const lead = asDisplayText(rec.leadTime ?? rec.lead_time ?? rec.eta ?? rec.stock)
+    const avail =
+      rec.available === true ? 'Available' : rec.available === false ? 'Unavailable' : asDisplayText(rec.available)
+    const parts = [avail, lead].filter((p): p is string => Boolean(p))
+    if (parts.length > 0) return parts.join(' · ')
+    const first = Object.values(rec)
+      .map((v) => asDisplayText(v))
+      .find((v) => v != null)
+    return first ?? null
+  }
+  if (Array.isArray(val)) {
+    const parts = val.map((v) => compactNestedText(v) ?? asDisplayText(v)).filter((v): v is string => Boolean(v))
+    return parts.length ? parts.join(' · ') : null
+  }
+  return asDisplayText(val)
+}
+
+type LeadRank = { hours: number; label: string }
+
+function parseLeadRankFromText(text: string): LeadRank | null {
+  const t = text.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  if (/\b(varies|check with|contact (us|dealer)|quote|unknown|tbd|n\/a)\b/.test(t)) return null
+  if (/\b(today|same[\s-]?day|in stock|ships today|immediate|ready to ship)\b/.test(t)) {
+    return { hours: 0, label: 'Today' }
+  }
+  if (/\b(tomorrow|next[\s-]?day)\b/.test(t)) return { hours: 24, label: 'Tomorrow' }
+  const hours = t.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/)
+  if (hours) {
+    const h = parseFloat(hours[1]!)
+    if (Number.isFinite(h) && h >= 0) return { hours: h, label: `${h}h` }
+  }
+  const days = t.match(/(\d+(?:\.\d+)?)\s*(?:business\s+)?days?\b/)
+  if (days) {
+    const d = parseFloat(days[1]!)
+    if (Number.isFinite(d) && d >= 0) {
+      return { hours: d * 24, label: d === 1 ? '1 day' : `${d} days` }
+    }
+  }
+  const weeks = t.match(/(\d+(?:\.\d+)?)\s*weeks?\b/)
+  if (weeks) {
+    const w = parseFloat(weeks[1]!)
+    if (Number.isFinite(w) && w >= 0) {
+      return { hours: w * 24 * 7, label: w === 1 ? '1 week' : `${w} weeks` }
+    }
+  }
+  return null
+}
+
+function parseLeadRank(val: unknown, deliveryText: string | null): LeadRank | null {
+  const rec = parseMaybeRecord(val)
+  if (rec) {
+    const lead = asDisplayText(rec.leadTime ?? rec.lead_time ?? rec.eta)
+    if (lead) {
+      const ranked = parseLeadRankFromText(lead)
+      if (ranked) return ranked
+    }
+  }
+  if (Array.isArray(val)) {
+    const ranks = val
+      .map((item) => parseLeadRank(item, compactNestedText(item)))
+      .filter((item): item is LeadRank => item != null)
+    if (ranks.length === 0) return deliveryText ? parseLeadRankFromText(deliveryText) : null
+    return ranks.reduce((best, item) => (item.hours < best.hours ? item : best))
+  }
+  if (typeof val === 'string') {
+    const ranked = parseLeadRankFromText(val)
+    if (ranked) return ranked
+  }
+  return deliveryText ? parseLeadRankFromText(deliveryText) : null
+}
+
+function parseStockQty(stock: string | null): number | null {
+  if (!stock) return null
+  const t = stock.toLowerCase()
+  if (/\b(out of stock|unavailable|sold out)\b/.test(t)) return 0
+  const m = t.replace(/,/g, '').match(/(\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const n = parseFloat(m[1]!)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+type BuySuggestionKind = 'price' | 'lead' | 'stock'
+
+type BuySuggestion = {
+  kind: BuySuggestionKind
+  sourceIndex: number
+  vendor: string
+  detail: string
+}
+
+function buySuggestionTitle(kind: BuySuggestionKind): string {
+  switch (kind) {
+    case 'price':
+      return 'Lowest price'
+    case 'lead':
+      return 'Fastest lead'
+    case 'stock':
+      return 'Most in stock'
+    default: {
+      const _never: never = kind
+      return _never
+    }
+  }
+}
+
+function findPdfInRecord(data: Record<string, unknown>): string | null {
+  for (const v of Object.values(data)) {
+    if (typeof v === 'string') {
+      const pdf = isPdfUrl(v)
+      if (pdf) return pdf
+    } else if (v != null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      const nested = findPdfInRecord(v as Record<string, unknown>)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+function httpUrlFromUnknown(val: unknown): string | null {
+  if (typeof val === 'string') return isHttpUrl(val)
+  if (Array.isArray(val)) {
+    for (const item of val) {
+      const found = httpUrlFromUnknown(item)
+      if (found) return found
+    }
+    return null
+  }
+  const rec = parseMaybeRecord(val)
+  if (!rec) return null
+  return (
+    httpUrlFromUnknown(rec.url) ??
+    httpUrlFromUnknown(rec.href) ??
+    httpUrlFromUnknown(rec.src) ??
+    httpUrlFromUnknown(rec.link)
+  )
+}
+
+function findDatasheetUrl(data: Record<string, unknown>, pageUrl?: string): string | null {
+  const dedicated = pickScrapedField(data, [
+    'datasheet_url',
+    'datasheet',
+    'data_sheet',
+    'data_sheet_url',
+    'specification_sheet',
+    'spec_sheet',
+    'manual_url',
+    'pdf_url',
+  ])
+  const dedicatedHref = httpUrlFromUnknown(dedicated)
+  if (dedicatedHref) return isPdfUrl(dedicatedHref) ?? dedicatedHref
+  const nestedPdf = findPdfInRecord(data)
+  if (nestedPdf) return nestedPdf
+  return isPdfUrl(pageUrl)
+}
+
+const COMMERCIAL_SPEC_KEYS = new Set([
+  'price',
+  'unitprice',
+  'yourprice',
+  'vendor',
+  'vendorname',
+  'seller',
+  'distributor',
+  'stock',
+  'availability',
+  'delivery',
+  'leadtime',
+  'shipping',
+  'location',
+  'contact',
+  'phone',
+  'email',
+  'image',
+  'productimage',
+  'imageurl',
+  'datasheet',
+  'datasheeturl',
+  'url',
+  'sku',
+  'quantity',
+  'qty',
+  'currency',
+  'description',
+  'productdescription',
+])
+
+function specRowsFromRecord(source: Record<string, unknown>): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = []
+  for (const [key, val] of Object.entries(source)) {
+    if (COMMERCIAL_SPEC_KEYS.has(normalizeScrapedKey(key))) continue
+    const nested = parseMaybeRecord(val)
+    if (nested) {
+      out.push(...specRowsFromRecord(nested).map((row) => ({
+        label: `${key.replace(/_/g, ' ')} ${row.label}`.trim(),
+        value: row.value,
+      })))
+      continue
+    }
+    const text = asDisplayText(val)
+    if (!text) continue
+    out.push({ label: key.replace(/_/g, ' '), value: text })
+  }
+  return out
+}
+
+function specRowsFromUnknown(val: unknown): { label: string; value: string }[] {
+  const rec = parseMaybeRecord(val)
+  if (rec) return specRowsFromRecord(rec)
+  if (Array.isArray(val)) {
+    const out: { label: string; value: string }[] = []
+    for (const item of val) {
+      const nested = parseMaybeRecord(item)
+      if (nested) {
+        const label = asDisplayText(
+          nested.name ?? nested.key ?? nested.label ?? nested.spec
+        )
+        const value = asDisplayText(nested.value ?? nested.val)
+        if (label && value) {
+          out.push({ label, value })
+          continue
+        }
+        out.push(...specRowsFromRecord(nested))
+        continue
+      }
+      if (typeof item === 'string') {
+        const pair = specLineToPair(item)
+        if (pair) out.push(pair)
+      }
+    }
+    return out
+  }
+  if (typeof val === 'string') {
+    const asRecord = parseMaybeRecord(val)
+    if (asRecord) return specRowsFromRecord(asRecord)
+    return val
+      .split(/[\n;]+/)
+      .map(specLineToPair)
+      .filter((row): row is { label: string; value: string } => row != null)
+  }
+  return []
+}
+
+function specLineToPair(text: string): { label: string; value: string } | null {
+  const line = text.trim().replace(/^[-•*]\s*/, '')
+  if (!line) return null
+  const match = line.match(/^(.{1,80}?)\s*[:–—]\s*(.+)$/)
+  if (!match) return null
+  const label = match[1]!.trim()
+  const value = match[2]!.trim()
+  if (!label || !value) return null
+  if (COMMERCIAL_SPEC_KEYS.has(normalizeScrapedKey(label))) return null
+  return { label, value }
+}
+
+function collectProductSpecs(data: Record<string, unknown>): { label: string; value: string }[] {
+  const dedicated = pickScrapedField(data, [
+    'specifications',
+    'product_specifications',
+    'product_specs',
+    'technical_specifications',
+    'specs',
+    'spec',
+  ])
+  const dedicatedRows = specRowsFromUnknown(dedicated).filter(
+    (row) => !COMMERCIAL_SPEC_KEYS.has(normalizeScrapedKey(row.label))
+  )
+  if (dedicatedRows.length > 0) return dedicatedRows
+
+  const details = pickScrapedField(data, ['product details', 'product_details', 'details', 'productdetails'])
+  const detailRows = specRowsFromUnknown(details).filter(
+    (row) => !COMMERCIAL_SPEC_KEYS.has(normalizeScrapedKey(row.label))
+  )
+  if (detailRows.length > 0) return detailRows
+
+  return specRowsFromRecord(data).filter((row) => {
+    const key = normalizeScrapedKey(row.label)
+    return (
+      !COMMERCIAL_SPEC_KEYS.has(key) &&
+      !key.startsWith('productdetails') &&
+      key !== 'manufacturer' &&
+      key !== 'partnumber' &&
+      key !== 'productimage'
+    )
+  })
+}
+
+function mergeProductSpecs(
+  specLists: { label: string; value: string }[][]
+): { label: string; value: string }[] {
+  const byKey = new Map<string, string>()
+  const order: string[] = []
+  const richestFirst = [...specLists].sort((a, b) => b.length - a.length)
+  for (const list of richestFirst) {
+    for (const spec of list) {
+      const key = spec.label.toLowerCase()
+      if (!byKey.has(key)) {
+        byKey.set(key, spec.value)
+        order.push(spec.label)
+      }
+    }
+  }
+  return order.map((label) => ({ label, value: byKey.get(label.toLowerCase()) ?? '' }))
+}
+
+function scrapedOfferFields(data: Record<string, unknown>) {
+  const details = parseMaybeRecord(
+    pickScrapedField(data, ['product details', 'product_details', 'details', 'productdetails'])
+  )
+  const vendor = asDisplayText(
+    pickScrapedField(data, ['vendor name', 'vendor', 'vendor_name', 'seller', 'distributor'])
+  )
+  const priceVal = pickScrapedField(data, ['price', 'unit price', 'unit_price'])
+  const desc = asDisplayText(
+    pickScrapedField(data, ['product description', 'description', 'product_description'])
+  )
+  const sku =
+    asDisplayText(details?.part) ??
+    asDisplayText(pickScrapedField(data, ['sku', 'part', 'part number', 'part_number', 'mpn'])) ??
+    getFirstPartNumber(data)
+  const stock =
+    asDisplayText(pickScrapedField(data, ['stock', 'availability'])) ?? asDisplayText(details?.stock)
+  const deliveryRaw = pickScrapedField(data, ['delivery', 'lead time', 'lead_time', 'shipping'])
+  const delivery = compactNestedText(deliveryRaw)
+  const location = asDisplayText(pickScrapedField(data, ['location', 'city', 'address']))
+  const contact = asDisplayText(pickScrapedField(data, ['contact', 'phone', 'email', 'telephone']))
+  const manufacturer = asDisplayText(pickScrapedField(data, ['manufacturer', 'brand', 'mfr']))
+  const priceNum = parseScrapedPrice(priceVal) ?? (details ? parseScrapedPrice(details.price) : null)
+  const leadRank =
+    parseLeadRank(deliveryRaw, delivery) ??
+    (details ? parseLeadRank(details.leadTime ?? details.lead_time ?? details.delivery, null) : null)
+  const stockQty = parseStockQty(stock)
+  return {
+    vendor,
+    desc,
+    sku,
+    stock,
+    stockQty,
+    delivery,
+    leadRank,
+    location,
+    contact,
+    manufacturer,
+    priceNum,
+    image: extractImageFromRecord(data),
+    specs: collectProductSpecs(data),
+  }
+}
+
+const RESEARCH_OFFER_ACTION_BTN =
+  'inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-app-fill px-2.5 text-[13px] font-medium text-app-label transition-colors hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40'
+
+function StructuredSourceFieldsTable({
+  item,
+  view,
+  editing,
+  onChange,
+}: {
+  item: ScrapedDataItem
+  view: 'row' | 'column'
+  editing: boolean
+  onChange: (key: string, next: string) => void
+}) {
+  const entries = Object.entries(item.data)
+  if (entries.length === 0) {
+    return <p className="text-[13px] text-app-secondary">No fields on this source.</p>
+  }
+  if (view === 'row') {
+    return (
+      <table className="min-w-full text-sm">
+        <tbody className="divide-y divide-app-separator">
+          {entries.map(([key, val]) => {
+            const changed = (item.last_field_changes ?? []).find((c) => c.field === key)
+            return (
+              <tr
+                key={key}
+                className={
+                  changed
+                    ? changed.kind === 'added'
+                      ? 'bg-emerald-50/80'
+                      : 'bg-amber-50/70'
+                    : undefined
+                }
+              >
+                <td className="py-1 pr-4 font-medium text-app-secondary align-top">
+                  <span className="inline-flex items-center gap-1">
+                    {key.replace(/_/g, ' ')}
+                    {changed?.kind === 'updated' && (
+                      <span className="rounded bg-amber-200/80 px-1 text-[11px] font-semibold uppercase text-amber-900">
+                        updated
+                      </span>
+                    )}
+                    {changed?.kind === 'added' && (
+                      <span className="rounded bg-emerald-200/80 px-1 text-[11px] font-semibold uppercase text-emerald-900">
+                        new
+                      </span>
+                    )}
+                  </span>
+                </td>
+                <td className="py-1 text-app-label">
+                  {changed?.kind === 'updated' && (
+                    <p className="mb-0.5 text-[11px] text-app-tertiary line-through">
+                      {formatTrackValue(changed.before)}
+                    </p>
+                  )}
+                  <StructuredFieldCell
+                    fieldKey={key}
+                    val={val}
+                    editing={editing}
+                    onChange={(next) => onChange(key, next)}
+                  />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
+  return (
+    <table className="min-w-full text-sm">
+      <thead>
+        <tr className="divide-x divide-app-separator">
+          {entries.map(([key]) => {
+            const changed = (item.last_field_changes ?? []).find((c) => c.field === key)
+            return (
+              <th
+                key={key}
+                className={`px-3 py-1.5 text-left font-medium text-app-secondary ${
+                  changed ? (changed.kind === 'added' ? 'bg-emerald-50/80' : 'bg-amber-50/70') : ''
+                }`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {key.replace(/_/g, ' ')}
+                  {changed?.kind === 'updated' && (
+                    <span className="rounded bg-amber-200/80 px-1 text-[11px] font-semibold uppercase text-amber-900">
+                      updated
+                    </span>
+                  )}
+                  {changed?.kind === 'added' && (
+                    <span className="rounded bg-emerald-200/80 px-1 text-[11px] font-semibold uppercase text-emerald-900">
+                      new
+                    </span>
+                  )}
+                </span>
+              </th>
+            )
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        <tr className="divide-x divide-app-separator">
+          {entries.map(([key, val]) => {
+            const changed = (item.last_field_changes ?? []).find((c) => c.field === key)
+            return (
+              <td
+                key={key}
+                className={`px-3 py-1.5 text-app-label align-top ${
+                  changed ? (changed.kind === 'added' ? 'bg-emerald-50/80' : 'bg-amber-50/70') : ''
+                }`}
+              >
+                {changed?.kind === 'updated' && (
+                  <p className="mb-0.5 text-[11px] text-app-tertiary line-through">
+                    {formatTrackValue(changed.before)}
+                  </p>
+                )}
+                <StructuredFieldCell
+                  fieldKey={key}
+                  val={val}
+                  editing={editing}
+                  onChange={(next) => onChange(key, next)}
+                />
+              </td>
+            )
+          })}
+        </tr>
+      </tbody>
+    </table>
+  )
 }
 
 /** Flatten nested scraped objects into spec rows (dot-path labels). */
@@ -722,6 +1283,18 @@ function specValueForLabel(item: ComparisonItem, label: string): string {
 }
 
 function extractImageFromRecord(obj: Record<string, unknown>): string | null {
+  const dedicated = pickScrapedField(obj, [
+    'product_image',
+    'image',
+    'image_url',
+    'main_image',
+    'product_photo',
+    'thumbnail',
+    'photo',
+    'og_image',
+  ])
+  const dedicatedHref = httpUrlFromUnknown(dedicated)
+  if (dedicatedHref) return dedicatedHref
   for (const [k, v] of Object.entries(obj)) {
     if (typeof v === 'string' && isImageUrl(v) && (isImageKey(k) || /image|photo|thumbnail/i.test(k))) {
       return v.trim()
@@ -778,7 +1351,7 @@ function renderSimplePartFields(obj: Record<string, unknown>, maxFields = 3): Re
     }
   }
   if (parts.length === 0) return null
-  return <div className="text-xs text-gray-600">{parts.join(' • ')}</div>
+  return <div className="text-xs text-app-secondary">{parts.join(' • ')}</div>
 }
 
 function renderValue(val: unknown): ReactNode {
@@ -798,8 +1371,8 @@ function renderValue(val: unknown): ReactNode {
           {objs.map((obj, i) => {
             const partNumber = getFirstPartNumber(obj)
             return (
-              <div key={i} className="rounded border border-gray-200 bg-white px-2 py-1">
-                <div className="text-xs font-semibold text-gray-700">
+              <div key={i} className="rounded border border-app-separator bg-app-surface px-2 py-1">
+                <div className="text-xs font-semibold text-app-secondary">
                   {partNumber ? `Part number: ${partNumber}` : `Part ${i + 1}`}
                 </div>
                 {renderSimplePartFields(obj)}
@@ -824,7 +1397,7 @@ function renderValue(val: unknown): ReactNode {
     if (partNumber) {
       return (
         <div className="space-y-1">
-          <div className="text-xs font-semibold text-gray-700">Part number: {partNumber}</div>
+          <div className="text-xs font-semibold text-app-secondary">Part number: {partNumber}</div>
           {renderSimplePartFields(obj)}
         </div>
       )
@@ -1017,12 +1590,12 @@ function RowHeightIcon({ className }: { className?: string }) {
 
 function researchToolbarBtnClass(active: boolean, disabled = false) {
   if (disabled) {
-    return 'group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 opacity-60 cursor-default'
+    return 'group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-app-separator bg-app-surface text-app-tertiary opacity-60 cursor-default'
   }
   return `group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
     active
-      ? 'border-blue-500 bg-blue-50 text-blue-700'
-      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+      ? 'border-app-accent bg-app-accent-soft text-app-accent'
+      : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
   }`
 }
 
@@ -1038,7 +1611,7 @@ function ResearchToolbarTooltip({ label }: { label: string }) {
 }
 
 function ResearchToolbarDivider() {
-  return <span className="mx-2.5 h-5 w-px shrink-0 bg-slate-300/80" aria-hidden />
+  return <span className="mx-2.5 h-5 w-px shrink-0 bg-app-separator" aria-hidden />
 }
 
 function ResearchToolbarGroup({
@@ -1061,15 +1634,12 @@ function ResearchToolbarGroup({
 
 function ResearchFoundBadge({ count, onClick }: { count: number; onClick: () => void }) {
   if (!count) {
-    return <span className="py-0.5 font-mono text-[11px] text-gray-400">—</span>
+    return (
+      <span className="flex w-full items-center justify-center font-mono text-[12px] text-app-tertiary">
+        —
+      </span>
+    )
   }
-
-  const tone =
-    count >= 8
-      ? 'border-blue-200 bg-blue-50 text-blue-700'
-      : count >= 4
-        ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-        : 'border-orange-200 bg-orange-50 text-orange-900'
 
   return (
     <button
@@ -1078,9 +1648,12 @@ function ResearchFoundBadge({ count, onClick }: { count: number; onClick: () => 
         e.stopPropagation()
         onClick()
       }}
-      className={`rounded-full border-[1.5px] px-2.5 py-0.5 font-mono text-[11px] font-semibold shadow-none transition-shadow hover:shadow-md ${tone}`}
+      className="inline-flex w-full items-center justify-center gap-0.5 rounded-[8px] bg-app-accent px-1.5 py-1 text-white shadow-sm hover:bg-app-accent-hover"
+      aria-label={`${count} sources found. Open inspector.`}
     >
-      {count} found ↗
+      <span className="text-[13px] font-semibold tabular-nums leading-none">{count}</span>
+      <span className="text-[11px] font-semibold leading-none tracking-tight"> found</span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
     </button>
   )
 }
@@ -1209,9 +1782,7 @@ export function ResearchPage() {
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirm, setDeleteConfirm] = useState<'rows' | 'columns' | null>(null)
   const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
-  const [researchAiQueryInput, setResearchAiQueryInput] = useState(
-    'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
-  )
+  const [researchAiQueryInput, setResearchAiQueryInput] = useState('')
   const [researchZipInput, setResearchZipInput] = useState(() => loadResearchLocations().lastZip)
   const [researchAddressInput, setResearchAddressInput] = useState(
     () => loadResearchLocations().lastAddress
@@ -1244,7 +1815,7 @@ export function ResearchPage() {
   /** Checked scraped source indices for inspector → Compare (synced when preview data loads). */
   const [inspectorScrapedSourceSelection, setInspectorScrapedSourceSelection] = useState<Set<number>>(new Set())
   const [previewResultsLoading, setPreviewResultsLoading] = useState(false)
-  const [structuredDataViewType, setStructuredDataViewType] = useState<'row' | 'column'>('column')
+  const [structuredDataViewType, setStructuredDataViewType] = useState<'offers' | 'row' | 'column'>('offers')
   const [inspectorSourceAiOpen, setInspectorSourceAiOpen] = useState<Set<number>>(new Set())
   const [inspectorSourceEditOpen, setInspectorSourceEditOpen] = useState<Set<number>>(new Set())
   const [inspectorRowAiOpen, setInspectorRowAiOpen] = useState(false)
@@ -3745,21 +4316,21 @@ export function ResearchPage() {
   if (!content && !loading && !error && tabs.length === 0) {
     return (
       <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">Data Research</h2>
-        <p className="max-w-sm text-sm text-gray-500">
+        <h2 className="text-lg font-semibold text-app-label">Data Research</h2>
+        <p className="max-w-sm text-sm text-app-secondary">
           Open a workspace file, or start with a new sheet.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Link
             to="/"
-            className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+            className="rounded-lg bg-app-fill px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill-strong"
           >
             Go to Home
           </Link>
           <button
             type="button"
             onClick={() => setFilePickerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-label hover:bg-app-fill"
           >
             <FolderOpen className="h-4 w-4" aria-hidden />
             Open existing
@@ -3782,17 +4353,17 @@ export function ResearchPage() {
               aria-labelledby="empty-file-picker-title"
             >
               <div
-                className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-gray-200 bg-white shadow-xl"
+                className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-app-separator bg-app-surface shadow-xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                  <h3 id="empty-file-picker-title" className="text-base font-semibold text-gray-900">
+                <div className="flex items-center justify-between border-b border-app-separator px-4 py-3">
+                  <h3 id="empty-file-picker-title" className="text-base font-semibold text-app-label">
                     Open existing file
                   </h3>
                   <button
                     type="button"
                     onClick={() => setFilePickerOpen(false)}
-                    className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    className="rounded p-1.5 text-app-tertiary hover:bg-app-fill hover:text-app-secondary"
                     aria-label="Close"
                   >
                     <X className="h-5 w-5" aria-hidden />
@@ -3800,13 +4371,13 @@ export function ResearchPage() {
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                   {filePickerLoading && (
-                    <p className="py-8 text-center text-sm text-gray-500">Loading files…</p>
+                    <p className="py-8 text-center text-sm text-app-secondary">Loading files…</p>
                   )}
                   {filePickerError && (
                     <p className="py-4 text-center text-sm text-red-600">{filePickerError}</p>
                   )}
                   {!filePickerLoading && !filePickerError && filePickerFiles.length === 0 && (
-                    <p className="py-8 text-center text-sm text-gray-500">
+                    <p className="py-8 text-center text-sm text-app-secondary">
                       No spreadsheet files in your workspace yet.
                     </p>
                   )}
@@ -3824,11 +4395,11 @@ export function ResearchPage() {
                               setSearchParams(params, { replace: true })
                               setFilePickerOpen(false)
                             }}
-                            className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800"
+                            className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm text-app-secondary hover:bg-emerald-50 hover:text-emerald-800"
                           >
                             <span className="w-full truncate font-medium">{file.name}</span>
                             {file.folderPath && (
-                              <span className="w-full truncate text-xs text-gray-500">{file.folderPath}</span>
+                              <span className="w-full truncate text-xs text-app-secondary">{file.folderPath}</span>
                             )}
                           </button>
                         </li>
@@ -3836,11 +4407,11 @@ export function ResearchPage() {
                     </ul>
                   )}
                 </div>
-                <div className="border-t border-gray-200 px-4 py-2">
+                <div className="border-t border-app-separator px-4 py-2">
                   <button
                     type="button"
                     onClick={() => setFilePickerOpen(false)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="w-full rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill"
                   >
                     Cancel
                   </button>
@@ -3863,6 +4434,78 @@ export function ResearchPage() {
       : null
 
   const researchAiContext = buildResearchInspectorContext(headers, selectedRowData, previewScrapedData)
+  const structuredOfferSummary = useMemo(() => {
+    const sources = previewScrapedData ?? []
+    if (sources.length === 0) return null
+    const fields = sources.map((item) => scrapedOfferFields(item.data))
+    const supplierName = (idx: number): string =>
+      fields[idx]?.vendor ?? (sources[idx]?.url ? extractDomain(sources[idx]!.url) : `Source ${idx + 1}`)
+    const prices = fields.map((f) => f.priceNum).filter((n): n is number => n != null)
+    const bestPrice = prices.length ? Math.min(...prices) : null
+    const cheapestIdx =
+      bestPrice != null ? fields.findIndex((f) => f.priceNum === bestPrice) : -1
+    const leadCandidates = fields
+      .map((f, idx) => (f.leadRank ? { idx, rank: f.leadRank } : null))
+      .filter((row): row is { idx: number; rank: LeadRank } => row != null)
+    const fastestLead = leadCandidates.length
+      ? leadCandidates.reduce((best, row) => (row.rank.hours < best.rank.hours ? row : best))
+      : null
+    const stockCandidates = fields
+      .map((f, idx) => (f.stockQty != null && f.stockQty > 0 ? { idx, qty: f.stockQty } : null))
+      .filter((row): row is { idx: number; qty: number } => row != null)
+    const mostStock = stockCandidates.length
+      ? stockCandidates.reduce((best, row) => (row.qty > best.qty ? row : best))
+      : null
+    const buySuggestions: BuySuggestion[] = []
+    if (cheapestIdx >= 0 && bestPrice != null) {
+      buySuggestions.push({
+        kind: 'price',
+        sourceIndex: cheapestIdx,
+        vendor: supplierName(cheapestIdx),
+        detail: formatUsd(bestPrice),
+      })
+    }
+    if (fastestLead) {
+      buySuggestions.push({
+        kind: 'lead',
+        sourceIndex: fastestLead.idx,
+        vendor: supplierName(fastestLead.idx),
+        detail: fastestLead.rank.label,
+      })
+    }
+    if (mostStock) {
+      buySuggestions.push({
+        kind: 'stock',
+        sourceIndex: mostStock.idx,
+        vendor: supplierName(mostStock.idx),
+        detail: mostStock.qty.toLocaleString(),
+      })
+    }
+    const hero = fields.find((f) => f.image) ?? fields[0]
+    const desc = fields.find((f) => f.desc)?.desc ?? null
+    const manufacturer = fields.find((f) => f.manufacturer)?.manufacturer ?? null
+    const datasheetUrl =
+      sources
+        .map((s) => findDatasheetUrl(s.data, s.url))
+        .find((href): href is string => href != null) ?? null
+    const manufacturerUrl =
+      sources.map((s) => isHttpUrl(s.url)).find((href): href is string => href != null) ?? null
+    const specs = mergeProductSpecs(fields.map((f) => f.specs))
+    return {
+      fields,
+      bestPrice,
+      cheapestIdx,
+      fastestIdx: fastestLead?.idx ?? -1,
+      mostStockIdx: mostStock?.idx ?? -1,
+      buySuggestions,
+      hero,
+      desc,
+      manufacturer,
+      datasheetUrl,
+      manufacturerUrl,
+      specs,
+    }
+  }, [previewScrapedData])
   const researchAiSessionLabel = (() => {
     const primary = selectedRowData?.[0]
     const label =
@@ -3877,7 +4520,7 @@ export function ResearchPage() {
 
   return (
     <div
-      className={`bg-[#f8f9fb] text-slate-900 ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`bg-app-bg text-app-label ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
     >
       {newSheetModalOpen && (
         <div
@@ -3890,13 +4533,13 @@ export function ResearchPage() {
           }}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className="w-full max-w-md rounded-xl border border-app-separator bg-app-surface p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="new-sheet-title" className="text-sm font-semibold text-gray-900">
+            <h2 id="new-sheet-title" className="text-sm font-semibold text-app-label">
               New sheet
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-app-secondary">
               Name the file to create it in your workspace.
             </p>
             <input
@@ -3913,14 +4556,14 @@ export function ResearchPage() {
               }}
               placeholder="New sheet"
               disabled={newSheetCreating}
-              className="mt-3 w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+              className="mt-3 w-full rounded-md border border-app-separator px-3 py-2 text-sm text-app-label outline-none focus:border-app-accent focus:ring-2 focus:ring-app-accent-soft disabled:opacity-60"
             />
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
                 disabled={newSheetCreating}
                 onClick={() => setNewSheetModalOpen(false)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -3928,7 +4571,7 @@ export function ResearchPage() {
                 type="button"
                 disabled={newSheetCreating}
                 onClick={() => void commitNewSheetFile()}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-lg bg-app-accent px-4 py-2 text-sm font-medium text-white hover:bg-app-accent-hover disabled:opacity-50"
               >
                 {newSheetCreating ? 'Creating…' : 'Create'}
               </button>
@@ -3947,22 +4590,22 @@ export function ResearchPage() {
           }}
         >
           <div
-            className="flex max-h-[min(85vh,560px)] w-full max-w-lg flex-col rounded-xl border border-gray-200 bg-white shadow-lg"
+            className="flex max-h-[min(85vh,560px)] w-full max-w-lg flex-col rounded-xl border border-app-separator bg-app-surface shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="shrink-0 border-b border-gray-100 px-4 py-3">
-              <h2 id="transfer-dest-title" className="text-sm font-semibold text-gray-900">
+            <div className="shrink-0 border-b border-app-separator px-4 py-3">
+              <h2 id="transfer-dest-title" className="text-sm font-semibold text-app-label">
                 Where do you want to place this?
               </h2>
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 text-sm text-app-secondary">
                 {transferPickerMode === 'move'
                   ? 'Move the selected rows and columns into another sheet (saved to your workspace).'
                   : 'Duplicate the selected rows and columns into another sheet (saved to your workspace).'}
               </p>
             </div>
 
-            <div className="shrink-0 space-y-2 border-b border-gray-100 px-4 py-3">
-              <label htmlFor="transfer-new-sheet-name" className="text-xs font-medium text-gray-700">
+            <div className="shrink-0 space-y-2 border-b border-app-separator px-4 py-3">
+              <label htmlFor="transfer-new-sheet-name" className="text-xs font-medium text-app-secondary">
                 Create a new sheet
               </label>
               <div className="flex gap-2">
@@ -3981,13 +4624,13 @@ export function ResearchPage() {
                   }}
                   placeholder={transferPickerMode === 'move' ? 'Moved selection' : 'Duplicated selection'}
                   disabled={transferBusy}
-                  className="min-w-0 flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  className="min-w-0 flex-1 rounded-md border border-app-separator px-3 py-2 text-sm text-app-label outline-none focus:border-app-accent focus:ring-2 focus:ring-app-accent-soft disabled:opacity-60"
                 />
                 <button
                   type="button"
                   disabled={transferBusy}
                   onClick={() => void transferSelectionToNewSheet(transferPickerMode)}
-                  className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="shrink-0 rounded-lg bg-app-accent px-3 py-2 text-sm font-medium text-white hover:bg-app-accent-hover disabled:opacity-50"
                 >
                   {transferBusy ? 'Working…' : 'Create & place'}
                 </button>
@@ -3995,14 +4638,14 @@ export function ResearchPage() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-app-secondary">
                 Or choose an existing sheet
               </p>
               {transferBusy && (
-                <p className="px-2 py-4 text-center text-sm text-gray-500">Saving…</p>
+                <p className="px-2 py-4 text-center text-sm text-app-secondary">Saving…</p>
               )}
               {!transferBusy && transferFilesLoading && (
-                <p className="px-2 py-4 text-center text-sm text-gray-500">Loading sheets…</p>
+                <p className="px-2 py-4 text-center text-sm text-app-secondary">Loading sheets…</p>
               )}
               {!transferBusy && transferFilesError && (
                 <p className="px-2 py-4 text-center text-sm text-red-600">{transferFilesError}</p>
@@ -4011,7 +4654,7 @@ export function ResearchPage() {
                 !transferFilesLoading &&
                 !transferFilesError &&
                 transferFiles.length === 0 && (
-                  <p className="px-2 py-4 text-center text-sm text-gray-500">
+                  <p className="px-2 py-4 text-center text-sm text-app-secondary">
                     No other sheets yet — create a new one above.
                   </p>
                 )}
@@ -4026,11 +4669,11 @@ export function ResearchPage() {
                           type="button"
                           disabled={transferBusy}
                           onClick={() => void transferSelectionToFile(file.id, transferPickerMode)}
-                          className="flex w-full flex-col rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50"
+                          className="flex w-full flex-col rounded-lg px-3 py-2.5 text-left hover:bg-app-fill disabled:opacity-50"
                         >
-                          <span className="truncate text-sm font-medium text-gray-900">{file.name}</span>
+                          <span className="truncate text-sm font-medium text-app-label">{file.name}</span>
                           {file.folderPath ? (
-                            <span className="truncate text-xs text-gray-500">{file.folderPath}</span>
+                            <span className="truncate text-xs text-app-secondary">{file.folderPath}</span>
                           ) : null}
                         </button>
                       </li>
@@ -4039,12 +4682,12 @@ export function ResearchPage() {
                 )}
             </div>
 
-            <div className="shrink-0 border-t border-gray-100 px-4 py-3 text-right">
+            <div className="shrink-0 border-t border-app-separator px-4 py-3 text-right">
               <button
                 type="button"
                 disabled={transferBusy}
                 onClick={closeTransferPicker}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -4061,25 +4704,25 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setDeleteConfirm(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className="w-full max-w-md rounded-xl border border-app-separator bg-app-surface p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             {deleteConfirm === 'rows' ? (
               <>
-                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-app-label">
                   Delete selected row{selectedRows.size === 1 ? '' : 's'}?
                 </h2>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-app-secondary">
                   You are about to delete {selectedRows.size} row{selectedRows.size === 1 ? '' : 's'}. This cannot be
                   undone.
                 </p>
               </>
             ) : deleteConfirm === 'columns' ? (
               <>
-                <h2 id="delete-confirm-title" className="text-sm font-semibold text-gray-900">
+                <h2 id="delete-confirm-title" className="text-sm font-semibold text-app-label">
                   Delete selected column{selectedColumns.size === 1 ? '' : 's'}?
                 </h2>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-app-secondary">
                   You are about to delete {selectedColumns.size} column
                   {selectedColumns.size === 1 ? '' : 's'} from the sheet. This cannot be undone.
                 </p>
@@ -4094,7 +4737,7 @@ export function ResearchPage() {
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill"
               >
                 Cancel
               </button>
@@ -4125,10 +4768,10 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setComparePreviewModalOpen(false)}
         >
           <div
-            className="flex h-[min(90vh,calc(100dvh-2rem))] max-h-[min(90vh,calc(100dvh-2rem))] min-h-0 w-full max-w-[min(120rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/10"
+            className="flex h-[min(90vh,calc(100dvh-2rem))] max-h-[min(90vh,calc(100dvh-2rem))] min-h-0 w-full max-w-[min(120rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-app-separator bg-app-surface shadow-2xl shadow-black/10"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/90 bg-gradient-to-r from-slate-50 via-white to-emerald-50/30 px-4 py-3 sm:px-5">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-app-separator bg-gradient-to-r from-slate-50 via-white to-emerald-50/30 px-4 py-3 sm:px-5">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/60"
@@ -4137,10 +4780,10 @@ export function ResearchPage() {
                   <GitCompare className="h-5 w-5" strokeWidth={2} />
                 </div>
                 <div className="min-w-0">
-                  <h2 id="compare-preview-title" className="text-base font-semibold tracking-tight text-slate-900">
+                  <h2 id="compare-preview-title" className="text-base font-semibold tracking-tight text-app-label">
                     Compare preview
                   </h2>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-app-secondary">
                     {comparisonItems.length === 0
                       ? 'No sources loaded'
                       : comparisonItems.length === 1
@@ -4153,26 +4796,26 @@ export function ResearchPage() {
                 <button
                   type="button"
                   onClick={() => setComparePreviewModalOpen(false)}
-                  className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200/80 hover:text-slate-900"
+                  className="rounded-lg p-2 text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" strokeWidth={2} />
                 </button>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 p-3 sm:p-4">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-app-fill/40 p-3 sm:p-4">
               {comparisonItems.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                <p className="rounded-xl border border-dashed border-app-separator bg-app-surface px-4 py-8 text-center text-sm text-app-secondary">
                   No items to compare.
                 </p>
               ) : comparePreviewLayout === 'matrix' && comparisonItems.length >= 2 ? (
                 <div
-                  className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-slate-200/90 bg-white shadow-sm [-webkit-overflow-scrolling:touch]"
+                  className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-app-separator bg-app-surface shadow-sm [-webkit-overflow-scrolling:touch]"
                   role="region"
                   aria-label="Side-by-side field comparison"
                 >
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50/90 px-3 py-2">
-                    <span className="text-[11px] text-slate-600">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-app-separator bg-app-fill/90 px-3 py-2">
+                    <span className="text-[11px] text-app-secondary">
                       Use the arrow beside each field to minimize or expand that row.
                     </span>
                     <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -4188,7 +4831,7 @@ export function ResearchPage() {
                         onClick={() =>
                           setCompareMatrixCollapsedFields(new Set(comparePreviewLabels))
                         }
-                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                        className="rounded-md px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill-strong"
                       >
                         Minimize all
                       </button>
@@ -4196,10 +4839,10 @@ export function ResearchPage() {
                   </div>
                   <table className="w-max min-w-full border-collapse text-left text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/95">
+                      <tr className="border-b border-app-separator bg-app-fill/95">
                         <th
                           scope="col"
-                          className="sticky top-0 left-0 z-30 min-w-[140px] max-w-[200px] border-r border-slate-200 bg-slate-50/95 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)] sm:min-w-[160px]"
+                          className="sticky top-0 left-0 z-30 min-w-[140px] max-w-[200px] border-r border-app-separator bg-app-fill/95 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-app-secondary shadow-[0_1px_0_0_rgb(226_232_240)] sm:min-w-[160px]"
                         >
                           Field
                         </th>
@@ -4209,11 +4852,11 @@ export function ResearchPage() {
                             <th
                               key={item.id}
                               scope="col"
-                              className="sticky top-0 z-20 min-w-[200px] max-w-[280px] border-r border-slate-100 bg-slate-50/95 px-3 py-3 align-top shadow-[0_1px_0_0_rgb(226_232_240)] last:border-r-0 sm:min-w-[220px]"
+                              className="sticky top-0 z-20 min-w-[200px] max-w-[280px] border-r border-app-separator bg-app-fill/95 px-3 py-3 align-top shadow-[0_1px_0_0_rgb(226_232_240)] last:border-r-0 sm:min-w-[220px]"
                             >
                               <div className="flex flex-col gap-2">
                                 {thumb ? (
-                                  <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                  <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-app-separator bg-app-surface">
                                     <img
                                       src={thumb}
                                       alt={item.title ? `${item.title} — preview` : 'Product preview'}
@@ -4223,7 +4866,7 @@ export function ResearchPage() {
                                   </div>
                                 ) : null}
                                 <div className="min-w-0 text-center">
-                                  <div className="line-clamp-2 text-xs font-semibold leading-snug text-slate-900">
+                                  <div className="line-clamp-2 text-xs font-semibold leading-snug text-app-label">
                                     {item.title || '—'}
                                   </div>
                                   {item.sourceName != null && item.sourceName !== '' && (
@@ -4238,13 +4881,13 @@ export function ResearchPage() {
                     </thead>
                     <tbody>
                       {comparePreviewLabels.map((label, rowIdx) => {
-                        const rowBg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                        const rowBg = rowIdx % 2 === 0 ? 'bg-app-surface' : 'bg-app-fill/40'
                         const collapsed = compareMatrixCollapsedFields.has(label)
                         return (
-                          <tr key={label} className={`border-b border-slate-100/80 ${rowBg}`}>
+                          <tr key={label} className={`border-b border-app-separator/80 ${rowBg}`}>
                             <th
                               scope="row"
-                              className={`sticky left-0 z-10 max-w-[200px] border-r border-slate-200 px-2 py-1.5 text-left text-xs font-medium text-slate-600 shadow-[2px_0_8px_-2px_rgba(15,23,42,0.06)] sm:px-3 ${rowBg}`}
+                              className={`sticky left-0 z-10 max-w-[200px] border-r border-app-separator px-2 py-1.5 text-left text-xs font-medium text-app-secondary shadow-[2px_0_8px_-2px_rgba(15,23,42,0.06)] sm:px-3 ${rowBg}`}
                             >
                               <button
                                 type="button"
@@ -4256,16 +4899,16 @@ export function ResearchPage() {
                                     return next
                                   })
                                 }
-                                className="flex w-full min-w-0 items-start gap-1.5 rounded-md py-0.5 text-left text-slate-700 hover:bg-slate-200/50"
+                                className="flex w-full min-w-0 items-start gap-1.5 rounded-md py-0.5 text-left text-app-secondary hover:bg-app-fill"
                                 aria-expanded={!collapsed}
                                 aria-label={
                                   collapsed ? `Expand field row: ${label}` : `Minimize field row: ${label}`
                                 }
                               >
                                 {collapsed ? (
-                                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-secondary" aria-hidden />
                                 ) : (
-                                  <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                                  <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-secondary" aria-hidden />
                                 )}
                                 <span className="min-w-0 break-words leading-snug">{label}</span>
                               </button>
@@ -4276,12 +4919,12 @@ export function ResearchPage() {
                               return (
                                 <td
                                   key={`${item.id}-${label}`}
-                                  className={`max-w-[280px] border-r border-slate-100 px-3 align-top text-slate-800 last:border-r-0 ${rowBg} ${
+                                  className={`max-w-[280px] border-r border-app-separator px-3 align-top text-app-label last:border-r-0 ${rowBg} ${
                                     collapsed ? 'py-1.5' : 'py-2.5'
                                   }`}
                                 >
                                   {collapsed ? (
-                                    <span className="text-xs text-slate-400" aria-hidden>
+                                    <span className="text-xs text-app-tertiary" aria-hidden>
                                       …
                                     </span>
                                   ) : (
@@ -4319,12 +4962,12 @@ export function ResearchPage() {
                     return (
                       <article
                         key={item.id}
-                        className="flex flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-900/5"
+                        className="flex flex-col overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-sm ring-1 ring-black/5"
                       >
-                        <div className="shrink-0 border-b border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-3 py-3">
+                        <div className="shrink-0 border-b border-app-separator bg-gradient-to-b from-slate-50/80 to-white px-3 py-3">
                           {thumb ? (
                             <div className="mb-2 flex justify-center">
-                              <div className="h-24 w-24 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                              <div className="h-24 w-24 overflow-hidden rounded-lg border border-app-separator bg-app-surface">
                                 <img
                                   src={thumb}
                                   alt={item.title ? `${item.title} — preview` : 'Product preview'}
@@ -4334,7 +4977,7 @@ export function ResearchPage() {
                               </div>
                             </div>
                           ) : null}
-                          <h3 className="text-center text-sm font-semibold leading-snug text-slate-900">
+                          <h3 className="text-center text-sm font-semibold leading-snug text-app-label">
                             {item.title || '—'}
                           </h3>
                           {item.sourceName != null && item.sourceName !== '' && (
@@ -4345,11 +4988,11 @@ export function ResearchPage() {
                         </div>
                         <dl className="min-w-0 space-y-2.5 p-3">
                           {item.specs.map((spec, idx) => (
-                            <div key={`${item.id}-${spec.label}-${idx}`} className="min-w-0 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                            <div key={`${item.id}-${spec.label}-${idx}`} className="min-w-0 border-b border-app-separator pb-2 last:border-0 last:pb-0">
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-app-secondary">
                                 {spec.label}
                               </dt>
-                              <dd className="mt-0.5 break-words text-sm text-slate-800">{spec.value}</dd>
+                              <dd className="mt-0.5 break-words text-sm text-app-label">{spec.value}</dd>
                             </div>
                           ))}
                         </dl>
@@ -4360,11 +5003,11 @@ export function ResearchPage() {
                 </div>
               )}
             </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
-              <p className="text-xs text-slate-500">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-app-separator bg-app-surface px-4 py-3 sm:px-5">
+              <p className="text-xs text-app-secondary">
                 {comparisonItems.length > 0 && (
                   <>
-                    <span className="font-medium text-slate-700">{comparisonItems.length}</span> source
+                    <span className="font-medium text-app-secondary">{comparisonItems.length}</span> source
                     {comparisonItems.length === 1 ? '' : 's'} in preview
                   </>
                 )}
@@ -4373,7 +5016,7 @@ export function ResearchPage() {
                 <button
                   type="button"
                   onClick={() => setComparePreviewModalOpen(false)}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary shadow-sm hover:bg-app-fill"
                 >
                   Close
                 </button>
@@ -4414,38 +5057,49 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && setResearchFieldsPopupOpen(false)}
         >
           <div
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-app-separator bg-app-surface p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="research-fields-title" className="text-sm font-semibold text-gray-900">
+            <h2 id="research-fields-title" className="text-sm font-semibold text-app-label">
               Start research
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Describe what to extract, then set a ZIP or address. Search results prefer vendors
-              and listings near that location.
+            <p className="mt-1 text-sm text-app-secondary">
+              Optionally describe extra fields to extract, then set a ZIP or address. Search
+              results prefer vendors and listings near that location. Product image,
+              specifications, and datasheet are always collected.
             </p>
-            <label htmlFor="research-ai-query" className="mt-3 block text-xs font-semibold text-gray-700">
-              AI extraction query
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {['Product image', 'Specifications', 'Datasheet'].map((label) => (
+                <span
+                  key={label}
+                  className="inline-flex items-center rounded-[6px] border border-app-separator bg-app-fill px-2 py-0.5 text-[11px] font-medium text-app-secondary"
+                >
+                  Always included · {label}
+                </span>
+              ))}
+            </div>
+            <label htmlFor="research-ai-query" className="mt-3 block text-xs font-semibold text-app-secondary">
+              Extra extraction query
             </label>
             <textarea
               id="research-ai-query"
               value={researchAiQueryInput}
               onChange={(e) => setResearchAiQueryInput(e.target.value)}
-              placeholder="Describe in natural language what you want to extract from each search result"
+              placeholder="Optional — e.g. warranty terms, OEM equivalents, pallet quantity"
               rows={3}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className="mt-1.5 w-full rounded-lg border border-app-separator px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20 resize-none"
             />
-            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+            <div className="mt-4 rounded-lg border border-app-separator bg-app-fill p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-app-label">
                 <MapPin className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
                 Search location
               </div>
-              <p className="mt-1 text-[11px] leading-snug text-gray-500">
+              <p className="mt-1 text-[11px] leading-snug text-app-secondary">
                 ZIP code is enough. You can also pick a saved address or type a full address.
               </p>
               {researchSavedAddresses.length > 0 && (
                 <div className="mt-3">
-                  <label htmlFor="research-saved-address" className="block text-xs font-medium text-gray-700">
+                  <label htmlFor="research-saved-address" className="block text-xs font-medium text-app-secondary">
                     Saved address
                   </label>
                   <select
@@ -4459,7 +5113,7 @@ export function ResearchPage() {
                       setResearchZipInput(found.zip)
                       setResearchAddressInput(found.address)
                     }}
-                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="mt-1 w-full rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                   >
                     <option value="">Type a new address</option>
                     {researchSavedAddresses.map((row) => (
@@ -4472,7 +5126,7 @@ export function ResearchPage() {
               )}
               <div className="mt-3 grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
                 <div>
-                  <label htmlFor="research-zip" className="block text-xs font-medium text-gray-700">
+                  <label htmlFor="research-zip" className="block text-xs font-medium text-app-secondary">
                     ZIP code
                   </label>
                   <input
@@ -4486,11 +5140,11 @@ export function ResearchPage() {
                       setResearchZipInput(e.target.value)
                     }}
                     placeholder="75201"
-                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="mt-1 w-full rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                   />
                 </div>
                 <div>
-                  <label htmlFor="research-address" className="block text-xs font-medium text-gray-700">
+                  <label htmlFor="research-address" className="block text-xs font-medium text-app-secondary">
                     Address
                   </label>
                   <input
@@ -4504,7 +5158,7 @@ export function ResearchPage() {
                       setResearchAddressInput(e.target.value)
                     }}
                     placeholder="Street, city, state"
-                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="mt-1 w-full rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                   />
                 </div>
               </div>
@@ -4513,7 +5167,7 @@ export function ResearchPage() {
               <button
                 type="button"
                 onClick={() => setResearchFieldsPopupOpen(false)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill"
               >
                 Cancel
               </button>
@@ -4552,13 +5206,13 @@ export function ResearchPage() {
           onClick={(e) => e.target === e.currentTarget && !cellFillLoading && setCellFillPopupOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+            className="w-full max-w-md rounded-xl border border-app-separator bg-app-surface p-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="cell-fill-title" className="text-sm font-semibold text-gray-900">
+            <h2 id="cell-fill-title" className="text-sm font-semibold text-app-label">
               Research & fill selected cells
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-app-secondary">
               Choose how to research, then describe what to put in the selected cells. Running again
               replaces any existing values in those cells.
             </p>
@@ -4570,8 +5224,8 @@ export function ResearchPage() {
                 onClick={() => setCellFillMode('internal')}
                 className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                   cellFillMode === 'internal'
-                    ? 'border-blue-500 bg-blue-50 text-blue-900'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'border-app-accent bg-app-accent-soft text-blue-900'
+                    : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                 }`}
               >
                 <span className="block text-xs font-semibold">Internal</span>
@@ -4585,8 +5239,8 @@ export function ResearchPage() {
                 onClick={() => setCellFillMode('external')}
                 className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                   cellFillMode === 'external'
-                    ? 'border-blue-500 bg-blue-50 text-blue-900'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'border-app-accent bg-app-accent-soft text-blue-900'
+                    : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                 }`}
               >
                 <span className="block text-xs font-semibold">External</span>
@@ -4596,9 +5250,9 @@ export function ResearchPage() {
               </button>
             </div>
 
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <div className="mt-3 rounded-lg border border-app-separator bg-app-fill px-3 py-2 text-xs text-app-secondary">
               <p>
-                <span className="font-semibold text-slate-800">Columns:</span>{' '}
+                <span className="font-semibold text-app-label">Columns:</span>{' '}
                 {content?.[0]
                   ? Array.from(selectedColumns)
                       .sort((a, b) => a - b)
@@ -4607,7 +5261,7 @@ export function ResearchPage() {
                   : '—'}
               </p>
               <p className="mt-1">
-                <span className="font-semibold text-slate-800">Rows:</span>{' '}
+                <span className="font-semibold text-app-label">Rows:</span>{' '}
                 {Array.from(selectedRows)
                   .sort((a, b) => a - b)
                   .map((i) => i + 1)
@@ -4624,14 +5278,14 @@ export function ResearchPage() {
               }
               rows={4}
               disabled={cellFillLoading}
-              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-60"
+              className="mt-3 w-full rounded-lg border border-app-separator px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20 resize-none disabled:opacity-60"
             />
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 disabled={cellFillLoading}
                 onClick={() => setCellFillPopupOpen(false)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -4639,7 +5293,7 @@ export function ResearchPage() {
                 type="button"
                 disabled={cellFillLoading || !cellFillPrompt.trim()}
                 onClick={() => void runCellFillResearch()}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-app-accent px-4 py-2 text-sm font-medium text-white hover:bg-app-accent-hover disabled:opacity-50"
               >
                 {cellFillLoading && <LoaderIcon className="h-4 w-4 shrink-0" />}
                 {cellFillLoading
@@ -4657,17 +5311,17 @@ export function ResearchPage() {
       {addRowPopover.open && (
         <div
           data-add-row-popover
-          className="fixed z-50 w-[220px] rounded-xl border border-gray-200 bg-white p-2 shadow-sm"
+          className="fixed z-50 w-[220px] rounded-xl border border-app-separator bg-app-surface p-2 shadow-sm"
           style={{ left: addRowPopover.x, top: addRowPopover.y }}
         >
-          <p className="px-2 pb-1 text-xs font-semibold text-gray-700">Add rows</p>
+          <p className="px-2 pb-1 text-xs font-semibold text-app-secondary">Add rows</p>
           <div className="flex flex-wrap gap-1 px-1 pb-2">
             {[1, 5, 10, 25, 50, 100].map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => commitAddRows(n)}
-                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-md border border-app-separator bg-app-surface px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill"
               >
                 {n}
               </button>
@@ -4677,7 +5331,7 @@ export function ResearchPage() {
             <input
               value={addRowCountDraft}
               onChange={(e) => setAddRowCountDraft(e.target.value)}
-              className="h-8 w-full rounded-md border border-gray-200 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              className="h-8 w-full rounded-md border border-app-separator px-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-accent/20 focus:border-app-accent"
               placeholder="Custom"
               inputMode="numeric"
             />
@@ -4698,13 +5352,13 @@ export function ResearchPage() {
             : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
         }
       >
-      <div className="shrink-0 border-b border-gray-200 bg-white px-5 pb-0 pt-3">
-        <h1 className="mb-2.5 text-[17px] font-semibold text-gray-900">Data Research</h1>
+      <div className="shrink-0 border-b border-app-separator bg-app-surface/80 px-5 py-3 backdrop-blur-xl">
+        <h1 className="text-[22px] font-semibold tracking-[-0.03em] text-app-label">Research</h1>
       </div>
 
       {/* Unified header: tabs + toolbar in one container, flush full-width.
           z-30 keeps toolbar dropdowns above the sheet (sticky thead is z-10). */}
-      <div className="relative z-30 shrink-0 border-b border-gray-200 bg-white">
+      <div className="relative z-30 shrink-0 border-b border-app-separator bg-app-surface">
         <ResearchTabs
           tabs={tabs.map((t) => ({ id: t.id, name: t.name, fileId: t.fileId, folderPath: t.folderPath ?? null }))}
           activeTabId={activeTabId}
@@ -4745,14 +5399,14 @@ export function ResearchPage() {
         />
 
       {loading && (
-        <p className="px-4 pb-1 text-sm text-slate-500">Loading file…</p>
+        <p className="px-4 pb-1 text-sm text-app-secondary">Loading file…</p>
       )}
       {error && (
         <p className="px-4 pb-1 text-sm text-rose-600">{error}</p>
       )}
 
       {/* Toolbar */}
-      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-4 overflow-visible border-t border-gray-200 bg-[#f8f9fb] px-4 py-2.5">
+      <div className="relative z-20 flex max-w-full flex-nowrap items-center gap-4 overflow-visible border-t border-app-separator bg-app-bg px-4 py-2.5">
         <ResearchToolbarGroup label="View">
           <button
             ref={hideFieldsBtnRef}
@@ -4770,7 +5424,7 @@ export function ResearchPage() {
             className={researchToolbarBtnClass(hideFieldsOpen, !content?.[0])}
             aria-label="Hide fields"
           >
-            <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+            <EyeOff className="h-3.5 w-3.5 shrink-0 text-app-secondary" aria-hidden />
             <ResearchToolbarTooltip label="Hide fields" />
           </button>
           {hideFieldsOpen &&
@@ -4790,9 +5444,9 @@ export function ResearchPage() {
                   ),
                   width: typeof window !== 'undefined' ? Math.min(320, window.innerWidth - 16) : 320,
                 }}
-                className="rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+                className="rounded-xl border border-app-separator bg-app-surface p-2 shadow-lg ring-1 ring-black/5"
               >
-                <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-app-tertiary">
                   Visible columns
                 </p>
                 <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
@@ -4802,7 +5456,7 @@ export function ResearchPage() {
                     return (
                       <label
                         key={colIdx}
-                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-slate-50"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-app-fill"
                       >
                         <input
                           type="checkbox"
@@ -4815,9 +5469,9 @@ export function ResearchPage() {
                               return next
                             })
                           }}
-                          className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                          className="rounded border-app-separator text-app-label focus:ring-slate-400"
                         />
-                        <span className="truncate text-slate-700" title={name}>
+                        <span className="truncate text-app-secondary" title={name}>
                           {name}
                         </span>
                       </label>
@@ -4867,7 +5521,7 @@ export function ResearchPage() {
                     window.innerWidth - 420
                   ),
                 }}
-                className="min-w-[min(26rem,calc(100vw-1rem))] max-w-[32rem] rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+                className="min-w-[min(26rem,calc(100vw-1rem))] max-w-[32rem] rounded-xl border border-app-separator bg-app-surface p-3 shadow-lg ring-1 ring-black/5"
               >
                 <ResearchSheetFilterBuilder
                   headers={headers}
@@ -4879,7 +5533,7 @@ export function ResearchPage() {
                   getDistinctColumnValues={getDistinctColumnValues}
                 />
                 {hasActiveColumnFilters && (
-                  <div className="mt-2 flex justify-end border-t border-slate-100 pt-2">
+                  <div className="mt-2 flex justify-end border-t border-app-separator pt-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -4930,7 +5584,7 @@ export function ResearchPage() {
                   ),
                   width: 240,
                 }}
-                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+                className="rounded-xl border border-app-separator bg-app-surface py-1 shadow-lg ring-1 ring-black/5"
               >
                 <button
                   type="button"
@@ -4938,11 +5592,11 @@ export function ResearchPage() {
                     setGroupByCol(null)
                     setGroupMenuOpen(false)
                   }}
-                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                  className="flex w-full px-3 py-2 text-left text-xs text-app-secondary hover:bg-app-fill"
                 >
                   Don&apos;t group
                 </button>
-                <div className="my-1 border-t border-slate-100" />
+                <div className="my-1 border-t border-app-separator" />
                 {headers.map((h, colIdx) => {
                   const label = (h || `Column ${colIdx + 1}`).trim()
                   return (
@@ -4953,8 +5607,8 @@ export function ResearchPage() {
                         setGroupByCol(colIdx)
                         setGroupMenuOpen(false)
                       }}
-                      className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
-                        groupByCol === colIdx ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      className={`flex w-full px-3 py-2 text-left text-xs hover:bg-app-fill ${
+                        groupByCol === colIdx ? 'bg-app-fill font-medium text-app-label' : 'text-app-secondary'
                       }`}
                     >
                       {label}
@@ -4999,7 +5653,7 @@ export function ResearchPage() {
                   ),
                   width: 240,
                 }}
-                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+                className="rounded-xl border border-app-separator bg-app-surface py-1 shadow-lg ring-1 ring-black/5"
               >
                 <button
                   type="button"
@@ -5008,11 +5662,11 @@ export function ResearchPage() {
                     setSortDir('asc')
                     setSortMenuOpen(false)
                   }}
-                  className="flex w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                  className="flex w-full px-3 py-2 text-left text-xs text-app-secondary hover:bg-app-fill"
                 >
                   Clear sort
                 </button>
-                <div className="my-1 border-t border-slate-100" />
+                <div className="my-1 border-t border-app-separator" />
                 {headers.map((h, colIdx) => {
                   const label = (h || `Column ${colIdx + 1}`).trim()
                   const active = sortCol === colIdx
@@ -5029,13 +5683,13 @@ export function ResearchPage() {
                         }
                         setSortMenuOpen(false)
                       }}
-                      className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50 ${
-                        active ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-app-fill ${
+                        active ? 'bg-app-fill font-medium text-app-label' : 'text-app-secondary'
                       }`}
                     >
                       <span className="truncate">{label}</span>
                       {active && (
-                        <span className="shrink-0 text-[10px] text-slate-500">
+                        <span className="shrink-0 text-[10px] text-app-secondary">
                           {sortDir === 'asc' ? 'A→Z' : 'Z→A'}
                         </span>
                       )}
@@ -5057,7 +5711,7 @@ export function ResearchPage() {
               setFilterOpen(false)
               setAddColumnOpen(false)
             }}
-            className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-slate-600 hover:bg-slate-50"
+            className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill"
             aria-label="Row height"
           >
             <RowHeightIcon className="h-4 w-4" />
@@ -5080,7 +5734,7 @@ export function ResearchPage() {
                   })(),
                   width: 192,
                 }}
-                className="rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-950/5"
+                className="rounded-xl border border-app-separator bg-app-surface py-1 shadow-lg ring-1 ring-black/5"
               >
                 {(
                   [
@@ -5096,8 +5750,8 @@ export function ResearchPage() {
                       setRowDensity(id)
                       setDensityMenuOpen(false)
                     }}
-                    className={`flex w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${
-                      rowDensity === id ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-700'
+                    className={`flex w-full px-3 py-2 text-left text-xs hover:bg-app-fill ${
+                      rowDensity === id ? 'bg-app-fill font-medium text-app-label' : 'text-app-secondary'
                     }`}
                   >
                     {label}
@@ -5145,9 +5799,9 @@ export function ResearchPage() {
                   ),
                   width: 260,
                 }}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg ring-1 ring-slate-950/5"
+                className="rounded-xl border border-app-separator bg-app-surface p-3 shadow-lg ring-1 ring-black/5"
               >
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-app-tertiary">
                   New column
                 </p>
                 <input
@@ -5162,7 +5816,7 @@ export function ResearchPage() {
                     }
                   }}
                   placeholder={`Column ${(content?.[0]?.length ?? 0) + 1}`}
-                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-md border border-app-separator px-2.5 py-1.5 text-xs text-app-label outline-none focus:border-app-accent focus:ring-2 focus:ring-app-accent-soft"
                 />
                 <div className="mt-2.5 flex justify-end gap-1.5">
                   <button
@@ -5171,14 +5825,14 @@ export function ResearchPage() {
                       setAddColumnOpen(false)
                       setAddColumnNameDraft('')
                     }}
-                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    className="rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={() => addSheetColumn(addColumnNameDraft)}
-                    className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                    className="inline-flex items-center gap-1 rounded-md bg-app-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-app-accent-hover"
                   >
                     <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     Add
@@ -5227,9 +5881,6 @@ export function ResearchPage() {
                 )
                 return
               }
-              setResearchAiQueryInput(
-                'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
-              )
               setResearchFieldsPopupOpen(true)
             }}
             disabled={
@@ -5240,7 +5891,7 @@ export function ResearchPage() {
             }
             className={
               storeSelectionLoading
-                ? 'group relative inline-flex h-8 w-8 shrink-0 cursor-wait items-center justify-center rounded-[5px] border border-blue-600 bg-blue-600 text-white disabled:opacity-100'
+                ? 'group relative inline-flex h-8 w-8 shrink-0 cursor-wait items-center justify-center rounded-[5px] border border-app-accent bg-app-accent text-white disabled:opacity-100'
                 : researchToolbarBtnClass(
                     toolbarActive === 'selected' &&
                       selectedColumns.size > 0 &&
@@ -5262,7 +5913,7 @@ export function ResearchPage() {
                 aria-hidden
               >
                 <span
-                  className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-300 ease-out"
+                  className="absolute inset-y-0 left-0 bg-app-surface/25 transition-[width] duration-300 ease-out"
                   style={{ width: `${researchProgress}%` }}
                 />
               </span>
@@ -5439,14 +6090,14 @@ export function ResearchPage() {
         </ResearchToolbarGroup>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-          <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1">
-            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+          <div className="flex items-center gap-2 rounded-md border border-app-separator bg-app-surface px-2.5 py-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-app-tertiary" aria-hidden />
             <input
               type="search"
               value={rowSearchDraft}
               onChange={(e) => setRowSearchDraft(e.target.value)}
               placeholder="Search rows…"
-              className="w-[130px] border-0 bg-transparent text-xs text-gray-900 outline-none placeholder:text-gray-400 sm:w-[150px]"
+              className="w-[130px] border-0 bg-transparent text-xs text-app-label outline-none placeholder:text-app-tertiary sm:w-[150px]"
             />
             {rowSearchDraft.trim() && (
               <button
@@ -5456,7 +6107,7 @@ export function ResearchPage() {
                   setRowSearchQuery('')
                   setPage(1)
                 }}
-                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                className="rounded p-0.5 text-app-tertiary hover:bg-app-fill hover:text-app-secondary"
                 aria-label="Clear search"
               >
                 <X className="h-3.5 w-3.5" />
@@ -5470,27 +6121,28 @@ export function ResearchPage() {
 
       {content && content.length > 0 && (
         <>
-          <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden bg-white">
+          <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden bg-app-surface">
             <div className="h-full w-full overflow-auto">
             <table className="min-w-full border-collapse text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-[#f8f9fb]">
-                <tr className="border-b-2 border-gray-200">
+              <thead className="sticky top-0 z-10 bg-app-bg">
+                <tr className="border-b-2 border-app-separator">
                   {/* Row-number gutter */}
                   <th
-                    className={`w-8 border-r border-slate-200 text-center ${rd.th} ${rd.thLabel} text-slate-400`}
+                    className={`w-8 border-r border-app-separator text-center ${rd.th} ${rd.thLabel} text-app-tertiary`}
                     aria-label="Row number"
                   />
-                  <th className={`w-8 border-r border-slate-200 ${rd.th}`}>
+                  <th className={`w-8 border-r border-app-separator ${rd.th}`}>
                     <input
                       type="checkbox"
                       checked={viewRowIndices.length > 0 && viewRowIndices.every((i) => selectedRows.has(i))}
                       onChange={toggleSelectAll}
-                      className="rounded border-slate-300"
+                      className="rounded border-app-separator"
+                      aria-label="Select all rows"
                     />
                   </th>
                   <th
                     scope="col"
-                    className={`w-[80px] shrink-0 border-r border-slate-200 text-left font-medium uppercase tracking-wide text-slate-500 ${rd.th} ${rd.thLabel}`}
+                    className={`w-[7rem] shrink-0 border-r border-app-separator text-left font-medium uppercase tracking-wide text-app-secondary ${rd.th} ${rd.thLabel}`}
                   >
                     Research
                   </th>
@@ -5501,8 +6153,8 @@ export function ResearchPage() {
                       <th
                         key={i}
                         scope="col"
-                        className={`border-r border-slate-200 last:border-r-0 ${rd.th} ${
-                          colSelected ? 'bg-blue-50' : ''
+                        className={`border-r border-app-separator last:border-r-0 ${rd.th} ${
+                          colSelected ? 'bg-app-accent-soft' : ''
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
@@ -5517,14 +6169,14 @@ export function ResearchPage() {
                                 return next
                               })
                             }
-                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300"
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-app-separator"
                             title="Select column"
                             aria-label={`Select column ${cell || i + 1}`}
                           />
                           <input
                             value={cell}
                             onChange={(e) => updateCell(0, i, e.target.value)}
-                            className={`w-full min-w-[80px] border-0 bg-transparent font-semibold uppercase tracking-wide text-slate-500 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.headInput}`}
+                            className={`w-full min-w-[80px] border-0 bg-transparent font-semibold uppercase tracking-wide text-app-secondary focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.headInput}`}
                           />
                         </div>
                       </th>
@@ -5532,14 +6184,14 @@ export function ResearchPage() {
                   })}
                 </tr>
               </thead>
-              <tbody className="bg-white">
+              <tbody className="bg-app-surface">
                 {sheetBodyItems.map((item) => {
                   if (item.kind === 'group') {
                     return (
-                      <tr key={item.key} className="bg-blue-50/40">
+                      <tr key={item.key} className="bg-app-accent-soft/40">
                         <td
                           colSpan={3 + visibleColIndices.length}
-                          className="border-b border-gray-200 px-3 py-1.5 text-[11px] font-semibold text-gray-700"
+                          className="border-b border-app-separator px-3 py-1.5 text-[11px] font-semibold text-app-secondary"
                         >
                           {item.label}
                         </td>
@@ -5552,39 +6204,40 @@ export function ResearchPage() {
                   const isRowBeingResearched = researchingRowIndices.has(dataRowIndex)
                   const rowResearchSummary = researchRowSummaryByIndex.get(dataRowIndex)
                   const hasStructuredData = rowResearchSummary?.has_structured_data === true
-                  const stripe = dataRowIndex % 2 === 0 ? 'bg-white' : 'bg-[#f8f9fb]'
+                  const stripe = dataRowIndex % 2 === 0 ? 'bg-app-surface' : 'bg-app-bg'
                   return (
                     <tr
                       key={dataRowIndex}
                       data-row-index={dataRowIndex}
-                      className={`cursor-pointer border-b border-gray-200 border-l-[3px] transition-colors ${
+                      className={`cursor-pointer border-b border-app-separator border-l-[3px] transition-colors ${
                         isInspectorRow
-                          ? 'border-l-blue-500 bg-[#f0f7ff]'
+                          ? 'border-l-app-accent bg-app-accent-soft'
                           : isRowChecked
-                            ? 'border-l-transparent bg-blue-50 hover:bg-blue-50'
-                            : `border-l-transparent ${stripe} hover:bg-[#f0f4f9]`
+                            ? 'border-l-transparent bg-app-accent-soft hover:bg-app-accent-soft'
+                            : `border-l-transparent ${stripe} hover:bg-app-fill`
                       }`}
                     >
                       <td
-                        className={`w-8 select-none border-r border-slate-200 text-center align-middle text-slate-400 ${rd.tdNum}`}
+                        className={`w-8 select-none border-r border-app-separator text-center align-middle text-app-tertiary ${rd.tdNum}`}
                       >
                         {dataRowIndex + 1}
                       </td>
-                      <td className={`w-8 border-r border-slate-200 align-middle ${rd.tdCb}`}>
+                      <td className={`w-8 border-r border-app-separator align-middle ${rd.tdCb}`}>
                         <div className="flex items-center justify-center">
                           <input
                             type="checkbox"
                             checked={selectedRows.has(dataRowIndex)}
                             onChange={() => toggleRowSelection(dataRowIndex)}
-                            className="rounded border-slate-300"
+                            className="rounded border-app-separator"
+                            aria-label={`Select row ${dataRowIndex + 1}`}
                           />
                         </div>
                       </td>
                       <td
-                        className={`w-[80px] shrink-0 cursor-pointer border-r border-slate-200 align-middle transition-colors ${rd.tdResearch} ${
+                        className={`w-[7rem] shrink-0 cursor-pointer border-r border-app-separator align-middle transition-colors ${rd.tdResearch} ${
                           hasStructuredData || isRowBeingResearched
-                            ? 'hover:bg-blue-100/80'
-                            : 'hover:bg-slate-100'
+                            ? 'hover:bg-app-accent-soft'
+                            : 'hover:bg-app-fill-strong'
                         }`}
                         title={
                           isRowBeingResearched ? 'Researching this row…' : 'Open inspector for this row'
@@ -5592,7 +6245,7 @@ export function ResearchPage() {
                         onClick={() => handleCellClick(dataRowIndex)}
                       >
                         {isRowBeingResearched ? (
-                          <div className="flex h-full w-full items-center justify-center text-emerald-600" aria-label="Researching">
+                          <div className="flex h-full w-full items-center justify-center text-app-accent" aria-label="Researching">
                             <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
                           </div>
                         ) : hasStructuredData && rowResearchSummary ? (
@@ -5601,24 +6254,26 @@ export function ResearchPage() {
                             onClick={() => handleCellClick(dataRowIndex)}
                           />
                         ) : (
-                          <span className="font-mono text-[11px] text-gray-400">—</span>
+                          <span className="flex w-full items-center justify-center font-mono text-[12px] text-app-tertiary">
+                            —
+                          </span>
                         )}
                       </td>
                       {visibleColIndices.map((colIndex, vi) => (
                         <td
                           key={colIndex}
-                          className={`cursor-pointer border-r border-slate-200 p-0 ${
+                          className={`cursor-pointer border-r border-app-separator p-0 ${
                             vi === visibleColIndices.length - 1 ? 'last:border-r-0' : ''
-                          } ${rd.tdCell} ${selectedColumns.has(colIndex) ? 'bg-blue-50/70' : ''}`}
+                          } ${rd.tdCell} ${selectedColumns.has(colIndex) ? 'bg-app-accent-soft/70' : ''}`}
                           onClick={() => handleCellSelect(dataRowIndex)}
                           onDoubleClick={() => handleCellClick(dataRowIndex)}
                         >
                           <input
                             value={row[colIndex] ?? ''}
                             onChange={(e) => updateCell(dataRowIndex + 1, colIndex, e.target.value)}
-                            className={`w-full min-w-[80px] border-0 bg-transparent text-gray-700 focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput} ${
+                            className={`w-full min-w-[80px] border-0 bg-transparent text-app-secondary focus:ring-2 focus:ring-inset focus:ring-blue-500 ${rd.cellInput} ${
                               vi === 0 || /part|internal|mfr/i.test((headers[colIndex] ?? '').trim())
-                                ? 'font-mono font-medium text-blue-700'
+                                ? 'font-mono font-medium text-app-accent'
                                 : ''
                             } ${selectedColumns.has(colIndex) ? 'bg-transparent' : ''}`}
                           />
@@ -5649,13 +6304,13 @@ export function ResearchPage() {
               </button>
             </div>
           )}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-app-separator bg-app-surface px-4 py-2">
             <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={(e) => openAddRowPopover(e.currentTarget)}
                 data-add-row-footer-btn
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                className="rounded-md bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-app-accent-hover"
               >
                 + Add row
               </button>
@@ -5664,20 +6319,20 @@ export function ResearchPage() {
                 onClick={removeSelectedRows}
                 disabled={selectedRows.size === 0}
                 title={selectedRows.size === 0 ? 'Select row(s) to remove' : 'Remove selected rows'}
-                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Delete row
               </button>
-              <span className="text-sm text-slate-600">
+              <span className="text-sm text-app-secondary">
                 Showing {totalDataRows === 0 ? 0 : startRow + 1} to {endRow} of {totalDataRows}
                 {hasRowSearch || hasActiveColumnFilters ? ` (filtered from ${unfilteredRowCount})` : ''} entries
               </span>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
+              <label className="flex items-center gap-2 text-sm text-app-secondary">
                 Rows per page
                 <select
                   value={rowsPerPage}
                   onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
-                  className="rounded border border-slate-300 py-1 pl-2 pr-6 text-sm"
+                  className="rounded border border-app-separator py-1 pl-2 pr-6 text-sm"
                 >
                   {ROWS_PER_PAGE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n}</option>
@@ -5690,36 +6345,40 @@ export function ResearchPage() {
                 type="button"
                 onClick={() => setPage(1)}
                 disabled={currentPage <= 1}
-                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
+                aria-label="First page"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-app-separator bg-app-surface text-[13px] text-app-label disabled:text-app-tertiary"
               >
-                &laquo;
+                «
               </button>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
+                aria-label="Previous page"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-app-separator bg-app-surface text-[13px] text-app-label disabled:text-app-tertiary"
               >
-                &lsaquo;
+                ‹
               </button>
-              <span className="px-2 text-xs text-gray-500">
+              <span className="px-2 text-[13px] text-app-secondary">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
+                aria-label="Next page"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-app-separator bg-app-surface text-[13px] text-app-label disabled:text-app-tertiary"
               >
-                &rsaquo;
+                ›
               </button>
               <button
                 type="button"
                 onClick={() => setPage(totalPages)}
                 disabled={currentPage >= totalPages}
-                className="h-8 w-8 rounded-md border border-gray-200 bg-white text-sm text-gray-900 disabled:text-gray-300"
+                aria-label="Last page"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-app-separator bg-app-surface text-[13px] text-app-label disabled:text-app-tertiary"
               >
-                &raquo;
+                »
               </button>
             </div>
           </div>
@@ -5727,13 +6386,13 @@ export function ResearchPage() {
       )}
 
       {content && content.length === 0 && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg border border-app-separator bg-app-fill p-8 text-center text-sm text-app-secondary">
           No data. Use &quot;+ Add row&quot; to add rows.
         </div>
       )}
 
       {!content && !loading && tabs.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg border border-app-separator bg-app-fill p-8 text-center text-sm text-app-secondary">
           Select a tab or open a file from Home.
         </div>
       )}
@@ -5747,7 +6406,7 @@ export function ResearchPage() {
               aria-orientation="vertical"
               aria-label="Resize preview panel"
               title="Drag to resize"
-              className="shrink-0 w-1.5 cursor-col-resize border-l border-slate-200 bg-slate-100 transition-colors hover:bg-blue-100 active:bg-blue-200"
+              className="shrink-0 w-1.5 cursor-col-resize border-l border-app-separator bg-app-fill transition-colors hover:bg-blue-100 active:bg-blue-200"
               onMouseDown={(e) => {
                 e.preventDefault()
                 document.body.style.cursor = 'col-resize'
@@ -5759,8 +6418,8 @@ export function ResearchPage() {
           <aside
             className={
               inspectorMaximized
-                ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-white shadow-xl'
-                : 'flex h-full min-h-0 shrink-0 animate-[slideInRight_0.2s_ease-out] flex-col overflow-hidden border-l border-slate-200 bg-white'
+                ? 'fixed inset-0 z-50 flex min-h-0 flex-col overflow-hidden bg-app-surface shadow-xl'
+                : 'flex h-full min-h-0 shrink-0 animate-[slideInRight_0.2s_ease-out] flex-col overflow-hidden border-l border-app-separator bg-app-surface'
             }
             style={
               inspectorMaximized
@@ -5780,68 +6439,62 @@ export function ResearchPage() {
               to { transform: translateX(0); opacity: 1; }
             }
           `}</style>
-          <header className="flex shrink-0 flex-col border-b border-gray-200 bg-white">
-            <div className="bg-slate-900 px-4 py-3">
+          <header className="flex shrink-0 flex-col border-b border-app-separator bg-app-surface">
+            <div className="px-4 py-3">
             <div className="flex min-w-0 items-start justify-between gap-3">
               {inspectorMode === 'single' && selectedRowData ? (
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-[15px] font-semibold text-slate-100">
+                    <span className="font-mono text-[15px] font-semibold text-app-label">
                       {String(selectedRowData[0] ?? '—')}
                     </span>
                     {selectedRowIndex != null && researchRowSummaryByIndex.get(selectedRowIndex) && (
-                      <span className="rounded bg-blue-800 px-1.5 py-0.5 text-[10px] font-semibold text-blue-200">
+                      <span className="rounded-md bg-app-accent-soft px-1.5 py-0.5 text-[11px] font-semibold text-app-accent">
                         {researchRowSummaryByIndex.get(selectedRowIndex)!.structured_sources_count} sources
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-sm text-slate-400">
+                  <p className="truncate text-[13px] text-app-secondary">
                     {String(selectedRowData[1] ?? headers[1] ?? 'Row details')}
                   </p>
                 </div>
               ) : (
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-100">Selected rows</p>
-                  <p className="text-xs text-slate-400">Review and compare sheet rows</p>
+                  <p className="text-[15px] font-semibold text-app-label">Selected rows</p>
+                  <p className="text-[13px] text-app-secondary">Review and compare sheet rows</p>
                 </div>
               )}
-              <div className="flex shrink-0 items-center justify-end gap-1 self-start">
+              <div className="flex shrink-0 items-center justify-end gap-0.5 self-start">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
                     setInspectorMaximized((m) => !m)
                   }}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-secondary hover:bg-app-fill hover:text-app-label"
                   title={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                   aria-label={inspectorMaximized ? 'Restore panel' : 'Maximize panel'}
                 >
                   {inspectorMaximized ? (
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5M15 15l5.25 5.25" />
-                    </svg>
+                    <Minimize2 className="h-4 w-4" strokeWidth={1.75} />
                   ) : (
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
+                    <Maximize2 className="h-4 w-4" strokeWidth={1.75} />
                   )}
                 </button>
                 <button
                   type="button"
                   onClick={closeInspector}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-secondary hover:bg-app-fill hover:text-app-label"
                   title="Close panel"
                   aria-label="Close panel"
                 >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="h-4 w-4" strokeWidth={1.75} />
                 </button>
               </div>
             </div>
             </div>
             {inspectorMode === 'single' && selectedRowData && (
-              <div className="flex flex-wrap gap-2 border-t border-gray-200 px-4 py-3">
+              <div className="flex flex-wrap gap-2 border-t border-app-separator px-4 py-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -5891,7 +6544,7 @@ export function ResearchPage() {
                       )
                     }
                   }}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-app-accent px-4 py-2 text-sm font-medium text-white hover:bg-app-accent-hover"
                 >
                   Compare
                 </button>
@@ -5914,13 +6567,13 @@ export function ResearchPage() {
                     if (result.added) showToast('Item added to Bucket')
                     else showToast('Item already in Bucket')
                   }}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-md border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill-strong"
                 >
                   Add to Bucket
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-md border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill-strong"
                 >
                   Copy row
                 </button>
@@ -5930,7 +6583,7 @@ export function ResearchPage() {
                   className={`inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
                     inspectorRowAiOpen
                       ? 'border-sky-400 bg-sky-50 text-sky-900'
-                      : 'border-sky-300 bg-white text-sky-800 hover:bg-sky-50'
+                      : 'border-sky-300 bg-app-surface text-sky-800 hover:bg-sky-50'
                   }`}
                   title="Chat with AI about this row"
                   aria-pressed={inspectorRowAiOpen}
@@ -5946,11 +6599,11 @@ export function ResearchPage() {
             {selectedRowData || (inspectorMode === 'multi' && inspectorMultiRowIndices.length > 0) ? (
               <div className="space-y-4">
                 {inspectorMode === 'multi' ? (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-900">Selected rows</h3>
-                        <p className="mt-0.5 text-xs text-slate-500">
+                        <h3 className="text-sm font-semibold text-app-label">Selected rows</h3>
+                        <p className="mt-0.5 text-xs text-app-secondary">
                           Pick which items to compare, then click Compare.
                         </p>
                       </div>
@@ -5964,7 +6617,7 @@ export function ResearchPage() {
                           }
                           void openCompareForResearchRows(chosen)
                         }}
-                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                        className="rounded-md bg-app-accent px-4 py-2 text-sm font-medium text-white hover:bg-app-accent-hover"
                       >
                         Compare ({inspectorCompareSelection.size})
                       </button>
@@ -5980,7 +6633,7 @@ export function ResearchPage() {
                           <label
                             key={rowIndex}
                             className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 ${
-                              checked ? 'border-blue-200 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+                              checked ? 'border-app-accent/30 bg-app-accent-soft' : 'border-app-separator hover:bg-app-fill'
                             }`}
                           >
                             <input
@@ -5997,12 +6650,12 @@ export function ResearchPage() {
                               }}
                             />
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900">{title || '—'}</p>
-                              {sub && <p className="truncate text-xs text-slate-600">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
+                              <p className="truncate text-sm font-semibold text-app-label">{title || '—'}</p>
+                              {sub && <p className="truncate text-xs text-app-secondary">{headers[1] ? `${headers[1]}: ${sub}` : sub}</p>}
                             </div>
                             <button
                               type="button"
-                              className="ml-auto text-xs font-medium text-slate-600 hover:text-slate-900"
+                              className="ml-auto text-xs font-medium text-app-secondary hover:text-app-label"
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -6027,9 +6680,9 @@ export function ResearchPage() {
                         onApplySheetUpdates={applySheetColumnUpdates}
                       />
                     )}
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-app-secondary">
                           Structured data
                         </h3>
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -6052,8 +6705,8 @@ export function ResearchPage() {
                             }}
                             className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                               researchMoreOpen
-                                ? 'border-blue-400 bg-blue-50 text-blue-900'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                ? 'border-app-accent bg-app-accent-soft text-blue-900'
+                                : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                             }`}
                             title="Re-scrape the selected source with a custom prompt"
                           >
@@ -6070,7 +6723,7 @@ export function ResearchPage() {
                             className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                               addStructuredColumnOpen
                                 ? 'border-emerald-400 bg-emerald-50 text-emerald-900'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                             }`}
                             title="Add a column to structured data and the sheet"
                           >
@@ -6078,14 +6731,25 @@ export function ResearchPage() {
                             Add column
                           </button>
                           {previewScrapedData && previewScrapedData.length > 0 && (
-                            <div className="flex rounded-lg border border-slate-200 p-0.5">
+                            <div className="flex rounded-lg border border-app-separator p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setStructuredDataViewType('offers')}
+                                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                  structuredDataViewType === 'offers'
+                                    ? 'bg-app-fill-strong text-app-label'
+                                    : 'text-app-secondary hover:bg-app-fill-strong'
+                                }`}
+                              >
+                                Offers
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => setStructuredDataViewType('row')}
                                 className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                                   structuredDataViewType === 'row'
-                                    ? 'bg-slate-200 text-slate-900'
-                                    : 'text-slate-600 hover:bg-slate-100'
+                                    ? 'bg-app-fill-strong text-app-label'
+                                    : 'text-app-secondary hover:bg-app-fill-strong'
                                 }`}
                               >
                                 Row
@@ -6095,8 +6759,8 @@ export function ResearchPage() {
                                 onClick={() => setStructuredDataViewType('column')}
                                 className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                                   structuredDataViewType === 'column'
-                                    ? 'bg-slate-200 text-slate-900'
-                                    : 'text-slate-600 hover:bg-slate-100'
+                                    ? 'bg-app-fill-strong text-app-label'
+                                    : 'text-app-secondary hover:bg-app-fill-strong'
                                 }`}
                               >
                                 Column
@@ -6107,9 +6771,9 @@ export function ResearchPage() {
                       </div>
 
                       {researchMoreOpen && selectedRowIndex != null && (
-                        <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                        <div className="mb-3 rounded-lg border border-app-accent/25 bg-app-accent-soft/40 p-3">
                           <p className="text-xs font-medium text-blue-900">Research more — selected source only</p>
-                          <p className="mt-0.5 text-[11px] text-blue-800/80">
+                          <p className="mt-0.5 text-[11px] text-app-accent/80">
                             Check exactly one source below. We re-scrape that URL only, merge updated fields, and add any
                             new columns.
                           </p>
@@ -6131,13 +6795,13 @@ export function ResearchPage() {
                             onChange={(e) => setResearchMorePrompt(e.target.value)}
                             rows={3}
                             placeholder="e.g. Get current price, warranty terms, and shipping ETA"
-                            className="mt-2 w-full resize-y rounded-md border border-blue-200 bg-white px-2.5 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            className="mt-2 w-full resize-y rounded-md border border-app-accent/30 bg-app-surface px-2.5 py-2 text-sm text-app-label placeholder:text-app-tertiary focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                           />
                           <div className="mt-2 flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
                               onClick={() => setResearchMoreOpen(false)}
-                              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                              className="rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
                             >
                               Cancel
                             </button>
@@ -6149,7 +6813,7 @@ export function ResearchPage() {
                                 inspectorScrapedSourceSelection.size !== 1
                               }
                               onClick={() => void runResearchMoreOnSelectedSource()}
-                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                              className="inline-flex items-center gap-1.5 rounded-md bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-app-accent-hover disabled:opacity-50"
                             >
                               {researchMoreLoading ? (
                                 <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
@@ -6183,7 +6847,7 @@ export function ResearchPage() {
                                 }
                               }}
                               placeholder="Column name (e.g. Warranty)"
-                              className="min-w-[160px] flex-1 rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              className="min-w-[160px] flex-1 rounded-md border border-emerald-200 bg-app-surface px-2.5 py-1.5 text-sm text-app-label placeholder:text-app-tertiary focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                             />
                             <button
                               type="button"
@@ -6200,11 +6864,412 @@ export function ResearchPage() {
                       )}
 
                       {previewResultsLoading ? (
-                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <div className="flex items-center gap-2 text-sm text-app-secondary">
                           <LoaderIcon className="h-4 w-4 shrink-0" />
                           <span>Loading…</span>
                         </div>
                       ) : previewScrapedData && previewScrapedData.length > 0 ? (
+                        structuredDataViewType === 'offers' && structuredOfferSummary ? (
+                        <article className="-mx-1 overflow-hidden rounded-[12px] border border-app-separator bg-app-surface">
+                          <div className="flex items-start gap-3 border-b border-app-separator px-4 py-4">
+                            {structuredOfferSummary.hero?.image ? (
+                              <img
+                                src={structuredOfferSummary.hero.image}
+                                alt=""
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                className="h-[72px] w-[72px] shrink-0 rounded-[10px] border border-app-separator bg-app-paper object-cover"
+                              />
+                            ) : (
+                              <div
+                                className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[10px] bg-app-fill text-app-tertiary"
+                                aria-hidden
+                              >
+                                <Package className="h-7 w-7" strokeWidth={1.5} />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                <h4 className="font-mono text-[17px] font-semibold tracking-[-0.02em] text-app-accent">
+                                  {String(selectedRowData?.[0] ?? 'Unknown part')}
+                                </h4>
+                                <span className="text-[17px] font-semibold tabular-nums tracking-[-0.02em] text-app-label">
+                                  {structuredOfferSummary.bestPrice != null
+                                    ? formatUsd(structuredOfferSummary.bestPrice)
+                                    : '—'}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-[13px] leading-snug text-app-secondary">
+                                {previewScrapedData.length === 1
+                                  ? '1 distributor'
+                                  : `${previewScrapedData.length} distributors`}
+                              </p>
+                              {(structuredOfferSummary.desc || String(selectedRowData?.[1] ?? '').trim()) && (
+                                <p className="mt-1 text-[13px] leading-snug text-app-secondary">
+                                  {structuredOfferSummary.desc ?? String(selectedRowData?.[1] ?? '')}
+                                </p>
+                              )}
+                              {(structuredOfferSummary.manufacturer || structuredOfferSummary.manufacturerUrl) && (
+                                structuredOfferSummary.manufacturerUrl ? (
+                                  <a
+                                    href={structuredOfferSummary.manufacturerUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+                                  >
+                                    {structuredOfferSummary.manufacturer ??
+                                      extractDomain(structuredOfferSummary.manufacturerUrl)}
+                                    <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
+                                  </a>
+                                ) : (
+                                  <p className="mt-1 text-[13px] font-medium text-app-accent">
+                                    {structuredOfferSummary.manufacturer}
+                                  </p>
+                                )
+                              )}
+                              {structuredOfferSummary.buySuggestions.length > 0 && (
+                                <div className="mt-2.5">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-app-secondary">
+                                    Buy suggestion
+                                  </p>
+                                  <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {structuredOfferSummary.buySuggestions.map((pick) => (
+                                      <li
+                                        key={pick.kind}
+                                        className="inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-app-separator bg-app-fill px-2.5 py-1 text-[12px] text-app-label"
+                                      >
+                                        {pick.kind === 'price' ? (
+                                          <DollarSign className="h-3.5 w-3.5 shrink-0 text-app-ok" strokeWidth={1.75} />
+                                        ) : pick.kind === 'lead' ? (
+                                          <Timer className="h-3.5 w-3.5 shrink-0 text-app-accent" strokeWidth={1.75} />
+                                        ) : (
+                                          <Package className="h-3.5 w-3.5 shrink-0 text-app-secondary" strokeWidth={1.75} />
+                                        )}
+                                        <span className="min-w-0 truncate">
+                                          <span className="font-medium">{buySuggestionTitle(pick.kind)}</span>
+                                          {' · '}
+                                          {pick.vendor}
+                                          {' · '}
+                                          {pick.detail}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {structuredOfferSummary.specs.length > 0 && (
+                                <div className="mt-2.5">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-app-secondary">
+                                    Specifications
+                                  </p>
+                                  <dl className="mt-1.5 grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-x-3 gap-y-1 text-[12px]">
+                                    {structuredOfferSummary.specs.slice(0, 16).map((spec) => (
+                                      <Fragment key={spec.label}>
+                                        <dt className="truncate font-medium capitalize text-app-secondary" title={spec.label}>
+                                          {spec.label}
+                                        </dt>
+                                        <dd className="min-w-0 truncate text-app-label" title={spec.value}>
+                                          {spec.value}
+                                        </dd>
+                                      </Fragment>
+                                    ))}
+                                  </dl>
+                                  {structuredOfferSummary.specs.length > 16 && (
+                                    <p className="mt-1 text-[11px] text-app-tertiary">
+                                      +{structuredOfferSummary.specs.length - 16} more in source fields
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-1.5">
+                                {structuredOfferSummary.datasheetUrl ? (
+                                  <a
+                                    href={structuredOfferSummary.datasheetUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={RESEARCH_OFFER_ACTION_BTN}
+                                  >
+                                    <FileText className="h-3.5 w-3.5 text-app-destructive" strokeWidth={1.75} />
+                                    Datasheet
+                                  </a>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={RESEARCH_OFFER_ACTION_BTN}
+                                    disabled
+                                    title="No datasheet URL on these sources"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                    Datasheet
+                                  </button>
+                                )}
+                                {structuredOfferSummary.manufacturerUrl ? (
+                                  <a
+                                    href={structuredOfferSummary.manufacturerUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={RESEARCH_OFFER_ACTION_BTN}
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                    Manufacturer page
+                                  </a>
+                                ) : (
+                                  <button type="button" className={RESEARCH_OFFER_ACTION_BTN} disabled>
+                                    <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                    Manufacturer page
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className={RESEARCH_OFFER_ACTION_BTN}
+                                  onClick={() => {
+                                    if (selectedRowIndex == null || !effectiveTabId || !selectedRowData) return
+                                    const title = selectedRowData[0] ?? ''
+                                    const manufacturer = selectedRowData[1] ?? ''
+                                    const price = selectedRowData[2] ?? ''
+                                    const result = addItem({
+                                      id: `${effectiveTabId}-${selectedRowIndex}`,
+                                      title: String(title),
+                                      manufacturer: String(manufacturer),
+                                      price: String(price),
+                                      rowIndex: selectedRowIndex,
+                                      tabId: effectiveTabId,
+                                    })
+                                    if (result.added) showToast('Item added to Bucket')
+                                    else showToast('Item already in Bucket')
+                                  }}
+                                >
+                                  <FolderPlus className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                  Add to BOM
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-[720px] w-full text-left text-[13px]">
+                              <thead>
+                                <tr className="border-b border-app-separator text-[11px] font-semibold tracking-[-0.01em] text-app-secondary">
+                                  <th className="px-4 py-2.5">Distributor</th>
+                                  <th className="px-3 py-2.5">SKU</th>
+                                  <th className="px-3 py-2.5 text-right">Stock</th>
+                                  <th className="px-3 py-2.5 text-right">Unit price</th>
+                                  <th className="px-3 py-2.5">Delivery</th>
+                                  <th className="px-3 py-2.5">Location</th>
+                                  <th className="px-3 py-2.5">Contact</th>
+                                  <th className="px-3 py-2.5 text-right">Updated</th>
+                                  <th className="w-10 px-2 py-2.5">
+                                    <span className="sr-only">Actions</span>
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {previewScrapedData.map((item, idx) => {
+                                  const offer = structuredOfferSummary.fields[idx]!
+                                  const isBest =
+                                    offer.priceNum != null &&
+                                    structuredOfferSummary.bestPrice != null &&
+                                    offer.priceNum === structuredOfferSummary.bestPrice
+                                  const href = isHttpUrl(item.url)
+                                  const sourceAiOpen = inspectorSourceAiOpen.has(idx)
+                                  const sourceEditing = inspectorSourceEditOpen.has(idx)
+                                  const sourceSelected = inspectorScrapedSourceSelection.has(idx)
+                                  const sourceAiContext = buildResearchInspectorContext(
+                                    headers,
+                                    selectedRowData,
+                                    previewScrapedData,
+                                    { sourceIndex: idx, sourceOnly: true }
+                                  )
+                                  const updatedAt = item.change_log?.[0]?.at
+                                  const skuLabel = offer.sku ?? String(selectedRowData?.[0] ?? '—')
+                                  return (
+                                    <Fragment key={item.id ?? idx}>
+                                      <tr
+                                        className={`border-b border-app-separator hover:bg-app-fill/70 ${
+                                          researchMoreOpen && sourceSelected ? 'bg-app-accent-soft/50' : ''
+                                        }`}
+                                      >
+                                        <td className="px-4 py-2.5">
+                                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                            <input
+                                              type="checkbox"
+                                              checked={sourceSelected}
+                                              onChange={() => {
+                                                setInspectorScrapedSourceSelection((prev) => {
+                                                  const next = new Set(prev)
+                                                  if (next.has(idx)) next.delete(idx)
+                                                  else next.add(idx)
+                                                  return next
+                                                })
+                                              }}
+                                              className="h-4 w-4 shrink-0 rounded border-app-separator accent-app-accent"
+                                              aria-label={`Include source ${idx + 1} in comparison`}
+                                            />
+                                            {isBest ? (
+                                              <Star
+                                                className="h-3.5 w-3.5 shrink-0 fill-app-ok text-app-ok"
+                                                strokeWidth={1.5}
+                                              />
+                                            ) : (
+                                              <span className="inline-block w-3.5 shrink-0" />
+                                            )}
+                                            {href ? (
+                                              <a
+                                                href={href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="truncate font-medium text-app-accent hover:text-app-accent-hover"
+                                              >
+                                                {offer.vendor ?? extractDomain(href)}
+                                              </a>
+                                            ) : (
+                                              <span className="truncate font-medium text-app-label">
+                                                {offer.vendor ?? `Source ${idx + 1}`}
+                                              </span>
+                                            )}
+                                            {href && (
+                                              <a
+                                                href={href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="shrink-0 text-app-tertiary hover:text-app-accent"
+                                                aria-label={`Open ${offer.vendor ?? 'source'} site`}
+                                              >
+                                                <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
+                                              </a>
+                                            )}
+                                            {idx === structuredOfferSummary.cheapestIdx && (
+                                              <span className="shrink-0 rounded bg-app-fill px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-app-ok">
+                                                Lowest
+                                              </span>
+                                            )}
+                                            {idx === structuredOfferSummary.fastestIdx && (
+                                              <span className="shrink-0 rounded bg-app-fill px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-app-accent">
+                                                Fastest
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          {href ? (
+                                            <a
+                                              href={href}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="whitespace-nowrap font-mono text-[12px] text-app-accent hover:text-app-accent-hover"
+                                            >
+                                              {skuLabel}
+                                            </a>
+                                          ) : (
+                                            <span className="whitespace-nowrap font-mono text-[12px] text-app-label">
+                                              {skuLabel}
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right tabular-nums text-app-secondary">
+                                          {offer.stock ?? '—'}
+                                        </td>
+                                        <td
+                                          className={`px-3 py-2.5 text-right font-medium tabular-nums ${
+                                            offer.priceNum == null ? 'text-app-tertiary' : 'text-app-ok'
+                                          }`}
+                                        >
+                                          {offer.priceNum != null ? formatUsd(offer.priceNum) : '—'}
+                                        </td>
+                                        <td className="max-w-[160px] truncate px-3 py-2.5 text-app-secondary" title={offer.delivery ?? undefined}>
+                                          {offer.delivery ?? '—'}
+                                        </td>
+                                        <td className="max-w-[140px] truncate px-3 py-2.5 text-app-secondary" title={offer.location ?? undefined}>
+                                          {offer.location ?? '—'}
+                                        </td>
+                                        <td className="max-w-[140px] truncate px-3 py-2.5 text-app-secondary" title={offer.contact ?? undefined}>
+                                          {offer.contact ?? '—'}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right">
+                                          <span className="inline-flex items-center justify-end gap-1 text-app-tertiary">
+                                            <Clock className="h-3 w-3" strokeWidth={1.75} />
+                                            {updatedAt ? formatRelativeTime(updatedAt) : '—'}
+                                          </span>
+                                        </td>
+                                        <td className="px-2 py-2.5">
+                                          <div className="flex items-center justify-end gap-0.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleInspectorSourceEdit(idx)}
+                                              className={`inline-flex h-7 w-7 items-center justify-center rounded-[6px] ${
+                                                sourceEditing
+                                                  ? 'bg-amber-100 text-amber-950'
+                                                  : 'text-app-tertiary hover:bg-app-fill hover:text-app-label'
+                                              }`}
+                                              title={sourceEditing ? 'Finish editing' : 'Edit fields'}
+                                            >
+                                              <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setAddStructuredColumnSourceIdx(idx)
+                                                setAddStructuredColumnOpen(true)
+                                                setResearchMoreOpen(false)
+                                              }}
+                                              className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-tertiary hover:bg-app-fill hover:text-app-label"
+                                              title="Add a column to this source"
+                                            >
+                                              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleInspectorSourceAi(idx)}
+                                              className={`inline-flex h-7 w-7 items-center justify-center rounded-[6px] ${
+                                                sourceAiOpen
+                                                  ? 'bg-sky-100 text-sky-900'
+                                                  : 'text-app-tertiary hover:bg-app-fill hover:text-app-label'
+                                              }`}
+                                              title={sourceAiOpen ? 'Hide AI' : 'Ask AI'}
+                                            >
+                                              <Bot className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                      {(sourceEditing || sourceAiOpen) && (
+                                        <tr className="border-b border-app-separator bg-app-fill/40">
+                                          <td colSpan={9} className="px-4 py-3">
+                                            {sourceAiOpen && (
+                                              <div className="mb-3">
+                                                <ResearchRowAiChat
+                                                  compact
+                                                  tabRowKey={`${researchAiTabRowKey}:source:${idx}`}
+                                                  researchContext={sourceAiContext}
+                                                  sessionLabel={`${researchAiSessionLabel} · Source ${idx + 1}`}
+                                                  onApplySheetUpdates={applySheetColumnUpdates}
+                                                />
+                                              </div>
+                                            )}
+                                            {sourceEditing && (
+                                              <div className="overflow-x-auto">
+                                                <StructuredSourceFieldsTable
+                                                  item={item}
+                                                  view="row"
+                                                  editing
+                                                  onChange={(key, next) => updateScrapedField(idx, key, next)}
+                                                />
+                                              </div>
+                                            )}
+                                            <FieldChangeTracking
+                                              changes={item.last_field_changes}
+                                              changeLog={item.change_log}
+                                            />
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </Fragment>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </article>
+                        ) : (
                         <div className="space-y-4">
                           {previewScrapedData.map((item, idx) => {
                             const sourceAiOpen = inspectorSourceAiOpen.has(idx)
@@ -6223,16 +7288,16 @@ export function ResearchPage() {
                               key={item.id ?? idx}
                               className={`rounded-lg border p-3 ${
                                 researchMoreOpen && sourceSelected
-                                  ? 'border-blue-300 bg-blue-50/70 ring-1 ring-blue-200'
+                                  ? 'border-blue-300 bg-app-accent-soft/70 ring-1 ring-blue-200'
                                   : sourceEditing
                                     ? 'border-amber-200 bg-amber-50/40'
-                                    : 'border-slate-100 bg-slate-50/50'
+                                    : 'border-app-separator bg-app-fill/50'
                               }`}
                             >
                               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                               {item.url && (
-                                <div className="flex min-w-0 flex-1 items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
+                                <div className="flex min-w-0 flex-1 items-center gap-2 rounded border border-app-separator bg-app-surface px-2 py-1.5">
                                   <input
                                     type="checkbox"
                                     checked={inspectorScrapedSourceSelection.has(idx)}
@@ -6244,19 +7309,19 @@ export function ResearchPage() {
                                         return next
                                       })
                                     }}
-                                    className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    className="h-4 w-4 shrink-0 rounded border-app-separator text-app-accent focus:ring-blue-500"
                                     aria-label={`Include source ${idx + 1} in comparison`}
                                   />
                                   <a
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-600 transition-colors hover:text-blue-600"
+                                    className="flex min-w-0 flex-1 items-center gap-2 text-xs text-app-secondary transition-colors hover:text-app-accent-hover"
                                     title={item.url}
                                   >
-                                    <span className="shrink-0 font-medium text-slate-400">Source {idx + 1}</span>
+                                    <span className="shrink-0 font-medium text-app-tertiary">Source {idx + 1}</span>
                                     <span className="min-w-0 truncate">{item.url}</span>
-                                    <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="h-3.5 w-3.5 shrink-0 text-app-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                     </svg>
                                   </a>
@@ -6270,7 +7335,7 @@ export function ResearchPage() {
                                     className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                                       sourceEditing
                                         ? 'border-amber-400 bg-amber-100 text-amber-950'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                        : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                                     }`}
                                     title={sourceEditing ? 'Finish editing this source' : 'Edit fields for this source'}
                                     aria-pressed={sourceEditing}
@@ -6285,7 +7350,7 @@ export function ResearchPage() {
                                       setAddStructuredColumnOpen(true)
                                       setResearchMoreOpen(false)
                                     }}
-                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                    className="inline-flex items-center gap-1 rounded-md border border-app-separator bg-app-surface px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
                                     title="Add a column to this source"
                                   >
                                     <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -6297,7 +7362,7 @@ export function ResearchPage() {
                                     className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                                       sourceAiOpen
                                         ? 'border-sky-400 bg-sky-100 text-sky-900'
-                                        : 'border-sky-200 bg-white text-sky-800 hover:bg-sky-50'
+                                        : 'border-sky-200 bg-app-surface text-sky-800 hover:bg-sky-50'
                                     }`}
                                     title="Chat with AI about this source"
                                   >
@@ -6318,129 +7383,12 @@ export function ResearchPage() {
                                 </div>
                               )}
                               <div className="overflow-x-auto">
-                                {structuredDataViewType === 'row' ? (
-                                  <table className="min-w-full text-sm">
-                                    <tbody className="divide-y divide-gray-200">
-                                      {Object.entries(item.data).map(([key, val]) => {
-                                        const changed = (item.last_field_changes ?? []).find(
-                                          (c) => c.field === key
-                                        )
-                                        return (
-                                          <tr
-                                            key={key}
-                                            className={
-                                              changed
-                                                ? changed.kind === 'added'
-                                                  ? 'bg-emerald-50/80'
-                                                  : 'bg-amber-50/70'
-                                                : undefined
-                                            }
-                                          >
-                                            <td className="py-1 pr-4 font-medium text-gray-500 align-top">
-                                              <span className="inline-flex items-center gap-1">
-                                                {key.replace(/_/g, ' ')}
-                                                {changed?.kind === 'updated' && (
-                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
-                                                    updated
-                                                  </span>
-                                                )}
-                                                {changed?.kind === 'added' && (
-                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
-                                                    new
-                                                  </span>
-                                                )}
-                                              </span>
-                                            </td>
-                                            <td className="py-1 text-gray-900">
-                                              {changed?.kind === 'updated' && (
-                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
-                                                  {formatTrackValue(changed.before)}
-                                                </p>
-                                              )}
-                                              <StructuredFieldCell
-                                                fieldKey={key}
-                                                val={val}
-                                                editing={sourceEditing}
-                                                onChange={(next) => updateScrapedField(idx, key, next)}
-                                              />
-                                            </td>
-                                          </tr>
-                                        )
-                                      })}
-                                    </tbody>
-                                  </table>
-                                ) : (
-                                  <table className="min-w-full text-sm">
-                                    <thead>
-                                      <tr className="divide-x divide-gray-200">
-                                        {Object.keys(item.data).map((key) => {
-                                          const changed = (item.last_field_changes ?? []).find(
-                                            (c) => c.field === key
-                                          )
-                                          return (
-                                            <th
-                                              key={key}
-                                              className={`px-3 py-1.5 text-left font-medium text-gray-500 ${
-                                                changed
-                                                  ? changed.kind === 'added'
-                                                    ? 'bg-emerald-50/80'
-                                                    : 'bg-amber-50/70'
-                                                  : ''
-                                              }`}
-                                            >
-                                              <span className="inline-flex items-center gap-1">
-                                                {key.replace(/_/g, ' ')}
-                                                {changed?.kind === 'updated' && (
-                                                  <span className="rounded bg-amber-200/80 px-1 text-[9px] font-semibold uppercase text-amber-900">
-                                                    updated
-                                                  </span>
-                                                )}
-                                                {changed?.kind === 'added' && (
-                                                  <span className="rounded bg-emerald-200/80 px-1 text-[9px] font-semibold uppercase text-emerald-900">
-                                                    new
-                                                  </span>
-                                                )}
-                                              </span>
-                                            </th>
-                                          )
-                                        })}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="divide-x divide-gray-200">
-                                        {Object.entries(item.data).map(([key, val]) => {
-                                          const changed = (item.last_field_changes ?? []).find(
-                                            (c) => c.field === key
-                                          )
-                                          return (
-                                            <td
-                                              key={key}
-                                              className={`px-3 py-1.5 text-gray-900 align-top ${
-                                                changed
-                                                  ? changed.kind === 'added'
-                                                    ? 'bg-emerald-50/80'
-                                                    : 'bg-amber-50/70'
-                                                  : ''
-                                              }`}
-                                            >
-                                              {changed?.kind === 'updated' && (
-                                                <p className="mb-0.5 text-[11px] text-slate-400 line-through">
-                                                  {formatTrackValue(changed.before)}
-                                                </p>
-                                              )}
-                                              <StructuredFieldCell
-                                                fieldKey={key}
-                                                val={val}
-                                                editing={sourceEditing}
-                                                onChange={(next) => updateScrapedField(idx, key, next)}
-                                              />
-                                            </td>
-                                          )
-                                        })}
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                )}
+                                <StructuredSourceFieldsTable
+                                  item={item}
+                                  view={structuredDataViewType === 'row' ? 'row' : 'column'}
+                                  editing={sourceEditing}
+                                  onChange={(key, next) => updateScrapedField(idx, key, next)}
+                                />
                               </div>
                               <FieldChangeTracking
                                 changes={item.last_field_changes}
@@ -6450,9 +7398,10 @@ export function ResearchPage() {
                             )
                           })}
                         </div>
+                        )
                       ) : (
                         <div className="space-y-3">
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-app-secondary">
                             No data yet. Run &quot;Research Selected&quot; or use Research more with a prompt.
                           </p>
                           {selectedRowIndex != null && (
@@ -6464,7 +7413,7 @@ export function ResearchPage() {
                                   setResearchMorePrompt(researchAiQueryInput)
                                 }
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-app-accent/30 bg-app-accent-soft px-3 py-1.5 text-xs font-semibold text-app-accent hover:bg-blue-100"
                             >
                               <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
                               Research this row
@@ -6477,7 +7426,7 @@ export function ResearchPage() {
                 )}
               </div>
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+              <div className="rounded-xl border border-app-separator bg-app-fill p-6 text-center text-sm text-app-secondary">
                 Select a row in the table to preview its details here.
               </div>
             )}

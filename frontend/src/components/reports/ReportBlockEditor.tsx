@@ -24,8 +24,8 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
   const isPdfLabel = pdfOverlay?.pdf_role === 'label'
   const ring = selected
     ? isPdfField
-      ? 'ring-2 ring-violet-500 ring-offset-1'
-      : 'ring-2 ring-blue-500 ring-offset-2'
+      ? 'ring-2 ring-violet-500 ring-offset-app-bg'
+      : 'ring-2 ring-blue-500 ring-offset-app-bg'
     : pdfOverlay?.pdf_auto
       ? 'ring-1 ring-dashed ring-violet-300/80'
       : 'ring-1 ring-transparent hover:ring-slate-200'
@@ -42,7 +42,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
     const dashed = block.style === 'dashed'
     return (
       <button type="button" className={`${baseWrap} w-full py-2`} onClick={onSelect} aria-label="Divider">
-        {dashed ? <div className="border-t-2 border-dashed border-slate-300" /> : <div className="h-px w-full bg-slate-200" />}
+        {dashed ? <div className="border-t-2 border-dashed border-app-separator" /> : <div className="h-px w-full bg-app-fill-strong" />}
       </button>
     )
   }
@@ -51,7 +51,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
     return (
       <button
         type="button"
-        className={`${baseWrap} flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50/50 py-1 text-[10px] font-medium uppercase tracking-wide text-slate-400`}
+        className={`${baseWrap} flex w-full items-center justify-center rounded-md border border-dashed border-app-separator bg-app-fill/50 py-1 text-[10px] font-medium uppercase tracking-wide text-app-tertiary`}
         onClick={onSelect}
         aria-label="Spacer"
       >
@@ -107,21 +107,21 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
     const dataRows = block.showHeader && paddedRows.length > 0 ? paddedRows.slice(1) : paddedRows
 
     const cellClass =
-      'min-w-[5rem] border-slate-200 px-2 py-2 text-left align-top text-sm first:border-l-0 last:border-r-0 max-sm:min-w-[4rem]'
+      'min-w-[5rem] border-app-separator px-2 py-2 text-left align-top text-sm first:border-l-0 last:border-r-0 max-sm:min-w-[4rem]'
     const inputClass =
-      'w-full min-w-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30'
+      'w-full min-w-0 rounded border border-app-separator bg-app-surface px-1.5 py-1 text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-1 focus:ring-app-accent/30'
 
     return (
       <div className={baseWrap} onClick={onSelect} role="presentation">
         <div className={`overflow-x-auto ${alignClass(block.align)}`}>
-          <table className="w-full min-w-0 border-collapse rounded-md border border-slate-200 text-gray-800">
+          <table className="w-full min-w-0 border-collapse rounded-md border border-app-separator text-app-label">
             {block.showHeader && paddedRows.length > 0 ? (
               <thead>
                 <tr>
                   {paddedRows[0].map((cell, ci) => (
                     <th
                       key={ci}
-                      className={`${cellClass} border-b border-slate-200 bg-slate-100 font-semibold text-slate-800`}
+                      className={`${cellClass} border-b border-app-separator bg-app-fill font-semibold text-app-label`}
                     >
                       {selected ? (
                         <input
@@ -137,7 +137,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
                           target="_blank"
                           rel="noopener noreferrer"
                           title={cell.href}
-                          className="block min-h-5 text-blue-600 underline"
+                          className="block min-h-5 text-app-accent underline"
                         >
                           {cell.label}
                         </a>
@@ -153,9 +153,9 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
               {dataRows.map((row, ri) => {
                 const actualRi = block.showHeader ? ri + 1 : ri
                 return (
-                  <tr key={actualRi} className="odd:bg-white even:bg-slate-50/80">
+                  <tr key={actualRi} className="odd:bg-app-surface even:bg-app-fill/80">
                     {row.map((cell, ci) => (
-                      <td key={ci} className={`${cellClass} border-t border-slate-200`}>
+                      <td key={ci} className={`${cellClass} border-t border-app-separator`}>
                         {selected ? (
                           <input
                             type="text"
@@ -170,7 +170,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
                             target="_blank"
                             rel="noopener noreferrer"
                             title={cell.href}
-                            className="block min-h-5 text-blue-600 underline"
+                            className="block min-h-5 text-app-accent underline"
                           >
                             {cell.label}
                           </a>
@@ -189,14 +189,14 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
           <div className="mt-2 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-app-separator bg-app-surface px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill"
               onClick={addRow}
             >
               + Row
             </button>
             <button
               type="button"
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              className="rounded-md border border-app-separator bg-app-surface px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
               disabled={paddedRows.length <= 1}
               onClick={removeRow}
             >
@@ -204,14 +204,14 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
             </button>
             <button
               type="button"
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-app-separator bg-app-surface px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill"
               onClick={addCol}
             >
               + Column
             </button>
             <button
               type="button"
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              className="rounded-md border border-app-separator bg-app-surface px-2 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
               disabled={colCount <= 1}
               onClick={removeCol}
             >
@@ -232,43 +232,43 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
             <img
               src={block.src}
               alt={block.alt || 'Report image'}
-              className="mx-auto max-h-48 w-auto max-w-full rounded-md object-contain ring-1 ring-slate-200/80"
+              className="mx-auto max-h-48 w-auto max-w-full rounded-md object-contain ring-1 ring-app-separator"
             />
           ) : (
-            <div className="mx-auto flex min-h-24 max-w-full items-center justify-center rounded-md bg-slate-100 text-sm text-slate-400 ring-1 ring-slate-200/80">
+            <div className="mx-auto flex min-h-24 max-w-full items-center justify-center rounded-md bg-app-fill text-sm text-app-tertiary ring-1 ring-app-separator">
               Image URL
             </div>
           )}
           {block.caption.trim() ? (
-            <figcaption className="mt-2 text-xs text-slate-600">{block.caption}</figcaption>
+            <figcaption className="mt-2 text-xs text-app-secondary">{block.caption}</figcaption>
           ) : null}
         </figure>
         {selected && (
           <div className="mt-2 space-y-2">
-            <label className="block text-xs font-medium text-slate-500">
+            <label className="block text-xs font-medium text-app-secondary">
               Image URL
               <input
                 type="url"
-                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-app-separator bg-app-surface px-2 py-1.5 text-sm"
                 value={block.src}
                 onChange={(e) => onChange({ ...block, src: e.target.value })}
                 placeholder="https://…"
               />
             </label>
-            <label className="block text-xs font-medium text-slate-500">
+            <label className="block text-xs font-medium text-app-secondary">
               Alt text
               <input
                 type="text"
-                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-app-separator bg-app-surface px-2 py-1.5 text-sm"
                 value={block.alt}
                 onChange={(e) => onChange({ ...block, alt: e.target.value })}
               />
             </label>
-            <label className="block text-xs font-medium text-slate-500">
+            <label className="block text-xs font-medium text-app-secondary">
               Caption
               <input
                 type="text"
-                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-app-separator bg-app-surface px-2 py-1.5 text-sm"
                 value={block.caption}
                 onChange={(e) => onChange({ ...block, caption: e.target.value })}
               />
@@ -282,23 +282,23 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
   if (block.type === 'metric') {
     return (
       <div className={baseWrap} onClick={onSelect} role="presentation">
-        <div className={`rounded-xl border border-slate-200 bg-linear-to-br from-slate-50 to-white px-4 py-4 shadow-sm ${alignClass(block.align)}`}>
+        <div className={`rounded-xl border border-app-separator bg-linear-to-br from-slate-50 to-white px-4 py-4 shadow-sm ${alignClass(block.align)}`}>
           {selected ? (
             <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-              <label className="block text-xs font-medium text-slate-500">
+              <label className="block text-xs font-medium text-app-secondary">
                 Label
                 <input
                   type="text"
-                  className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                  className="mt-1 w-full rounded-md border border-app-separator bg-app-surface px-2 py-1.5 text-sm"
                   value={block.label}
                   onChange={(e) => onChange({ ...block, label: e.target.value })}
                 />
               </label>
-              <label className="block text-xs font-medium text-slate-500">
+              <label className="block text-xs font-medium text-app-secondary">
                 Value
                 <input
                   type="text"
-                  className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                  className="mt-1 w-full rounded-md border border-app-separator bg-app-surface px-2 py-1.5 text-sm"
                   value={block.value}
                   onChange={(e) => onChange({ ...block, value: e.target.value })}
                 />
@@ -306,8 +306,8 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
             </div>
           ) : (
             <>
-              <div className="text-2xl font-bold tracking-tight text-gray-900">{block.value || '—'}</div>
-              <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{block.label}</div>
+              <div className="text-2xl font-bold tracking-tight text-app-label">{block.value || '—'}</div>
+              <div className="mt-1 text-xs font-medium uppercase tracking-wide text-app-secondary">{block.label}</div>
             </>
           )}
         </div>
@@ -321,7 +321,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
         <div className={`${alignClass(block.align)}`}>
           {selected ? (
             <textarea
-              className="w-full resize-y rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full resize-y rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/30"
               rows={6}
               value={block.text}
               onChange={(e) => onChange({ ...block, text: e.target.value })}
@@ -330,7 +330,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
             />
           ) : (
             <pre className="overflow-x-auto rounded-md bg-slate-900 px-3 py-2 font-mono text-xs leading-relaxed text-slate-100">
-              {block.text.trim() ? block.text : <span className="text-slate-500">Code snippet…</span>}
+              {block.text.trim() ? block.text : <span className="text-app-secondary">Code snippet…</span>}
             </pre>
           )}
         </div>
@@ -340,16 +340,16 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
 
   const textStyles =
     block.type === 'title'
-      ? 'text-3xl font-bold tracking-tight text-gray-900'
+      ? 'text-3xl font-bold tracking-tight text-app-label'
       : block.type === 'heading'
-        ? 'text-xl font-semibold text-gray-900'
+        ? 'text-xl font-semibold text-app-label'
         : block.type === 'subheading'
-          ? 'text-xs font-semibold uppercase tracking-wider text-slate-500'
+          ? 'text-xs font-semibold uppercase tracking-wider text-app-secondary'
           : block.type === 'quote'
-            ? 'border-l-4 border-slate-300 pl-4 text-base italic text-gray-700'
+            ? 'border-l-4 border-app-separator pl-4 text-base italic text-app-secondary'
             : block.type === 'callout'
               ? calloutToneClass(block.tone)
-              : 'text-sm leading-relaxed text-gray-800'
+              : 'text-sm leading-relaxed text-app-label'
 
   const textValue =
     block.type === 'title' ||
@@ -366,10 +366,10 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
     (isPdfField ? 'Enter value…' : isPdfLabel ? 'Label' : 'Type here…')
 
   const overlayInputClass = isPdfField
-    ? 'w-full rounded border border-violet-300 bg-white/95 px-1.5 py-0.5 text-sm text-gray-900 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400/30'
+    ? 'w-full rounded border border-violet-300 bg-app-surface/95 px-1.5 py-0.5 text-sm text-app-label shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400/30'
     : isPdfLabel
-      ? 'w-full rounded border border-transparent bg-white/70 px-1 py-0.5 text-xs font-semibold text-slate-800 focus:border-violet-300 focus:bg-white focus:outline-none'
-      : 'w-full resize-none rounded border border-violet-200/80 bg-white/85 px-1.5 py-0.5 text-sm leading-snug text-gray-900 focus:border-violet-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/20'
+      ? 'w-full rounded border border-transparent bg-app-surface/70 px-1 py-0.5 text-xs font-semibold text-app-label focus:border-violet-300 focus:bg-app-surface focus:outline-none'
+      : 'w-full resize-none rounded border border-violet-200/80 bg-app-surface/85 px-1.5 py-0.5 text-sm leading-snug text-app-label focus:border-violet-400 focus:bg-app-surface focus:outline-none focus:ring-2 focus:ring-violet-400/20'
 
   return (
     <div className={baseWrap} style={overlayBoxStyle} onClick={onSelect} role="presentation">
@@ -393,7 +393,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
               className={
                 pdfOverlay
                   ? overlayInputClass
-                  : `w-full resize-y rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                  : `w-full resize-y rounded-md border border-app-separator bg-app-surface px-2 py-2 text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20 ${
                       block.type === 'title' ? 'min-h-14 text-3xl font-bold' : ''
                     } ${block.type === 'subheading' ? 'text-xs font-semibold uppercase tracking-wider' : ''}`
               }
@@ -425,7 +425,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
           <div
             className={`min-h-6 whitespace-pre-wrap py-1 ${
               pdfOverlay
-                ? `${overlayInputClass} ${!textValue.trim() ? 'text-slate-400' : ''}`
+                ? `${overlayInputClass} ${!textValue.trim() ? 'text-app-tertiary' : ''}`
                 : block.type === 'callout'
                   ? calloutToneClass(block.tone)
                   : textStyles
@@ -434,7 +434,7 @@ export function ReportBlockEditor({ block, selected, onSelect, onChange, pdfOver
             {textValue.trim() ? (
               textValue
             ) : (
-              <span className="text-gray-400">
+              <span className="text-app-tertiary">
                 {pdfOverlay ? pdfPlaceholder : block.type === 'title' ? 'Report title' : 'Empty block — click to edit'}
               </span>
             )}

@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import re
 from datetime import datetime
 from typing import Annotated
@@ -31,6 +33,8 @@ from data.serper_client import (
     resolve_serper_location,
     search_serper,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_source_url_key(url: object) -> str:
@@ -72,6 +76,342 @@ def _dedupe_urls_prefer_order(urls: list[str], *, limit: int = 15) -> list[str]:
 
 
 _US_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
+
+DEFAULT_EXTRACT_FIELDS_PROMPT = (
+    "Always extract these default fields even if they were not requested:\n"
+    "- product_image: the main product photograph as a direct https URL "
+    "(prefer the large product photo, og:image, or first gallery image; "
+    "not a logo, icon, or sprite).\n"
+    "- specifications: copy EVERY row from spec / details tables as an object of "
+    "name -> value (dimensions, material, compatibility, weight, length, width, "
+    "height, OEM/part numbers, voltage, capacity, color, finish, and similar). "
+    "Do not summarize or omit rows.\n"
+    "- datasheet_url: a direct URL to the product datasheet, spec sheet, or "
+    "PDF manual. Look for links labeled datasheet, spec sheet, manual, PDF, or download.\n"
+    "Also extract vendor_name, price (keep currency symbols), product_description, "
+    "delivery/lead time, location, contact, manufacturer, and part_number when present. "
+    "Return structured JSON. Omit empty values."
+)
+
+_PDF_URL_RE = re.compile(r"\.pdf(?:\?|#|$)", re.I)
+_SPEC_LINE_RE = re.compile(r"^[\s\-•*]*(.{1,80}?)\s*[:–—]\s*(.+)$")
+_NON_SPEC_KEYS = {
+    "price",
+    "unitprice",
+    "yourprice",
+    "vendor",
+    "vendorname",
+    "seller",
+    "distributor",
+    "stock",
+    "availability",
+    "delivery",
+    "leadtime",
+    "shipping",
+    "location",
+    "contact",
+    "phone",
+    "email",
+    "image",
+    "productimage",
+    "imageurl",
+    "datasheet",
+    "datasheeturl",
+    "url",
+    "sku",
+    "quantity",
+    "qty",
+    "currency",
+    "description",
+    "productdescription",
+    "name",
+    "title",
+    "manufacturer",
+    "brand",
+    "mfr",
+    "partnumber",
+    "productdetails",
+}
+
+
+def _norm_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _is_pdf_url(value: object) -> bool:
+    href = _first_http_url(value)
+    return bool(href and _PDF_URL_RE.search(href))
+
+
+def _spec_line_to_pair(text: str) -> tuple[str, str] | None:
+    line = text.strip()
+    if not line:
+        return None
+    match = _SPEC_LINE_RE.match(line)
+    if not match:
+        return None
+    label = match.group(1).strip()
+    value = match.group(2).strip()
+    if not label or not value or _norm_key(label) in _NON_SPEC_KEYS:
+        return None
+    return label, value
+
+
+def _first_http_url(value: object) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("//"):
+            text = "https:" + text
+        if text.startswith(("http://", "https://")):
+            return text[:2048]
+        return None
+    if isinstance(value, list):
+        for item in value:
+            found = _first_http_url(item)
+            if found:
+                return found
+        return None
+    if isinstance(value, dict):
+        for key in ("url", "href", "src", "link"):
+            found = _first_http_url(value.get(key))
+            if found:
+                return found
+    return None
+
+
+def _specifications_as_object(value: object) -> dict | None:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text[0] in "{[":
+            try:
+                parsed = json.loads(text)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                parsed = None
+            if parsed is not None and parsed is not value:
+                return _specifications_as_object(parsed)
+        out: dict = {}
+        for line in re.split(r"[\n;]+", text):
+            pair = _spec_line_to_pair(line)
+            if pair:
+                out[pair[0]] = pair[1]
+        return out or None
+    if isinstance(value, dict) and value:
+        out = {}
+        for key, item in value.items():
+            label = str(key).strip()
+            if not label or _norm_key(label) in _NON_SPEC_KEYS:
+                continue
+            if item is None or item == "":
+                continue
+            if isinstance(item, (dict, list)):
+                nested = _specifications_as_object(item)
+                if nested:
+                    for nested_key, nested_val in nested.items():
+                        out[f"{label} {nested_key}".strip()] = nested_val
+                continue
+            text = str(item).strip()
+            if text:
+                out[label] = text
+        return out or None
+    if isinstance(value, list) and value:
+        out = {}
+        for item in value:
+            if isinstance(item, dict):
+                label = str(
+                    item.get("name")
+                    or item.get("key")
+                    or item.get("label")
+                    or item.get("spec")
+                    or ""
+                ).strip()
+                raw = item.get("value")
+                if raw is None:
+                    raw = item.get("val")
+                if not label and len(item) == 1:
+                    only_key, only_val = next(iter(item.items()))
+                    label = str(only_key).strip()
+                    raw = only_val
+                if not label or raw is None or raw == "":
+                    continue
+                if _norm_key(label) in _NON_SPEC_KEYS:
+                    continue
+                out[label] = str(raw).strip()
+                continue
+            if isinstance(item, str):
+                pair = _spec_line_to_pair(item)
+                if pair:
+                    out[pair[0]] = pair[1]
+        return out or None
+    return None
+
+
+def _find_pdf_in_record(data: object, *, depth: int = 0) -> str | None:
+    if depth > 6 or data is None:
+        return None
+    href = _first_http_url(data)
+    if href and _PDF_URL_RE.search(href):
+        return href
+    if isinstance(data, dict):
+        for val in data.values():
+            found = _find_pdf_in_record(val, depth=depth + 1)
+            if found:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_pdf_in_record(item, depth=depth + 1)
+            if found:
+                return found
+    return None
+
+
+_IMAGE_KEY_HINTS = (
+    "product_image",
+    "image",
+    "image_url",
+    "main_image",
+    "product_photo",
+    "thumbnail",
+    "photo",
+    "og_image",
+    "ogimage",
+)
+
+
+def _find_image_in_record(data: object, *, depth: int = 0) -> str | None:
+    if depth > 6 or data is None:
+        return None
+    if isinstance(data, dict):
+        for alias in _IMAGE_KEY_HINTS:
+            url = _first_http_url(data.get(alias))
+            if url:
+                return url
+        for key, val in data.items():
+            if any(hint.replace("_", "") in _norm_key(key) for hint in ("image", "photo", "thumb")):
+                url = _first_http_url(val)
+                if url:
+                    return url
+        for val in data.values():
+            found = _find_image_in_record(val, depth=depth + 1)
+            if found:
+                return found
+        return None
+    if isinstance(data, list):
+        for item in data:
+            found = _find_image_in_record(item, depth=depth + 1)
+            if found:
+                return found
+        return None
+    href = _first_http_url(data)
+    if href and re.search(
+        r"\.(?:jpg|jpeg|png|gif|webp|svg)(?:\?|#|$)|/images?/|/media/|/catalog/",
+        href,
+        re.I,
+    ):
+        return href
+    return None
+
+
+def _normalize_extracted_defaults(data: dict, *, page_url: str | None = None) -> dict:
+    """Canonicalize product_image, specifications, and datasheet_url aliases."""
+    if not isinstance(data, dict) or not data:
+        return data
+    out = dict(data)
+
+    image = _first_http_url(out.get("product_image")) or _find_image_in_record(out)
+    if image:
+        out["product_image"] = image
+
+    specs = _specifications_as_object(out.get("specifications"))
+    if not specs:
+        for alias in (
+            "product_specifications",
+            "product_specs",
+            "technical_specifications",
+            "specs",
+            "spec",
+        ):
+            specs = _specifications_as_object(out.get(alias))
+            if specs:
+                break
+    if not specs:
+        specs = _specifications_as_object(out.get("product_details"))
+    if not specs:
+        specs = _specifications_as_object(
+            {
+                key: val
+                for key, val in out.items()
+                if key
+                not in (
+                    "specifications",
+                    "product_details",
+                    "product_image",
+                    "datasheet_url",
+                )
+            }
+        )
+    if specs:
+        out["specifications"] = specs
+
+    datasheet = _first_http_url(out.get("datasheet_url"))
+    if not datasheet:
+        for alias in (
+            "datasheet",
+            "data_sheet",
+            "data_sheet_url",
+            "spec_sheet",
+            "specification_sheet",
+            "manual_url",
+            "pdf_url",
+        ):
+            datasheet = _first_http_url(out.get(alias))
+            if datasheet:
+                break
+    if not datasheet:
+        datasheet = _find_pdf_in_record(out)
+    if not datasheet and page_url and _is_pdf_url(page_url):
+        datasheet = _first_http_url(page_url)
+    if datasheet:
+        out["datasheet_url"] = datasheet
+    return out
+
+
+def _with_restored_default_fields(
+    data: object,
+    raw: object,
+    *,
+    page_url: str | None = None,
+) -> object:
+    """Keep image/specs/datasheet from raw extract if the cleaner dropped them."""
+    if not isinstance(data, dict):
+        return data
+    out = _normalize_extracted_defaults(dict(data), page_url=page_url)
+    if isinstance(raw, dict):
+        raw_norm = _normalize_extracted_defaults(raw, page_url=page_url)
+        for key in ("product_image", "specifications", "datasheet_url"):
+            if not out.get(key) and raw_norm.get(key):
+                out[key] = raw_norm[key]
+    return out
+
+
+def _compose_research_extract_query(
+    user_query: str | None,
+    *,
+    location_label: str | None = None,
+) -> str:
+    """User prompt plus default image / spec / datasheet extraction."""
+    parts: list[str] = []
+    user = (user_query or "").strip()
+    if user:
+        parts.append(user)
+    parts.append(DEFAULT_EXTRACT_FIELDS_PROMPT)
+    if location_label:
+        parts.append(
+            f"Prefer vendors, stock, pricing, and delivery available to {location_label}. "
+            "Include local availability and lead time for this ZIP or address when present."
+        )
+    return "\n\n".join(parts)
 
 
 def _printable_clip(value: object, max_len: int) -> str:
@@ -323,20 +663,12 @@ async def search_selection_and_store_urls(
         research_url_ids_by_row: list[int | None] = [None] * len(rows)
         pending_scrapes: list[tuple[int, int, int, str, str]] = []
         row_scrape_remaining: list[int] = [0] * len(rows)
+        row_datasheet_fallback: list[str | None] = [None] * len(rows)
 
-        base_ai_query = (body.ai_query if body else None) or ""
-        if not base_ai_query.strip():
-            base_ai_query = (
-                "Extract product specifications, pricing (keep prices with currency "
-                "symbols like $, €, £), availability, part numbers, and key information "
-                "from this page. Return as structured JSON."
-            )
-        if location_label:
-            base_ai_query = (
-                f"{base_ai_query.strip()}\nPrefer vendors, stock, pricing, and delivery "
-                f"available to {location_label}. Include local availability and lead time "
-                "for this ZIP or address when present."
-            )
+        base_ai_query = _compose_research_extract_query(
+            body.ai_query if body else None,
+            location_label=location_label,
+        )
 
         async def mark_row_done() -> None:
             nonlocal completed_rows
@@ -359,6 +691,7 @@ async def search_selection_and_store_urls(
             scraped_url: str,
             scraped: dict,
             table_row_index: int,
+            datasheet_fallback: str | None = None,
         ) -> None:
             now_scrape = datetime.utcnow()
             prior = await _find_prior_scraped_for_url(
@@ -383,8 +716,11 @@ async def search_selection_and_store_urls(
                     base_data = prior["data"]
                 prior_log = prior.get("change_log")
 
+            normalized = _normalize_extracted_defaults(scraped, page_url=scraped_url)
+            if datasheet_fallback and not _first_http_url(normalized.get("datasheet_url")):
+                normalized["datasheet_url"] = datasheet_fallback
             merged, _updated, _added, field_changes = _merge_scraped_field_dicts(
-                base_data, scraped
+                base_data, normalized
             )
             if prior is None:
                 field_changes = []
@@ -437,6 +773,28 @@ async def search_selection_and_store_urls(
                 now = datetime.utcnow()
                 new_id = await get_next_sequence(mongo_db, "research_urls")
 
+                spec_urls: list[str] = []
+                spec_organic: list[dict] = []
+                part_query = " ".join(row_values)
+                try:
+                    spec_result = await search_serper(
+                        settings.serper_api_key,
+                        (
+                            f'{part_query} (datasheet OR "specification sheet" '
+                            f'OR "tech specs" OR specifications)'
+                        ),
+                        num=8,
+                    )
+                    spec_organic = extract_organic_results_from_serper_response(spec_result)
+                    spec_urls = [r["link"] for r in spec_organic]
+                except Exception as exc:
+                    logger.warning(
+                        "Datasheet/spec search failed for row %s: %s",
+                        row_index + 1,
+                        exc,
+                    )
+                    spec_urls = []
+
                 prior_source_urls = await _list_prior_source_urls_for_row(
                     mongo_db,
                     owner_id=user.id,
@@ -445,7 +803,17 @@ async def search_selection_and_store_urls(
                     table_row_index=table_row_index,
                     exclude_research_url_id=new_id,
                 )
-                urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=15)
+                vendor_urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=10)
+                spec_ranked = sorted(
+                    _dedupe_urls_prefer_order(spec_urls, limit=8),
+                    key=lambda u: (0 if _is_pdf_url(u) else 1),
+                )
+                urls = _dedupe_urls_prefer_order(vendor_urls + spec_ranked, limit=15)
+                pdf_fallback = next((u for u in spec_ranked if _is_pdf_url(u)), None)
+                row_datasheet_fallback[row_index] = pdf_fallback
+                organic_results = organic_results + [
+                    r for r in spec_organic if r.get("link") in spec_ranked
+                ]
 
                 await mongo_db["research_urls"].insert_one(
                     {
@@ -509,6 +877,7 @@ async def search_selection_and_store_urls(
                         scraped_url=source_url,
                         scraped=data,
                         table_row_index=table_row_index,
+                        datasheet_fallback=row_datasheet_fallback[row_index],
                     )
             async with progress_lock:
                 row_scrape_remaining[row_index] -= 1
@@ -611,7 +980,9 @@ async def _get_or_create_cleaned_data(
                 return {
                     "id": scraped_id,
                     "url": url,
-                    "data": existing["data"],
+                    "data": _with_restored_default_fields(
+                        existing["data"], raw_data, page_url=url
+                    ),
                     "last_field_changes": s.get("last_field_changes") or [],
                     "change_log": s.get("change_log") or [],
                 }
@@ -620,7 +991,10 @@ async def _get_or_create_cleaned_data(
         cleaned = None
         if groq_api_key:
             cleaned = await clean_structured_data(groq_api_key, raw_data, model=groq_model)
-        data_to_use = cleaned if cleaned else raw_data
+        if cleaned and isinstance(cleaned, dict):
+            data_to_use = _with_restored_default_fields(cleaned, raw_data, page_url=url)
+        else:
+            data_to_use = _with_restored_default_fields(raw_data, raw_data, page_url=url)
 
         # Store in research_cleaned_data
         if scraped_id is not None and cleaned:
@@ -684,6 +1058,7 @@ def _scraped_payloads_fast(
             if scraped_id is not None and scraped_id in cleaned_by_id
             else raw_data
         )
+        data = _with_restored_default_fields(data, raw_data, page_url=url)
         result.append(
             {
                 "id": scraped_id,
@@ -1009,11 +1384,12 @@ async def research_more_existing_source(
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
 
-    ai_query = (body.ai_query or "").strip()
-    if not ai_query:
+    user_ai_query = (body.ai_query or "").strip()
+    if not user_ai_query:
         raise HTTPException(status_code=400, detail="ai_query is required")
-    if len(ai_query) > 4000:
+    if len(user_ai_query) > 4000:
         raise HTTPException(status_code=400, detail="ai_query is too long (max 4000 characters)")
+    ai_query = _compose_research_extract_query(user_ai_query)
 
     research_doc = await mongo_db["research_urls"].find_one(
         {"id": research_url_id, "owner_id": user.id}
@@ -1058,6 +1434,8 @@ async def research_more_existing_source(
             status_code=502,
             detail="No structured data returned for this source. Try a more specific prompt.",
         )
+
+    extracted = _normalize_extracted_defaults(extracted, page_url=source_url)
 
     existing_raw = scraped_doc.get("data") if isinstance(scraped_doc.get("data"), dict) else {}
     # Prefer merging onto cleaned view if present so UI fields stay consistent.

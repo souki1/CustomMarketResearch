@@ -7,7 +7,7 @@ type LineChartProps = {
 
 export function LineChart({
   data,
-  color = '#2563eb',
+  color = 'var(--app-accent)',
   height = 60,
   width = 220,
 }: LineChartProps) {
@@ -66,13 +66,13 @@ export function DonutChart({ segments, size = 80 }: DonutChartProps) {
   if (total <= 0) {
     return (
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={30} fill="none" stroke="#e5e7eb" strokeWidth={10} />
+        <circle cx={size / 2} cy={size / 2} r={30} fill="none" stroke="var(--app-separator)" strokeWidth={10} />
         <text
           x={size / 2}
           y={size / 2}
           textAnchor="middle"
           dominantBaseline="central"
-          className="fill-slate-800 text-[13px] font-bold"
+          className="fill-app-label text-[13px] font-bold"
         >
           0
         </text>
@@ -113,7 +113,7 @@ export function DonutChart({ segments, size = 80 }: DonutChartProps) {
         y={cy}
         textAnchor="middle"
         dominantBaseline="central"
-        className="fill-slate-800 text-[13px] font-bold"
+        className="fill-app-label text-[13px] font-bold"
       >
         {total}
       </text>

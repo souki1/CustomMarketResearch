@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { CommandPalette, Navbar, Sidebar } from '@/components'
 import { BucketProvider } from '@/contexts/BucketContext'
 import { ComparisonProvider } from '@/contexts/ComparisonContext'
@@ -15,8 +15,25 @@ export function useOpenCommandPalette(): (() => void) | null {
   return useContext(OpenCommandPaletteContext)
 }
 
+function pageTitle(pathname: string): string {
+  if (pathname === '/') return 'Dashboard'
+  if (pathname.startsWith('/research/compare') || pathname === '/compare') return 'Compare'
+  if (pathname.startsWith('/research')) return 'Research'
+  if (pathname.startsWith('/files')) return 'Files'
+  if (pathname.startsWith('/parts-catalog')) return 'Parts Catalog'
+  if (pathname.startsWith('/reports')) return 'Reports'
+  if (pathname.startsWith('/bucket')) return 'Bucket'
+  if (pathname.startsWith('/ai')) return 'AI'
+  if (pathname.startsWith('/portfolio')) return 'Portfolio'
+  if (pathname.startsWith('/wishlist')) return 'Wishlist'
+  if (pathname.startsWith('/settings')) return 'Settings'
+  if (pathname.startsWith('/purchase-order')) return 'Purchase Order'
+  return 'Intelligent Research'
+}
+
 function MainLayoutContent() {
   const location = useLocation()
+  const navigate = useNavigate()
   const prevPathnameRef = useRef<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
@@ -30,12 +47,25 @@ function MainLayoutContent() {
   const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), [])
   const { collapseSidebarForInspector, setCollapseSidebarForInspector } = useLayout()
 
-  // Bind / scrub workspace caches for the active account (drops legacy unscoped keys).
+  useEffect(() => {
+    document.title = `${pageTitle(location.pathname)} — Intelligent Research`
+  }, [location.pathname])
+
   useEffect(() => {
     syncWorkspaceOwner(getCurrentUserEmail())
   }, [])
 
-  // When leaving Research (e.g. Home, AI, Compare), undo inspector collapse and show the full sidebar again.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault()
+        navigate('/settings')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [navigate])
+
   useEffect(() => {
     const prev = prevPathnameRef.current
     prevPathnameRef.current = location.pathname
@@ -60,13 +90,12 @@ function MainLayoutContent() {
         setSidebarOpen(sidebarOpenBeforeInspector)
         setSidebarOpenBeforeInspector(null)
       }
-    } else {
-      if (sidebarOpenBeforeInspector == null) setSidebarOpenBeforeInspector(sidebarOpen)
+    } else if (sidebarOpenBeforeInspector == null) {
+      setSidebarOpenBeforeInspector(sidebarOpen)
     }
   }, [collapseSidebarForInspector, sidebarOpenBeforeInspector, sidebarOpen])
 
   const showSidebar = sidebarOpen && !collapseSidebarForInspector
-  const showCollapsedStrip = !showSidebar
 
   const handleSidebarToggle = () => {
     if (!showSidebar) {
@@ -87,15 +116,15 @@ function MainLayoutContent() {
             onSidebarToggle={handleSidebarToggle}
             onOpenCommandPalette={openCommandPalette}
           />
-          <div className="flex">
+          <div className="flex bg-app-bg">
             <div
               className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
             >
               <div className="h-full w-full overflow-hidden">
-                <Sidebar open={showSidebar} collapsed={showCollapsedStrip} />
+                <Sidebar open={showSidebar} collapsed={!showSidebar} />
               </div>
             </div>
-            <main className="flex-1 min-h-[calc(100vh-3.5rem)] min-w-0">
+            <main className="min-h-[calc(100vh-3.5rem)] min-w-0 flex-1 bg-app-bg">
               <Outlet />
             </main>
           </div>

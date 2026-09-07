@@ -1178,9 +1178,9 @@ export function ComparePartDecisionsPanel({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
-        <p className="text-sm font-semibold text-slate-800">No vendor offers to decide on yet</p>
-        <p className="mt-1 text-xs text-slate-500">Go back to Compare and wait for scraped sources to load.</p>
+      <div className="rounded-xl border border-dashed border-app-separator bg-app-surface px-5 py-10 text-center">
+        <p className="text-sm font-semibold text-app-label">No vendor offers to decide on yet</p>
+        <p className="mt-1 text-xs text-app-secondary">Go back to Compare and wait for scraped sources to load.</p>
       </div>
     )
   }
@@ -1189,37 +1189,37 @@ export function ComparePartDecisionsPanel({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-xl font-bold tracking-tight text-slate-900">
+          <h3 className="text-xl font-bold tracking-tight text-app-label">
             Procurement Strategy: {partCount} Selected Part{partCount === 1 ? '' : 's'}
           </h3>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          <p className="mt-1 max-w-2xl text-sm text-app-secondary">
             Set quantities and requirements. The recommended vendor updates as your batch changes.
           </p>
         </div>
         <button
           type="button"
           onClick={exportStrategyCsv}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-semibold text-app-secondary shadow-sm hover:bg-app-fill"
         >
           <Download className="h-3.5 w-3.5" strokeWidth={2} />
           Export CSV
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+      <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-app-tertiary">
           Requirements
         </p>
         <div className="mt-3 flex flex-wrap gap-3">
           {partQtyRows.map((part) => (
             <label
               key={part.id}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+              className="flex items-center gap-2 rounded-lg border border-app-separator bg-app-fill px-3 py-2"
             >
-              <span className="max-w-[160px] truncate font-mono text-xs font-semibold text-slate-800" title={part.label}>
+              <span className="max-w-[160px] truncate font-mono text-xs font-semibold text-app-label" title={part.label}>
                 {part.label}
               </span>
-              <span className="text-[11px] text-slate-500">Qty</span>
+              <span className="text-[11px] text-app-secondary">Qty</span>
               <input
                 type="number"
                 min={1}
@@ -1227,7 +1227,7 @@ export function ComparePartDecisionsPanel({
                 step={1}
                 value={qtyForPart(quantities, part.id)}
                 onChange={(e) => setPartQty(part.id, Number(e.target.value))}
-                className="w-16 rounded-md border border-slate-300 bg-white px-2 py-1 font-mono text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-16 rounded-md border border-app-separator bg-app-surface px-2 py-1 font-mono text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
               />
             </label>
           ))}
@@ -1240,7 +1240,7 @@ export function ComparePartDecisionsPanel({
           }}
         >
           <label className="min-w-0 flex-1">
-            <span className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <span className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-app-tertiary">
               <Sparkles className="h-3 w-3 text-amber-500" strokeWidth={2} />
               AI requirements
             </span>
@@ -1250,13 +1250,13 @@ export function ComparePartDecisionsPanel({
               rows={2}
               maxLength={2000}
               placeholder="e.g. I need 40 of each, fastest delivery, keep spend under $5,000"
-              className="mt-1 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="mt-1 w-full resize-y rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label placeholder:text-app-tertiary focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
             />
           </label>
           <button
             type="submit"
             disabled={aiBusy}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-app-fill-strong disabled:opacity-50"
           >
             {aiBusy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1276,7 +1276,7 @@ export function ComparePartDecisionsPanel({
             <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
               Best option for these requirements
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">
+            <p className="mt-1 text-sm font-semibold text-app-label">
               {recommendedVendor ?? '—'}
               {recommendedCard?.subtotal != null ? (
                 <span className="ml-2 font-mono font-medium text-emerald-800">
@@ -1284,14 +1284,14 @@ export function ComparePartDecisionsPanel({
                 </span>
               ) : null}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+            <p className="mt-1 text-xs leading-relaxed text-app-secondary">
               {aiReason ?? strategyRankWhy(strategyTab)}
             </p>
           </div>
         )}
       </div>
 
-      <div className="border-b border-slate-200">
+      <div className="border-b border-app-separator">
         <nav className="-mb-px flex flex-wrap gap-5" aria-label="Sourcing strategy">
           {tabs.map((tab) => {
             const active = strategyTab === tab.id
@@ -1302,8 +1302,8 @@ export function ComparePartDecisionsPanel({
                 onClick={() => changeStrategyTab(tab.id)}
                 className={`border-b-2 pb-2.5 text-sm font-semibold transition-colors ${
                   active
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                    ? 'border-app-accent text-app-accent'
+                    : 'border-transparent text-app-secondary hover:text-app-label'
                 }`}
               >
                 {tab.label}
@@ -1320,15 +1320,15 @@ export function ComparePartDecisionsPanel({
           return (
             <article
               key={card.vendor}
-              className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
-                isSelected ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-200'
+              className={`overflow-hidden rounded-xl border bg-app-surface shadow-sm ${
+                isSelected ? 'border-app-accent/30 ring-1 ring-blue-100' : 'border-app-separator'
               }`}
             >
               <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-base font-bold text-slate-900">{card.vendor}</h4>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                    <h4 className="text-base font-bold text-app-label">{card.vendor}</h4>
+                    <span className="rounded-full bg-app-fill px-2 py-0.5 text-[11px] font-semibold text-app-secondary">
                       {card.coverCount} Part{card.coverCount === 1 ? '' : 's'} Sourced
                     </span>
                     {isRecommended && (
@@ -1338,15 +1338,15 @@ export function ComparePartDecisionsPanel({
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-sm text-slate-500">{card.description}</p>
+                  <p className="mt-1 text-sm text-app-secondary">{card.description}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => applyVendor(card.vendor)}
                   className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-semibold shadow-sm ${
                     isSelected
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'bg-app-accent text-white hover:bg-app-accent-hover'
+                      : 'border border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
                   }`}
                 >
                   {isSelected ? 'Apply to Order' : 'Select Vendor'}
@@ -1355,7 +1355,7 @@ export function ComparePartDecisionsPanel({
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-left text-sm">
                   <thead>
-                    <tr className="border-y border-slate-100 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr className="border-y border-app-separator bg-app-fill/80 text-[11px] font-semibold uppercase tracking-wide text-app-secondary">
                       <th className="px-5 py-2.5">Part ID</th>
                       <th className="px-4 py-2.5">Part name</th>
                       <th className="px-4 py-2.5">Qty</th>
@@ -1368,7 +1368,7 @@ export function ComparePartDecisionsPanel({
                   <tbody>
                     {card.lines.map((line) => {
                       let statusLabel = 'Standard'
-                      let statusClass = 'bg-slate-100 text-slate-600'
+                      let statusClass = 'bg-app-fill text-app-secondary'
                       switch (line.status) {
                         case 'best-price':
                           statusLabel = 'Best Price'
@@ -1380,7 +1380,7 @@ export function ComparePartDecisionsPanel({
                           break
                         case 'standard':
                           statusLabel = 'Standard'
-                          statusClass = 'bg-slate-100 text-slate-600'
+                          statusClass = 'bg-app-fill text-app-secondary'
                           break
                         default: {
                           const _exhaustive: never = line.status
@@ -1388,11 +1388,11 @@ export function ComparePartDecisionsPanel({
                         }
                       }
                       return (
-                        <tr key={`${card.vendor}-${line.partId}`} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-800">
+                        <tr key={`${card.vendor}-${line.partId}`} className="border-b border-app-separator last:border-0">
+                          <td className="px-5 py-3 font-mono text-xs font-semibold text-app-label">
                             {compactPartId(line.row)}
                           </td>
-                          <td className="max-w-[280px] truncate px-4 py-3 text-slate-700" title={line.partName}>
+                          <td className="max-w-[280px] truncate px-4 py-3 text-app-secondary" title={line.partName}>
                             {line.partName}
                           </td>
                           <td className="px-4 py-3">
@@ -1404,16 +1404,16 @@ export function ComparePartDecisionsPanel({
                               aria-label={`Quantity for ${line.partLabel}`}
                               value={line.qty}
                               onChange={(e) => setPartQty(line.partId, Number(e.target.value))}
-                              className="w-16 rounded-md border border-slate-300 bg-white px-2 py-1 font-mono text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                              className="w-16 rounded-md border border-app-separator bg-app-surface px-2 py-1 font-mono text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                             />
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-3 text-app-secondary">
                             {line.days != null ? formatLeadDays(line.days) : line.row.delivery || '—'}
                           </td>
-                          <td className="px-4 py-3 font-mono font-semibold text-slate-900">
+                          <td className="px-4 py-3 font-mono font-semibold text-app-label">
                             {line.price != null ? money(line.price, '—') : line.row.priceLabel}
                           </td>
-                          <td className="px-4 py-3 font-mono text-sm font-semibold text-slate-800">
+                          <td className="px-4 py-3 font-mono text-sm font-semibold text-app-label">
                             {line.extended != null ? money(line.extended, '—') : '—'}
                           </td>
                           <td className="px-5 py-3">
@@ -1426,7 +1426,7 @@ export function ComparePartDecisionsPanel({
                               <button
                                 type="button"
                                 onClick={() => onAddToBucket(line.row.id)}
-                                className="ml-2 text-[11px] font-medium text-slate-500 hover:text-slate-800"
+                                className="ml-2 text-[11px] font-medium text-app-secondary hover:text-app-label"
                               >
                                 Bucket
                               </button>
@@ -1438,8 +1438,8 @@ export function ComparePartDecisionsPanel({
                   </tbody>
                 </table>
               </div>
-              <footer className="flex justify-end border-t border-slate-100 px-5 py-3">
-                <p className="text-sm font-bold tracking-wide text-slate-900">
+              <footer className="flex justify-end border-t border-app-separator px-5 py-3">
+                <p className="text-sm font-bold tracking-wide text-app-label">
                   EXTENDED:{' '}
                   <span className="font-mono">
                     {card.subtotal != null ? money(card.subtotal, '—') : '—'}
@@ -1462,8 +1462,8 @@ function Tag({
   variant?: 'default' | 'blue' | 'green' | 'yellow'
 }) {
   const styles = {
-    default: 'border-slate-200 bg-slate-100 text-slate-600',
-    blue: 'border-blue-100 bg-blue-50 text-blue-800',
+    default: 'border-app-separator bg-app-fill text-app-secondary',
+    blue: 'border-app-accent/25 bg-app-accent-soft text-app-accent',
     green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
     yellow: 'border-amber-200 bg-amber-50 text-amber-700',
   }[variant]
@@ -1476,13 +1476,13 @@ function Tag({
 
 function ScoreBar({ score }: { score: number }) {
   let barColor = 'bg-slate-400'
-  let textColor = 'text-slate-500'
+  let textColor = 'text-app-secondary'
   if (score >= 70) {
     barColor = 'bg-emerald-500'
     textColor = 'text-emerald-600'
   } else if (score >= 45) {
-    barColor = 'bg-blue-500'
-    textColor = 'text-blue-600'
+    barColor = 'bg-app-accent'
+    textColor = 'text-app-accent'
   } else if (score >= 25) {
     barColor = 'bg-amber-500'
     textColor = 'text-amber-600'
@@ -1492,7 +1492,7 @@ function ScoreBar({ score }: { score: number }) {
   }
   return (
     <div className="flex items-center gap-2">
-      <div className="h-[3px] w-12 overflow-hidden rounded-sm bg-slate-200">
+      <div className="h-[3px] w-12 overflow-hidden rounded-sm bg-app-fill-strong">
         <div className={`h-full rounded-sm ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
       </div>
       <span className={`min-w-[18px] font-mono text-xs font-medium ${textColor}`}>{score}</span>
@@ -1504,7 +1504,7 @@ function DeliveryDot({ row }: { row: CompareDecisionRow }) {
   const d = (row.delivery || '').toLowerCase()
   const shipsToday = d.includes('today') || d.includes('same day')
   const inStock = /in stock|available|low stock/i.test(row.availability)
-  const color = shipsToday ? 'bg-emerald-500' : inStock ? 'bg-amber-500' : 'bg-slate-300'
+  const color = shipsToday ? 'bg-emerald-500' : inStock ? 'bg-amber-500' : 'bg-app-fill-strong'
   return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} />
 }
 
@@ -1531,7 +1531,7 @@ function VendorThumb({
   if (!src || broken) {
     return (
       <div
-        className={`flex ${dim} shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-100 text-[11px] font-bold text-slate-500`}
+        className={`flex ${dim} shrink-0 items-center justify-center rounded border border-app-separator bg-app-fill text-[11px] font-bold text-app-secondary`}
         aria-hidden
       >
         {letter}
@@ -1546,7 +1546,7 @@ function VendorThumb({
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
-      className={`${dim} shrink-0 rounded border border-slate-200 bg-white object-cover`}
+      className={`${dim} shrink-0 rounded border border-app-separator bg-app-surface object-cover`}
     />
   )
 }
@@ -1803,11 +1803,11 @@ export function CompareDecisionWorkspace({
   }
 
   function SortIcon({ field }: { field: string }) {
-    if (sortKey !== field) return <ArrowUpDown className="h-2.5 w-2.5 text-slate-400" strokeWidth={1.75} />
+    if (sortKey !== field) return <ArrowUpDown className="h-2.5 w-2.5 text-app-tertiary" strokeWidth={1.75} />
     return sortDir === 'asc' ? (
-      <ArrowUp className="h-2.5 w-2.5 text-blue-600" strokeWidth={2} />
+      <ArrowUp className="h-2.5 w-2.5 text-app-accent" strokeWidth={2} />
     ) : (
-      <ArrowDown className="h-2.5 w-2.5 text-blue-600" strokeWidth={2} />
+      <ArrowDown className="h-2.5 w-2.5 text-app-accent" strokeWidth={2} />
     )
   }
 
@@ -1816,11 +1816,11 @@ export function CompareDecisionWorkspace({
 
   const pageHeader = (
     <>
-      <div className="-mx-4 border-b border-slate-200 bg-white px-6 py-4 sm:-mx-6">
+      <div className="-mx-4 border-b border-app-separator bg-app-surface px-6 py-4 sm:-mx-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <h1 className="m-0 text-xl font-bold tracking-tight text-slate-900">Product Comparison</h1>
+              <h1 className="m-0 text-xl font-bold tracking-tight text-app-label">Product Comparison</h1>
               {selectedPartCount != null && selectedPartCount > 0 && (
                 <Tag variant="blue">
                   {selectedPartCount} part{selectedPartCount !== 1 ? 's' : ''} selected
@@ -1838,7 +1838,7 @@ export function CompareDecisionWorkspace({
                       className={`inline-flex cursor-pointer items-center gap-1 rounded-[5px] border px-2 py-0.5 text-[11px] font-medium ${
                         isActive
                           ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                          : 'border-app-separator bg-app-surface text-app-secondary hover:border-app-separator'
                       }`}
                       onClick={() => onSelectFile?.(file.fileId)}
                       onKeyDown={(e) => e.key === 'Enter' && onSelectFile?.(file.fileId)}
@@ -1853,7 +1853,7 @@ export function CompareDecisionWorkspace({
                             e.stopPropagation()
                             onRemoveFile(file.fileId)
                           }}
-                          className={`rounded px-0.5 leading-none ${isActive ? 'text-slate-300 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                          className={`rounded px-0.5 leading-none ${isActive ? 'text-app-tertiary hover:text-white' : 'text-app-tertiary hover:text-app-secondary'}`}
                           aria-label={`Remove ${file.name}`}
                         >
                           ×
@@ -1864,7 +1864,7 @@ export function CompareDecisionWorkspace({
                 })}
               </div>
             )}
-            <p className="m-0 mt-1 text-[13px] text-slate-500">
+            <p className="m-0 mt-1 text-[13px] text-app-secondary">
               Compare vendors, pricing, and availability across your selected parts.
             </p>
           </div>
@@ -1873,7 +1873,7 @@ export function CompareDecisionWorkspace({
               <button
                 type="button"
                 onClick={onChangeFile}
-                className="rounded-[5px] border border-slate-200 bg-white px-2.5 py-[5px] text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-[5px] border border-app-separator bg-app-surface px-2.5 py-[5px] text-xs font-medium text-app-secondary transition-colors hover:bg-app-fill"
               >
                 Change file
               </button>
@@ -1881,7 +1881,7 @@ export function CompareDecisionWorkspace({
             <button
               type="button"
               onClick={() => setShowParts((p) => !p)}
-              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-200 bg-white px-2.5 py-[5px] text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-app-separator bg-app-surface px-2.5 py-[5px] text-xs font-medium text-app-secondary transition-colors hover:bg-app-fill"
             >
               {showParts ? (
                 <ChevronUp className="h-3.5 w-3.5" strokeWidth={2} />
@@ -1895,36 +1895,36 @@ export function CompareDecisionWorkspace({
       </div>
 
       {showParts && (
-        <div className="-mx-4 border-b border-slate-200 bg-white px-6 py-3.5 sm:-mx-6">
+        <div className="-mx-4 border-b border-app-separator bg-app-surface px-6 py-3.5 sm:-mx-6">
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400">Select parts</span>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-app-tertiary">Select parts</span>
+            <span className="text-[11px] text-app-tertiary">
               {filtParts.length} parts · {selectedChipCount} selected
             </span>
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setSparkAiOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-900 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-900 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-app-fill-strong"
               aria-label="Open Spark AI"
             >
               <Sparkles className="h-3 w-3" strokeWidth={2} aria-hidden />
               Spark AI
             </button>
-            <div className="flex items-center gap-1 rounded-[5px] border border-slate-200 bg-slate-50 px-2 py-1">
-              <Search className="h-2.5 w-2.5 text-slate-400" strokeWidth={2} />
+            <div className="flex items-center gap-1 rounded-[5px] border border-app-separator bg-app-fill px-2 py-1">
+              <Search className="h-2.5 w-2.5 text-app-tertiary" strokeWidth={2} />
               <input
                 value={partQ}
                 onChange={(e) => setPartQ(e.target.value)}
                 placeholder="Filter…"
-                className="w-[90px] border-0 bg-transparent text-xs text-slate-800 outline-none"
+                className="w-[90px] border-0 bg-transparent text-xs text-app-label outline-none"
               />
             </div>
             {selectedChipCount > 0 && onClearPartSelection && (
               <button
                 type="button"
                 onClick={onClearPartSelection}
-                className="inline-flex items-center gap-1 rounded-[5px] px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+                className="inline-flex items-center gap-1 rounded-[5px] px-2 py-0.5 text-[11px] font-medium text-app-secondary hover:bg-app-fill-strong"
               >
                 <X className="h-2.5 w-2.5" strokeWidth={2} />
                 Clear
@@ -1946,18 +1946,18 @@ export function CompareDecisionWorkspace({
                   }}
                   className={`inline-flex items-center gap-[5px] rounded-[5px] border px-2.5 py-1 font-mono text-[11px] transition-colors ${
                     isSel
-                      ? 'border-slate-300 bg-slate-900 font-semibold text-white'
+                      ? 'border-app-separator bg-slate-900 font-semibold text-white'
                       : p.inPortfolio
                         ? 'cursor-pointer border-emerald-300 bg-emerald-50 font-normal text-emerald-900 hover:border-emerald-400'
                         : hasRes
-                          ? 'cursor-pointer border-slate-200 bg-white font-normal text-slate-700 hover:border-slate-300'
-                          : 'cursor-default border-[#ededf0] bg-slate-50 font-normal text-slate-400'
+                          ? 'cursor-pointer border-app-separator bg-app-surface font-normal text-app-secondary hover:border-app-separator'
+                          : 'cursor-default border-[#ededf0] bg-app-fill font-normal text-app-tertiary'
                   }`}
                 >
                   {isSel && <Check className="h-2.5 w-2.5 shrink-0" strokeWidth={2.5} />}
                   <span className="font-semibold">{p.label}</span>
                   {hasRes && !isSel && (
-                    <span className="text-[10px] font-normal text-slate-400">
+                    <span className="text-[10px] font-normal text-app-tertiary">
                       {p.vendorCount}
                     </span>
                   )}
@@ -1966,7 +1966,7 @@ export function CompareDecisionWorkspace({
             })}
           </div>
           {filtParts.length === 0 && (
-            <p className="text-xs text-slate-500">No parts match the filter. Use Change file to load a parts list.</p>
+            <p className="text-xs text-app-secondary">No parts match the filter. Use Change file to load a parts list.</p>
           )}
         </div>
       )}
@@ -1977,9 +1977,9 @@ export function CompareDecisionWorkspace({
     return (
       <div className="flex flex-col">
         {pageHeader}
-        <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
-          <p className="text-sm font-semibold text-slate-800">No vendor data yet</p>
-          <p className="mt-1 text-xs text-slate-500">
+        <div className="mt-4 rounded-lg border border-dashed border-app-separator bg-app-surface px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-app-label">No vendor data yet</p>
+          <p className="mt-1 text-xs text-app-secondary">
             Select parts above with research results, or run Research to collect vendor pricing.
           </p>
         </div>
@@ -2003,7 +2003,7 @@ export function CompareDecisionWorkspace({
       {/* Part tabs + actions */}
       <div className="flex flex-wrap items-center gap-2">
         {activeChips.length > 0 && (
-          <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-slate-200 bg-white p-0.5">
+          <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-app-separator bg-app-surface p-0.5">
             {activeChips.length > 1 && (
               <button
                 type="button"
@@ -2011,7 +2011,7 @@ export function CompareDecisionWorkspace({
                 className={`rounded px-3 py-1 font-mono text-[11px] transition-colors ${
                   activePartId === 'all'
                     ? 'bg-slate-900 font-semibold text-white'
-                    : 'text-slate-500 hover:text-slate-700'
+                    : 'text-app-secondary hover:text-app-secondary'
                 }`}
               >
                 All
@@ -2023,7 +2023,7 @@ export function CompareDecisionWorkspace({
                 type="button"
                 onClick={() => onActivePartChange?.(p.id)}
                 className={`rounded px-3 py-1 font-mono text-[11px] transition-colors ${
-                  activePartId === p.id ? 'bg-slate-900 font-semibold text-white' : 'text-slate-500 hover:text-slate-700'
+                  activePartId === p.id ? 'bg-slate-900 font-semibold text-white' : 'text-app-secondary hover:text-app-secondary'
                 }`}
               >
                 {p.label}
@@ -2031,14 +2031,14 @@ export function CompareDecisionWorkspace({
             ))}
           </div>
         )}
-        {activeChips.length > 0 && <span className="text-slate-300">·</span>}
-        <span className="text-sm text-slate-500">{partLabel}</span>
+        {activeChips.length > 0 && <span className="text-app-tertiary">·</span>}
+        <span className="text-sm text-app-secondary">{partLabel}</span>
         {partCategory && <Tag>{partCategory}</Tag>}
         <div className="flex-1" />
         <button
           type="button"
           onClick={() => setSparkAiOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill-strong"
           aria-label="Open Spark AI"
         >
           <Sparkles className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.75} />
@@ -2046,7 +2046,7 @@ export function CompareDecisionWorkspace({
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill-strong"
         >
           <Heart className="h-3.5 w-3.5" strokeWidth={1.75} />
           Wishlist
@@ -2054,7 +2054,7 @@ export function CompareDecisionWorkspace({
         <button
           type="button"
           onClick={onAddSelectedToBucket}
-          className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+          className="inline-flex items-center gap-1 rounded-md bg-app-accent px-2.5 py-1.5 text-xs font-medium text-white hover:bg-app-accent-hover"
         >
           <ShoppingCart className="h-3.5 w-3.5" strokeWidth={1.75} />
           Add to bucket
@@ -2062,48 +2062,48 @@ export function CompareDecisionWorkspace({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 md:grid-cols-4">
-        <div className="bg-white px-4 py-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Best price</p>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-app-separator bg-app-fill-strong md:grid-cols-4">
+        <div className="bg-app-surface px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-app-tertiary">Best price</p>
           <div className="mt-1 flex items-center gap-2.5">
             {bestRow && (
               <VendorThumb imageUrl={bestRow.imageUrl} vendor={bestRow.vendor} size="md" />
             )}
             <div className="min-w-0">
               <p className="truncate font-mono text-xl font-bold text-emerald-600">{money(bestPrice, '—')}</p>
-              <p className="truncate text-[11px] text-slate-400">{bestRow?.vendor ?? '—'}</p>
+              <p className="truncate text-[11px] text-app-tertiary">{bestRow?.vendor ?? '—'}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white px-4 py-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Avg price</p>
-          <p className="font-mono text-xl font-bold text-slate-900">
+        <div className="bg-app-surface px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-app-tertiary">Avg price</p>
+          <p className="font-mono text-xl font-bold text-app-label">
             {Number.isFinite(avgPrice) ? `$${avgPrice.toFixed(2)}` : '—'}
           </p>
-          <p className="truncate text-[11px] text-slate-400">
+          <p className="truncate text-[11px] text-app-tertiary">
             {saving > 0 ? `$${saving.toFixed(2)} above best` : 'At best price'}
           </p>
         </div>
-        <div className="bg-white px-4 py-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Vendors</p>
-          <p className="font-mono text-xl font-bold text-slate-900">
+        <div className="bg-app-surface px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-app-tertiary">Vendors</p>
+          <p className="font-mono text-xl font-bold text-app-label">
             {displayRows.length} / {totalVendorSources}
           </p>
-          <p className="text-[11px] text-slate-400">matching filters</p>
+          <p className="text-[11px] text-app-tertiary">matching filters</p>
         </div>
-        <div className="bg-white px-4 py-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Free shipping</p>
-          <p className={`truncate text-sm font-bold ${freeShipRow ? 'text-emerald-600' : 'text-slate-400'}`}>
+        <div className="bg-app-surface px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-app-tertiary">Free shipping</p>
+          <p className={`truncate text-sm font-bold ${freeShipRow ? 'text-emerald-600' : 'text-app-tertiary'}`}>
             {freeShipRow ? freeShipRow.vendor : 'Not available'}
           </p>
-          <p className="text-[11px] text-slate-400">{freeShipRow ? 'Qualifies' : 'No free ship'}</p>
+          <p className="text-[11px] text-app-tertiary">{freeShipRow ? 'Qualifies' : 'No free ship'}</p>
         </div>
       </div>
 
       {/* Main card */}
-      <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-lg border border-app-separator bg-app-surface">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-app-separator px-3.5 py-2.5">
           <div className="mr-1.5 inline-flex gap-0.5">
             {viewTabs.map((t) => (
               <button
@@ -2111,7 +2111,7 @@ export function CompareDecisionWorkspace({
                 type="button"
                 onClick={() => onViewChange(t.k)}
                 className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                  effectiveView === t.k ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                  effectiveView === t.k ? 'bg-app-fill text-app-label' : 'text-app-secondary hover:text-app-secondary'
                 }`}
               >
                 <t.Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -2119,21 +2119,21 @@ export function CompareDecisionWorkspace({
               </button>
             ))}
           </div>
-          <div className="h-4 w-px bg-slate-200" />
-          <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
-            <Search className="h-3 w-3 text-slate-400" strokeWidth={2} />
+          <div className="h-4 w-px bg-app-fill-strong" />
+          <div className="flex items-center gap-1 rounded-md border border-app-separator bg-app-fill px-2 py-1">
+            <Search className="h-3 w-3 text-app-tertiary" strokeWidth={2} />
             <input
               value={vendorSearch}
               onChange={(e) => setVendorSearch(e.target.value)}
               placeholder="Filter vendors…"
-              className="w-32 border-0 bg-transparent text-xs text-slate-800 outline-none"
+              className="w-32 border-0 bg-transparent text-xs text-app-label outline-none"
             />
           </div>
           <button
             type="button"
             onClick={() => setShipsToday((v) => !v)}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
-              shipsToday ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+              shipsToday ? 'bg-app-fill text-app-label' : 'text-app-secondary hover:bg-app-fill'
             }`}
           >
             <Zap className="h-3 w-3" strokeWidth={1.75} />
@@ -2143,7 +2143,7 @@ export function CompareDecisionWorkspace({
             type="button"
             onClick={() => onOnlyAvailableChange(!onlyAvailable)}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
-              onlyAvailable ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+              onlyAvailable ? 'bg-app-fill text-app-label' : 'text-app-secondary hover:bg-app-fill'
             }`}
           >
             <Check className="h-3 w-3" strokeWidth={1.75} />
@@ -2163,10 +2163,10 @@ export function CompareDecisionWorkspace({
             }
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
               commonDomainSet.size === 0
-                ? 'cursor-not-allowed text-slate-400 opacity-60'
+                ? 'cursor-not-allowed text-app-tertiary opacity-60'
                 : commonVendorsOnly
-                  ? 'bg-slate-100 text-slate-900'
-                  : 'text-slate-600 hover:bg-slate-50'
+                  ? 'bg-app-fill text-app-label'
+                  : 'text-app-secondary hover:bg-app-fill'
             }`}
           >
             <Layers className="h-3 w-3" strokeWidth={1.75} />
@@ -2192,7 +2192,7 @@ export function CompareDecisionWorkspace({
                 : 'Show only shared field columns (price, delivery, contact, …)'
             }
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
-              commonInfoOnly ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+              commonInfoOnly ? 'bg-app-fill text-app-label' : 'text-app-secondary hover:bg-app-fill'
             }`}
           >
             Common info
@@ -2201,7 +2201,7 @@ export function CompareDecisionWorkspace({
             type="button"
             onClick={() => setShowFilters((f) => !f)}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
-              showFilters ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+              showFilters ? 'bg-app-fill text-app-label' : 'text-app-secondary hover:bg-app-fill'
             }`}
           >
             <Filter className="h-3 w-3" strokeWidth={1.75} />
@@ -2211,27 +2211,27 @@ export function CompareDecisionWorkspace({
             <button
               type="button"
               onClick={() => setFieldPickerOpen((v) => !v)}
-              className="rounded-md px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-md px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
             >
               Fields ({selectedFields.length > 0 ? selectedFields.length : allFields.length})
             </button>
             {fieldPickerOpen && (
-              <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5">
+              <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-lg border border-app-separator bg-app-surface p-2 shadow-lg ring-1 ring-black/5">
                 <input
                   type="search"
                   value={fieldSearch}
                   onChange={(e) => setFieldSearch(e.target.value)}
                   placeholder="Search fields…"
-                  className="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                  className="mb-2 w-full rounded-md border border-app-separator px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                 />
-                <div className="mb-2 flex justify-between px-1 text-[11px] text-slate-500">
+                <div className="mb-2 flex justify-between px-1 text-[11px] text-app-secondary">
                   <button
                     type="button"
                     onClick={() => {
                       setCommonInfoOnly(false)
                       onSelectedFieldsChange(allFields)
                     }}
-                    className="hover:text-slate-700"
+                    className="hover:text-app-secondary"
                   >
                     Select all
                   </button>
@@ -2241,7 +2241,7 @@ export function CompareDecisionWorkspace({
                       setCommonInfoOnly(false)
                       onSelectedFieldsChange([])
                     }}
-                    className="hover:text-slate-700"
+                    className="hover:text-app-secondary"
                   >
                     Clear
                   </button>
@@ -2252,7 +2252,7 @@ export function CompareDecisionWorkspace({
                       fieldSearch.trim() ? f.toLowerCase().includes(fieldSearch.trim().toLowerCase()) : true
                     )
                     .map((field) => (
-                      <label key={field} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-slate-50">
+                      <label key={field} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-app-fill">
                         <input
                           type="checkbox"
                           checked={selectedFields.includes(field)}
@@ -2264,9 +2264,9 @@ export function CompareDecisionWorkspace({
                                 : selectedFields.filter((v) => v !== field)
                             )
                           }}
-                          className="rounded border-slate-300 text-blue-600"
+                          className="rounded border-app-separator text-app-accent"
                         />
-                        <span className="truncate text-slate-700">{field}</span>
+                        <span className="truncate text-app-secondary">{field}</span>
                       </label>
                     ))}
                 </div>
@@ -2274,17 +2274,17 @@ export function CompareDecisionWorkspace({
             )}
           </div>
           <div className="flex-1" />
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-app-tertiary">
             {displayRows.length} vendor{displayRows.length !== 1 ? 's' : ''}
           </span>
         </div>
 
         {/* Filter row */}
         {showFilters && (
-          <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-slate-50 px-3.5 py-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Filters</span>
+          <div className="flex flex-wrap items-center gap-4 border-b border-app-separator bg-app-fill px-3.5 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-app-tertiary">Filters</span>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Max price</span>
+              <span className="text-xs text-app-secondary">Max price</span>
               <input
                 type="range"
                 min={minPrice}
@@ -2292,9 +2292,9 @@ export function CompareDecisionWorkspace({
                 step={10}
                 value={priceRange[1]}
                 onChange={(e) => onPriceRangeChange([priceRange[0], Number(e.target.value)])}
-                className="w-24 accent-blue-600"
+                className="w-24 accent-app-accent"
               />
-              <span className="min-w-[60px] font-mono text-xs font-medium text-slate-700">
+              <span className="min-w-[60px] font-mono text-xs font-medium text-app-secondary">
                 {priceRange[1] >= priceSliderMax ? 'No limit' : `$${priceRange[1]}`}
               </span>
             </div>
@@ -2309,7 +2309,7 @@ export function CompareDecisionWorkspace({
                 onPriceRangeChange([minPrice, maxPrice])
                 setVendorSearch('')
               }}
-              className="text-[11px] font-medium text-slate-600 hover:text-slate-800"
+              className="text-[11px] font-medium text-app-secondary hover:text-app-label"
             >
               Reset all
             </button>
@@ -2318,13 +2318,13 @@ export function CompareDecisionWorkspace({
 
         {/* Selection bar */}
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3.5 py-1.5">
-            <span className="text-xs font-semibold text-blue-800">{selectedIds.size} selected</span>
+          <div className="flex items-center gap-2 border-b border-app-accent/25 bg-app-accent-soft px-3.5 py-1.5">
+            <span className="text-xs font-semibold text-app-accent">{selectedIds.size} selected</span>
             <div className="h-3.5 w-px bg-blue-200" />
             <button
               type="button"
               onClick={onAddSelectedToBucket}
-              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-1 rounded-md bg-app-accent px-2 py-1 text-[11px] font-medium text-white hover:bg-app-accent-hover"
             >
               <ShoppingCart className="h-3 w-3" />
               Add to bucket
@@ -2332,7 +2332,7 @@ export function CompareDecisionWorkspace({
             <button
               type="button"
               onClick={onCompareSelected}
-              className="text-[11px] font-medium text-slate-600 hover:text-slate-800"
+              className="text-[11px] font-medium text-app-secondary hover:text-app-label"
             >
               Compare
             </button>
@@ -2342,7 +2342,7 @@ export function CompareDecisionWorkspace({
               onClick={() => {
                 selectedIds.forEach((id) => onToggleSelected(id))
               }}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-800"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-app-secondary hover:text-app-label"
             >
               <X className="h-3 w-3" />
               Clear
@@ -2354,9 +2354,9 @@ export function CompareDecisionWorkspace({
         {effectiveView === 'table' && (
           <div className="flex-1 overflow-auto">
             <table className={`w-full table-fixed border-collapse ${showPartColumn ? 'min-w-[920px]' : 'min-w-[780px]'}`}>
-              <thead className="sticky top-0 z-[5] bg-slate-50">
+              <thead className="sticky top-0 z-[5] bg-app-fill">
                 <tr>
-                  <th className="h-9 w-10 border-b border-slate-200 pl-3.5">
+                  <th className="h-9 w-10 border-b border-app-separator pl-3.5">
                     <input
                       type="checkbox"
                       ref={(el) => {
@@ -2364,7 +2364,7 @@ export function CompareDecisionWorkspace({
                       }}
                       checked={selectedIds.size === sortedRows.length && sortedRows.length > 0}
                       onChange={toggleAllRows}
-                      className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
+                      className="h-3.5 w-3.5 cursor-pointer rounded accent-app-accent"
                     />
                   </th>
                   {(
@@ -2381,13 +2381,13 @@ export function CompareDecisionWorkspace({
                   ).map((col) => (
                     <th
                       key={col.label}
-                      className="h-9 cursor-pointer select-none border-b border-slate-200 px-3.5 text-left"
+                      className="h-9 cursor-pointer select-none border-b border-app-separator px-3.5 text-left"
                       style={col.w ? { width: col.w } : undefined}
                       onClick={col.key ? () => toggleSort(col.key) : undefined}
                     >
                       <span
                         className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide ${
-                          sortKey === col.key ? 'text-blue-600' : 'text-slate-400'
+                          sortKey === col.key ? 'text-app-accent' : 'text-app-tertiary'
                         }`}
                       >
                         {col.label}
@@ -2395,7 +2395,7 @@ export function CompareDecisionWorkspace({
                       </span>
                     </th>
                   ))}
-                  <th className="h-9 w-[90px] border-b border-slate-200" />
+                  <th className="h-9 w-[90px] border-b border-app-separator" />
                 </tr>
               </thead>
               <tbody>
@@ -2403,9 +2403,9 @@ export function CompareDecisionWorkspace({
                   <tr>
                     <td colSpan={showPartColumn ? 10 : 9}>
                       <div className="py-12 text-center">
-                        <AlertCircle className="mx-auto mb-2 h-7 w-7 text-slate-300" />
-                        <p className="text-sm font-medium text-slate-500">No vendors match current filters</p>
-                        <p className="text-xs text-slate-400">Adjust your search or clear filters</p>
+                        <AlertCircle className="mx-auto mb-2 h-7 w-7 text-app-tertiary" />
+                        <p className="text-sm font-medium text-app-secondary">No vendors match current filters</p>
+                        <p className="text-xs text-app-tertiary">Adjust your search or clear filters</p>
                       </div>
                     </td>
                   </tr>
@@ -2415,7 +2415,7 @@ export function CompareDecisionWorkspace({
                   const isHov = hoverRowId === row.id
                   const isBest = bestPrice != null && row.price === bestPrice
                   const vsAvg = getVsAvg(row)
-                  const vsCol = vsAvg != null && vsAvg <= -5 ? 'text-emerald-600' : vsAvg != null && vsAvg >= 5 ? 'text-red-600' : 'text-slate-500'
+                  const vsCol = vsAvg != null && vsAvg <= -5 ? 'text-emerald-600' : vsAvg != null && vsAvg >= 5 ? 'text-red-600' : 'text-app-secondary'
                   const score = getScore(row)
                   const d = (row.delivery || '').toLowerCase()
                   const shipsTodayRow = d.includes('today') || d.includes('same day')
@@ -2427,8 +2427,8 @@ export function CompareDecisionWorkspace({
                       onMouseEnter={() => setHoverRowId(row.id)}
                       onMouseLeave={() => setHoverRowId(null)}
                       onClick={() => onToggleSelected(row.id)}
-                      className={`cursor-pointer border-b border-slate-100 transition-colors ${
-                        isSel ? 'bg-blue-50' : isHov ? 'bg-slate-50' : 'bg-white'
+                      className={`cursor-pointer border-b border-app-separator transition-colors ${
+                        isSel ? 'bg-app-accent-soft' : isHov ? 'bg-app-fill' : 'bg-app-surface'
                       }`}
                     >
                       <td className="h-11 pl-3.5" onClick={(e) => e.stopPropagation()}>
@@ -2436,12 +2436,12 @@ export function CompareDecisionWorkspace({
                           type="checkbox"
                           checked={isSel}
                           onChange={() => onToggleSelected(row.id)}
-                          className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
+                          className="h-3.5 w-3.5 cursor-pointer rounded accent-app-accent"
                         />
                       </td>
                       {showPartColumn && (
                         <td className="h-11 px-3.5">
-                          <span className="block truncate font-mono text-[11px] font-medium text-slate-700" title={row.partLabel}>
+                          <span className="block truncate font-mono text-[11px] font-medium text-app-secondary" title={row.partLabel}>
                             {row.partLabel || '—'}
                           </span>
                         </td>
@@ -2451,22 +2451,22 @@ export function CompareDecisionWorkspace({
                           <VendorThumb imageUrl={row.imageUrl} vendor={row.vendor} />
                           <div className="min-w-0">
                             <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-                              <span className="truncate text-sm font-medium text-slate-800">{row.vendor}</span>
+                              <span className="truncate text-sm font-medium text-app-label">{row.vendor}</span>
                               {isBest && <Tag variant="green">Best price</Tag>}
                               {shipsTodayRow && <Tag variant="blue">Ships today</Tag>}
                               {isCommonVendor && commonDomainSet.size > 0 && (
                                 <Tag variant="yellow">Shared</Tag>
                               )}
                             </div>
-                            <span className="text-[11px] text-slate-400">{getDeliverySub(row)}</span>
+                            <span className="text-[11px] text-app-tertiary">{getDeliverySub(row)}</span>
                           </div>
                         </div>
                       </td>
                       <td className="h-11 px-3.5">
-                        {score != null ? <ScoreBar score={score} /> : <span className="text-slate-400">—</span>}
+                        {score != null ? <ScoreBar score={score} /> : <span className="text-app-tertiary">—</span>}
                       </td>
                       <td className="h-11 px-3.5">
-                        <span className={`font-mono text-[15px] font-bold ${isBest ? 'text-emerald-600' : 'text-slate-900'}`}>
+                        <span className={`font-mono text-[15px] font-bold ${isBest ? 'text-emerald-600' : 'text-app-label'}`}>
                           {money(row.price, '—')}
                         </span>
                       </td>
@@ -2477,24 +2477,24 @@ export function CompareDecisionWorkspace({
                             {vsAvg.toFixed(1)}%
                           </span>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-app-tertiary">—</span>
                         )}
                       </td>
-                      <td className="h-11 px-3.5 font-mono text-xs text-slate-600">
+                      <td className="h-11 px-3.5 font-mono text-xs text-app-secondary">
                         {row.availability && row.availability !== '—' && row.availability !== 'Unknown' ? (
                           row.availability
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-app-tertiary">—</span>
                         )}
                       </td>
-                      <td className="h-11 px-3.5 font-mono text-xs text-slate-600">
-                        {row.contact && row.contact !== '—' ? row.contact : <span className="text-slate-300">—</span>}
+                      <td className="h-11 px-3.5 font-mono text-xs text-app-secondary">
+                        {row.contact && row.contact !== '—' ? row.contact : <span className="text-app-tertiary">—</span>}
                       </td>
                       <td className="h-11 max-w-0 px-3.5">
                         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                           <DeliveryDot row={row} />
                           <span
-                            className="truncate text-[11px] leading-snug text-slate-600"
+                            className="truncate text-[11px] leading-snug text-app-secondary"
                             title={row.delivery?.trim() || undefined}
                           >
                             {row.delivery || '—'}
@@ -2510,14 +2510,14 @@ export function CompareDecisionWorkspace({
                           <button
                             type="button"
                             onClick={() => onAddSingleToBucket(row.id)}
-                            className="rounded border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                            className="rounded border border-app-separator bg-app-surface p-1 text-app-secondary hover:bg-app-fill"
                             aria-label="Add to bucket"
                           >
                             <ShoppingCart className="h-3 w-3" />
                           </button>
                           <button
                             type="button"
-                            className="rounded p-1 text-slate-600 hover:bg-slate-100"
+                            className="rounded p-1 text-app-secondary hover:bg-app-fill-strong"
                             aria-label="Wishlist"
                           >
                             <Heart className="h-3 w-3" />
@@ -2553,7 +2553,7 @@ export function CompareDecisionWorkspace({
         )}
 
         {effectiveView === 'mindmap' && (
-          <div className="flex-1 overflow-hidden bg-slate-50 p-4">
+          <div className="flex-1 overflow-hidden bg-app-fill p-4">
             <CompareMindMapPanel
               partLabel={partLabel}
               rows={displayRows}
@@ -2564,21 +2564,21 @@ export function CompareDecisionWorkspace({
         )}
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-slate-200 px-3.5 py-2">
-          <span className="text-xs text-slate-400">
+        <div className="flex shrink-0 items-center gap-2 border-t border-app-separator px-3.5 py-2">
+          <span className="text-xs text-app-tertiary">
             {displayRows.length} vendor{displayRows.length !== 1 ? 's' : ''} · {totalVendorSources} found
           </span>
           {selectedIds.size > 0 && (
             <>
-              <span className="text-slate-300">·</span>
-              <span className="text-xs font-medium text-blue-600">{selectedIds.size} selected</span>
+              <span className="text-app-tertiary">·</span>
+              <span className="text-xs font-medium text-app-accent">{selectedIds.size} selected</span>
             </>
           )}
           <div className="flex-1" />
           <button
             type="button"
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
           >
             <Download className="h-3 w-3" />
             Export CSV
@@ -2587,7 +2587,7 @@ export function CompareDecisionWorkspace({
             <button
               type="button"
               onClick={onSaveView}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
             >
               <ExternalLink className="h-3 w-3" />
               Save view

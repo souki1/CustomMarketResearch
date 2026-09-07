@@ -28,7 +28,7 @@ function GoogleIcon() {
 
 function EnvelopeIcon() {
   return (
-    <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+    <svg className="w-5 h-5 text-app-tertiary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
     </svg>
   )
@@ -42,6 +42,10 @@ export function SignInPage() {
   const [loading, setLoading] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    document.title = 'Sign in — Intelligent Research'
+  }, [])
 
   useEffect(() => {
     const err = searchParams.get('error')
@@ -83,14 +87,14 @@ export function SignInPage() {
   }
 
   return (
-    <section className="min-h-screen flex items-center justify-center py-12 px-4">
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-200/80 p-8">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 mb-1">
-          Welcome back!
+    <section className="flex min-h-screen items-center justify-center bg-app-bg px-4 py-12">
+      <div className="mx-auto w-full max-w-md rounded-[16px] border border-app-separator bg-app-surface p-8 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
+        <h1 className="mb-1 text-[28px] font-semibold tracking-[-0.03em] text-app-label">
+          Welcome back
         </h1>
-        <p className="text-sm text-gray-600 mb-6">
+        <p className="mb-6 text-[13px] text-app-secondary">
           {step === 'email'
-            ? 'Use Intelligent Research to turn any growth idea into reality — in minutes.'
+            ? 'Sign in to continue researching parts and vendors.'
             : 'Enter your password to sign in.'}
         </p>
 
@@ -104,7 +108,7 @@ export function SignInPage() {
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors"
+              className="flex w-full items-center justify-center gap-3 rounded-[10px] border border-app-separator bg-app-surface px-4 py-2.5 font-medium text-app-label transition-colors hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
             >
               <GoogleIcon />
               Sign in with Google
@@ -112,31 +116,36 @@ export function SignInPage() {
 
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
+                <div className="w-full border-t border-app-separator" />
               </div>
               <div className="relative flex justify-center">
-                <span className="bg-white px-3 text-sm font-medium text-gray-500">OR</span>
+                <span className="bg-app-surface px-3 text-sm font-medium text-app-secondary">OR</span>
               </div>
             </div>
 
             <form className="space-y-4" onSubmit={handleContinue}>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <EnvelopeIcon />
+              <div className="space-y-1.5">
+                <label htmlFor="signin-email" className="block text-[13px] font-medium text-app-label">
+                  Email
+                </label>
+                <div className="relative">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    <EnvelopeIcon />
+                  </div>
+                  <input
+                    id="signin-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-[10px] border border-app-separator bg-app-surface py-2.5 pl-10 pr-4 text-[13px] text-app-label placeholder:text-app-tertiary focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/30"
+                  />
                 </div>
-                <input
-                  id="signin-email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                />
               </div>
               <button
                 type="submit"
-                className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-[10px] bg-app-accent px-5 py-2.5 font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Continue
               </button>
@@ -145,7 +154,7 @@ export function SignInPage() {
         ) : (
           <form className="space-y-5" onSubmit={handleSignIn}>
             <div className="space-y-2">
-              <label htmlFor="signin-email-show" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="signin-email-show" className="block text-sm font-medium text-app-secondary">
                 Email
               </label>
               <div className="flex items-center gap-2">
@@ -154,19 +163,19 @@ export function SignInPage() {
                   type="email"
                   readOnly
                   value={email}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-700"
+                  className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-fill text-app-secondary"
                 />
                 <button
                   type="button"
                   onClick={() => setStep('email')}
-                  className="text-sm font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 rounded"
+                  className="text-sm font-medium text-app-secondary hover:text-app-label whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-app-bg rounded"
                 >
                   Change
                 </button>
               </div>
             </div>
             <div className="space-y-2">
-              <label htmlFor="signin-password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="signin-password" className="block text-sm font-medium text-app-secondary">
                 Password
               </label>
               <input
@@ -177,22 +186,22 @@ export function SignInPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-transparent transition-colors"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-[10px] bg-app-accent px-5 py-2.5 font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
         )}
 
-        <p className="mt-6 text-center text-sm text-gray-600">
+        <p className="mt-6 text-center text-sm text-app-secondary">
           Don&apos;t have an account?{' '}
-          <Link to="/signup" className="font-semibold text-blue-600 hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded">
+          <Link to="/signup" className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
             Sign up
           </Link>
         </p>

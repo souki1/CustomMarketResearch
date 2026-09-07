@@ -26,11 +26,11 @@ export function alignClass(align: BlockAlign | undefined): string {
 export function calloutToneClass(tone: CalloutTone | undefined): string {
   switch (tone ?? 'amber') {
     case 'blue':
-      return 'rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-950 ring-1 ring-blue-100'
+      return 'rounded-lg bg-app-accent-soft px-4 py-3 text-sm text-blue-950 ring-1 ring-blue-100'
     case 'emerald':
       return 'rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-950 ring-1 ring-emerald-100'
     case 'slate':
-      return 'rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-900 ring-1 ring-slate-200'
+      return 'rounded-lg bg-app-fill px-4 py-3 text-sm text-app-label ring-1 ring-slate-200'
     case 'amber':
     default:
       return 'rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-950 ring-1 ring-amber-100'

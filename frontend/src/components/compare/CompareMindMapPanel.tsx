@@ -155,11 +155,11 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-[#f7f5f0] text-[#1a1a18]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e0ddd4] bg-white px-4 py-2.5">
+    <section className="overflow-hidden rounded-[12px] border border-app-separator bg-app-bg text-app-label">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-app-separator bg-app-surface px-4 py-2.5">
         <div className="min-w-0">
-          <span className="font-mono text-sm font-medium text-slate-900">{partLabel}</span>
-          <span className="ml-2 text-xs text-[#73726c]">
+          <span className="font-mono text-sm font-medium text-app-label">{partLabel}</span>
+          <span className="ml-2 text-xs text-app-secondary">
             · {vendors.length} vendors · click a node to expand
           </span>
         </div>
@@ -171,8 +171,8 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
               onClick={() => setMode(sortMode)}
               className={`rounded px-2.5 py-1 text-[11px] transition-colors ${
                 mode === sortMode
-                  ? 'border border-[#185FA5] bg-[#E6F1FB] text-[#0C447C]'
-                  : 'border border-[#c8c6be] bg-[#f7f5f0] text-[#73726c] hover:bg-white'
+                  ? 'border border-app-accent bg-app-accent-soft text-app-accent'
+                  : 'border border-app-separator bg-app-fill text-app-secondary hover:bg-app-surface'
               }`}
             >
               By {sortMode}
@@ -181,7 +181,7 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
         </div>
       </div>
 
-      <div className="flex border-b border-[#e0ddd4] bg-white px-4">
+      <div className="flex border-b border-app-separator bg-app-surface px-4">
         {(['decisions', 'table', 'insights', 'mindmap'] as const).map((tab) => (
           <button
             key={tab}
@@ -189,8 +189,8 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
             onClick={() => onViewChange(tab)}
             className={`px-4 py-2 text-sm transition-colors ${
               tab === 'mindmap'
-                ? 'border-b-2 border-[#378ADD] font-medium text-[#185FA5]'
-                : 'border-b-2 border-transparent text-[#73726c] hover:text-slate-700'
+                ? 'border-b-2 border-app-accent font-medium text-app-accent'
+                : 'border-b-2 border-transparent text-app-secondary hover:text-app-label'
             }`}
           >
             {tab === 'decisions'
@@ -204,7 +204,7 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
         ))}
       </div>
 
-      <svg width="100%" viewBox="0 0 680 580" className="block bg-[#f7f5f0]" role="img" aria-label="Vendor mind map">
+      <svg width="100%" viewBox="0 0 680 580" className="block bg-app-bg" role="img" aria-label="Vendor mind map">
         {vendors.map((vendor, index) => {
           const position = vendorPosition(index, vendors.length)
           const isSelected = selectedId === vendor.id
@@ -323,15 +323,15 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
         })}
       </svg>
 
-      <div className="flex flex-wrap items-center gap-3.5 border-t border-[#e0ddd4] bg-[#f7f5f0] px-4 py-2">
-        <span className="text-[11px] text-[#73726c]">Price tier</span>
+      <div className="flex flex-wrap items-center gap-3.5 border-t border-app-separator bg-[#f7f5f0] px-4 py-2">
+        <span className="text-[11px] text-app-secondary">Price tier</span>
         {[
           ['#1D9E75', 'Best $22–35'],
           ['#378ADD', 'Good $35–50'],
           ['#EF9F27', 'Mid $50–70'],
           ['#D85A30', 'High $70+'],
         ].map(([color, label]) => (
-          <span key={label} className="flex items-center gap-1.5 text-[11px] text-[#73726c]">
+          <span key={label} className="flex items-center gap-1.5 text-[11px] text-app-secondary">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
             {label}
           </span>
@@ -339,11 +339,11 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
       </div>
 
       {selectedVendor && selectedColors && (
-        <div className="mx-4 mb-4 rounded-xl border border-[#e0ddd4] bg-white p-3.5">
+        <div className="mx-4 mb-4 rounded-xl border border-app-separator bg-app-surface p-3.5">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
-              <div className="text-[15px] font-medium text-slate-900">{selectedVendor.n}</div>
-              <div className="mt-1 font-mono text-xs text-[#73726c]">{selectedVendor.ct}</div>
+              <div className="text-[15px] font-medium text-app-label">{selectedVendor.n}</div>
+              <div className="mt-1 font-mono text-xs text-app-secondary">{selectedVendor.ct}</div>
             </div>
             <div className="shrink-0 text-right">
               <div className="font-mono text-[22px] font-medium" style={{ color: selectedColors.text }}>
@@ -368,8 +368,8 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
               ['Score', selectedVendor.sc != null ? `${selectedVendor.sc} / 100` : '—', selectedColors.dot],
               ['Same-day', selectedVendor.td ? 'Yes' : 'No', selectedVendor.td ? '#1D9E75' : '#73726c'],
             ].map(([label, value, color]) => (
-              <div key={label} className="rounded-md border border-[#e0ddd4] bg-[#f7f5f0] px-2.5 py-2">
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-[#73726c]">{label}</div>
+              <div key={label} className="rounded-md border border-app-separator bg-[#f7f5f0] px-2.5 py-2">
+                <div className="mb-1 text-[10px] uppercase tracking-wide text-app-secondary">{label}</div>
                 <div className="text-xs font-medium" style={{ color }}>
                   {value}
                 </div>
@@ -381,7 +381,7 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
             <button
               type="button"
               onClick={() => onAddToBucket?.(selectedVendor.id)}
-              className="inline-flex items-center justify-center gap-1 rounded-md bg-[#378ADD] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#2f78c2]"
+              className="inline-flex items-center justify-center gap-1 rounded-md bg-app-accent px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-app-accent-hover"
             >
               Add to bucket
               <ExternalLink className="h-3 w-3" />
@@ -389,7 +389,7 @@ export function CompareMindMapPanel({ partLabel, rows, onViewChange, onAddToBuck
             <button
               type="button"
               onClick={() => selectedVendor.url && window.open(selectedVendor.url, '_blank', 'noopener')}
-              className="inline-flex items-center justify-center gap-1 rounded-md border border-[#c8c6be] bg-white px-3 py-2 text-xs font-medium text-[#73726c] transition-colors hover:bg-[#f7f5f0]"
+              className="inline-flex items-center justify-center gap-1 rounded-md border border-[#c8c6be] bg-app-surface px-3 py-2 text-xs font-medium text-app-secondary transition-colors hover:bg-[#f7f5f0]"
             >
               Vendor profile
               <ExternalLink className="h-3 w-3" />

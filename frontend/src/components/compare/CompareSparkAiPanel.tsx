@@ -87,7 +87,7 @@ function PriceChart({ rows }: { rows: CompareDecisionRow[] }) {
 
   if (byPrice.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+      <p className="rounded-lg border border-dashed border-app-separator bg-app-fill px-3 py-6 text-center text-xs text-app-secondary">
         No priced vendors to chart yet.
       </p>
     )
@@ -95,7 +95,7 @@ function PriceChart({ rows }: { rows: CompareDecisionRow[] }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-app-tertiary">
         Price by vendor
       </p>
       <ul className="space-y-2">
@@ -105,16 +105,16 @@ function PriceChart({ rows }: { rows: CompareDecisionRow[] }) {
           return (
             <li key={row.id} className="min-w-0">
               <div className="mb-0.5 flex items-baseline justify-between gap-2">
-                <span className="truncate text-xs font-medium text-slate-700">{row.vendor}</span>
+                <span className="truncate text-xs font-medium text-app-secondary">{row.vendor}</span>
                 <span
                   className={`shrink-0 font-mono text-xs font-semibold ${
-                    isBest ? 'text-emerald-600' : 'text-slate-800'
+                    isBest ? 'text-emerald-600' : 'text-app-label'
                   }`}
                 >
                   {money(row.price)}
                 </span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-1.5 overflow-hidden rounded-full bg-app-fill">
                 <div
                   className={`h-full rounded-full transition-[width] duration-500 ${
                     isBest ? 'bg-emerald-500' : 'bg-slate-700'
@@ -300,7 +300,7 @@ export function CompareSparkAiPanel({
         onClick={onClose}
       />
       <aside
-        className="relative flex h-full w-full max-w-md animate-[slideInRight_0.22s_ease-out] flex-col border-l border-slate-200 bg-white shadow-2xl"
+        className="relative flex h-full w-full max-w-md animate-[slideInRight_0.22s_ease-out] flex-col border-l border-app-separator bg-app-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <style>{`
@@ -310,15 +310,15 @@ export function CompareSparkAiPanel({
           }
         `}</style>
 
-        <header className="flex shrink-0 items-start gap-3 border-b border-slate-200 px-4 py-3.5">
+        <header className="flex shrink-0 items-start gap-3 border-b border-app-separator px-4 py-3.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-amber-300">
             <Sparkles className="h-4 w-4" strokeWidth={1.75} aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 id="compare-spark-title" className="text-sm font-semibold text-slate-900">
+            <h2 id="compare-spark-title" className="text-sm font-semibold text-app-label">
               Spark AI
             </h2>
-            <p className="truncate text-[11px] text-slate-500">
+            <p className="truncate text-[11px] text-app-secondary">
               {partLabel || 'Comparison'}
               {selectedCount > 0 ? ` · ${selectedCount} selected` : ''}
               {rows.length > 0 ? ` · ${rows.length} vendors` : ''}
@@ -327,14 +327,14 @@ export function CompareSparkAiPanel({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-md p-1.5 text-app-tertiary hover:bg-app-fill-strong hover:text-app-secondary"
             aria-label="Close"
           >
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
         </header>
 
-        <div className="flex shrink-0 gap-1 border-b border-slate-200 px-3 py-2">
+        <div className="flex shrink-0 gap-1 border-b border-app-separator px-3 py-2">
           {(
             [
               { k: 'chat' as const, label: 'Decide', Icon: MessageSquare },
@@ -346,7 +346,7 @@ export function CompareSparkAiPanel({
               type="button"
               onClick={() => setTab(t.k)}
               className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                tab === t.k ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                tab === t.k ? 'bg-slate-900 text-white' : 'text-app-secondary hover:bg-app-fill hover:text-app-label'
               }`}
             >
               <t.Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -358,7 +358,7 @@ export function CompareSparkAiPanel({
         {tab === 'charts' ? (
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             <PriceChart rows={rows} />
-            <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
+            <p className="mt-4 text-[11px] leading-relaxed text-app-tertiary">
               Charts use the vendors currently visible for this part selection. Ask Spark in Decide for
               a written recommendation.
             </p>
@@ -366,7 +366,7 @@ export function CompareSparkAiPanel({
               type="button"
               disabled={briefLoading || loading || rows.length === 0}
               onClick={() => void runDecisionBrief()}
-              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-app-fill-strong disabled:opacity-50"
             >
               {briefLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               Explain this chart
@@ -376,14 +376,14 @@ export function CompareSparkAiPanel({
           <>
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
               {loadingSession && (
-                <p className="flex items-center gap-2 text-xs text-slate-400">
+                <p className="flex items-center gap-2 text-xs text-app-tertiary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading conversation…
                 </p>
               )}
               {!loadingSession && messages.length === 0 && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-xs font-medium text-slate-800">Decision helper</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                <div className="rounded-lg border border-app-separator bg-app-fill px-3 py-3">
+                  <p className="text-xs font-medium text-app-label">Decision helper</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-app-secondary">
                     Spark can read your selected parts and vendor prices, shipping, and availability to
                     help you choose.
                   </p>
@@ -391,7 +391,7 @@ export function CompareSparkAiPanel({
                     type="button"
                     disabled={briefLoading || loading || rows.length === 0}
                     onClick={() => void runDecisionBrief()}
-                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-app-fill-strong disabled:opacity-50"
                   >
                     {briefLoading ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -407,7 +407,7 @@ export function CompareSparkAiPanel({
                         type="button"
                         disabled={loading || briefLoading}
                         onClick={() => void sendMessage(q)}
-                        className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-left text-[10px] text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                        className="rounded-full border border-app-separator bg-app-surface px-2.5 py-1 text-left text-[10px] text-app-secondary hover:border-app-separator hover:bg-app-fill disabled:opacity-50"
                       >
                         {q}
                       </button>
@@ -421,20 +421,20 @@ export function CompareSparkAiPanel({
                   className={`rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap ${
                     m.role === 'user'
                       ? 'ml-6 bg-slate-900 text-white'
-                      : 'mr-4 border border-slate-200 bg-white text-slate-800'
+                      : 'mr-4 border border-app-separator bg-app-surface text-app-label'
                   }`}
                 >
                   {m.content}
                 </div>
               ))}
               {(loading || briefLoading) && (
-                <p className="flex items-center gap-2 text-xs text-slate-400">
+                <p className="flex items-center gap-2 text-xs text-app-tertiary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
                 </p>
               )}
             </div>
 
-            <div className="shrink-0 border-t border-slate-200 p-3">
+            <div className="shrink-0 border-t border-app-separator p-3">
               {error && <p className="mb-2 text-[11px] text-red-600">{error}</p>}
               <form
                 className="flex items-end gap-2"
@@ -449,7 +449,7 @@ export function CompareSparkAiPanel({
                   rows={2}
                   placeholder="Ask about vendors, price, shipping…"
                   disabled={loading || briefLoading}
-                  className="min-h-[2.5rem] flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:opacity-60"
+                  className="min-h-[2.5rem] flex-1 resize-none rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label placeholder:text-app-tertiary focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 disabled:opacity-60"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
@@ -460,7 +460,7 @@ export function CompareSparkAiPanel({
                 <button
                   type="submit"
                   disabled={loading || briefLoading || !input.trim()}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-app-fill-strong disabled:opacity-40"
                   aria-label="Send"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

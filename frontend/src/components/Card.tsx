@@ -7,7 +7,7 @@ type CardProps<T extends ElementType = 'div'> = {
 } & Omit<ComponentPropsWithoutRef<T>, 'as' | 'className' | 'children'>
 
 const cardBaseClass =
-  'rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow'
+  'rounded-[12px] border border-app-separator bg-app-surface p-4'
 
 export function Card<T extends ElementType = 'div'>({
   as,
@@ -20,7 +20,7 @@ export function Card<T extends ElementType = 'div'>({
 
   return (
     <Component
-      className={`${cardBaseClass} ${isButton ? 'hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-1 text-left' : ''} ${className}`.trim()}
+      className={`${cardBaseClass} ${isButton ? 'hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 text-left' : ''} ${className}`.trim()}
       {...rest}
     >
       {children}

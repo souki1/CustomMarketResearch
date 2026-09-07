@@ -8,15 +8,19 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Cpu,
   DollarSign,
   Download,
   ExternalLink,
+  FileText,
+  FolderPlus,
   Info,
   Loader2,
   Monitor,
   Package,
   Search,
   ShoppingBag,
+  Star,
   Trash2,
 } from "lucide-react"
 import { getCurrentUserName, getToken } from "@/lib/auth"
@@ -43,6 +47,7 @@ import { COMPARE_NAV_SESSION_KEY, RESEARCH_COMPARE_PATH } from "@/lib/paths"
 
 const PORTFOLIO_REPORT_CONTEXT_KEY = "ir-portfolio-report-context-v1"
 const ITEMS_PER_PAGE_OPTIONS = [5, 10, 20, 50] as const
+const VISIBLE_DISTRIBUTORS = 5
 
 function markCompareNavFromPortfolio(): void {
   try {
@@ -88,6 +93,16 @@ function vendorUrlLinkLabel(href: string): string {
   } catch {
     return href.length > 36 ? `${href.slice(0, 33)}…` : href
   }
+}
+
+function isHttpUrl(url: string | null | undefined): string | null {
+  return portfolioOfferImageSrc(url)
+}
+
+function isPdfUrl(url: string | null | undefined): string | null {
+  const href = isHttpUrl(url)
+  if (!href) return null
+  return /\.pdf(\?|#|$)/i.test(href) ? href : null
 }
 
 function sourceGroupKey(url: string | null | undefined): string {
@@ -166,16 +181,26 @@ function getPageNumbers(current: number, total: number): (number | "ellipsis")[]
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 
-function OfferThumb({ imageUrl }: { imageUrl: string | null | undefined }) {
+function OfferThumb({
+  imageUrl,
+  size = "sm",
+}: {
+  imageUrl: string | null | undefined
+  size?: "sm" | "lg"
+}) {
   const src = portfolioOfferImageSrc(imageUrl)
   const [broken, setBroken] = useState(false)
+  const box =
+    size === "lg"
+      ? "h-[72px] w-[72px] rounded-[10px]"
+      : "h-9 w-9 rounded-lg"
   if (!src || broken) {
     return (
       <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"
+        className={`flex shrink-0 items-center justify-center bg-app-fill text-app-tertiary ${box}`}
         aria-hidden
       >
-        <Package className="h-4 w-4" strokeWidth={1.5} />
+        <Package className={size === "lg" ? "h-7 w-7" : "h-4 w-4"} strokeWidth={1.5} />
       </div>
     )
   }
@@ -186,8 +211,340 @@ function OfferThumb({ imageUrl }: { imageUrl: string | null | undefined }) {
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
-      className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 bg-white object-cover"
+      className={`shrink-0 border border-app-separator bg-app-paper object-cover ${box}`}
     />
+  )
+}
+
+const ACTION_BTN =
+  "inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-app-fill px-2.5 text-[13px] font-medium text-app-label transition-colors hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40"
+
+function PartOfferCard({
+  group,
+  selected,
+  expanded,
+  onToggleSelected,
+  onToggleExpanded,
+  onCompare,
+  onAddBestToBom,
+  onAddOfferToBom,
+  onOpenDetails,
+  onRemovePart,
+  onRemoveOffer,
+}: {
+  group: PartGroup
+  selected: boolean
+  expanded: boolean
+  onToggleSelected: () => void
+  onToggleExpanded: () => void
+  onCompare: () => void
+  onAddBestToBom: () => void
+  onAddOfferToBom: (entry: PortfolioItem) => void
+  onOpenDetails: (entry: PortfolioItem) => void
+  onRemovePart: () => void
+  onRemoveOffer: (entry: PortfolioItem) => void
+}) {
+  const prices = group.entries
+    .map((e) => parsePrice(e.price))
+    .filter((n): n is number => n != null)
+  const bestPrice = prices.length ? Math.min(...prices) : null
+  const bestOffer =
+    (bestPrice != null
+      ? group.entries.find((e) => parsePrice(e.price) === bestPrice)
+      : null) ?? group.entries[0]
+  const hero = group.entries.find((e) => portfolioOfferImageSrc(e.image_url)) ?? bestOffer
+  const manufacturerUrl =
+    group.entries.map((e) => isHttpUrl(e.url)).find((href): href is string => href != null) ?? null
+  const datasheetUrl =
+    group.entries.map((e) => isPdfUrl(e.url)).find((href): href is string => href != null) ?? null
+  const visible = expanded ? group.entries : group.entries.slice(0, VISIBLE_DISTRIBUTORS)
+  const hiddenCount = group.entries.length - visible.length
+  const partLabel = group.part_number ?? "Unknown part"
+  const distributorCountLabel =
+    group.entries.length === 1 ? "1 distributor" : `${group.entries.length} distributors`
+
+  return (
+    <article
+      className={`overflow-hidden rounded-[12px] border bg-app-surface ${
+        selected ? "border-app-accent ring-2 ring-app-accent/25" : "border-app-separator"
+      }`}
+    >
+      <div className="flex items-start gap-3 border-b border-app-separator px-4 py-4 sm:gap-4 sm:px-5">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelected}
+          className="mt-1.5 h-[18px] w-[18px] shrink-0 rounded-[4px] border-app-separator accent-app-accent"
+          aria-label={`Select ${partLabel}`}
+        />
+        <OfferThumb imageUrl={hero?.image_url} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h3 className="font-mono text-[17px] font-semibold tracking-[-0.02em] text-app-accent">
+              {partLabel}
+            </h3>
+            <span className="text-[17px] font-semibold tabular-nums tracking-[-0.02em] text-app-label">
+              {bestPrice != null ? formatUsd(bestPrice) : "—"}
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] leading-snug text-app-secondary">
+            {distributorCountLabel}
+            {bestOffer?.vendor_name ? ` · Best from ${bestOffer.vendor_name}` : ""}
+          </p>
+          {manufacturerUrl && (
+            <a
+              href={manufacturerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+            >
+              {vendorUrlLinkLabel(manufacturerUrl)}
+              <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
+            </a>
+          )}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {datasheetUrl ? (
+              <a
+                href={datasheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={ACTION_BTN}
+              >
+                <FileText className="h-3.5 w-3.5 text-app-destructive" strokeWidth={1.75} />
+                Datasheet
+              </a>
+            ) : (
+              <button type="button" className={ACTION_BTN} disabled title="No datasheet URL on these offers">
+                <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
+                Datasheet
+              </button>
+            )}
+            <button type="button" className={ACTION_BTN} disabled title="CAD files are not in this portfolio yet">
+              <Cpu className="h-3.5 w-3.5" strokeWidth={1.75} />
+              CAD models
+            </button>
+            {manufacturerUrl ? (
+              <a
+                href={manufacturerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={ACTION_BTN}
+              >
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                Manufacturer page
+              </a>
+            ) : (
+              <button type="button" className={ACTION_BTN} disabled title="No manufacturer URL">
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                Manufacturer page
+              </button>
+            )}
+            <button type="button" onClick={onAddBestToBom} className={ACTION_BTN}>
+              <FolderPlus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Add to BOM
+            </button>
+            <button
+              type="button"
+              onClick={onCompare}
+              disabled={group.entries.length < 2}
+              className={ACTION_BTN}
+              title={group.entries.length < 2 ? "Need at least two offers to compare" : "Compare vendors"}
+            >
+              <Monitor className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Compare
+            </button>
+            <button
+              type="button"
+              onClick={onRemovePart}
+              className={`${ACTION_BTN} text-app-destructive hover:bg-app-danger-soft`}
+              title="Remove part research"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-[640px] w-full text-left text-[13px]">
+          <thead>
+            <tr className="border-b border-app-separator text-[11px] font-semibold tracking-[-0.01em] text-app-secondary">
+              <th className="px-4 py-2.5 sm:px-5">Distributor</th>
+              <th className="px-3 py-2.5">SKU</th>
+              <th className="px-3 py-2.5 text-right">Qty</th>
+              <th className="px-3 py-2.5 text-right">Unit price</th>
+              <th className="px-3 py-2.5 text-right">Ext. total</th>
+              <th className="px-3 py-2.5 text-right">vs Best</th>
+              <th className="px-3 py-2.5">Source</th>
+              <th className="w-10 px-2 py-2.5">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((e, vi) => {
+              const n = parsePrice(e.price)
+              const isBest = n != null && bestPrice != null && n === bestPrice
+              const href = isHttpUrl(e.url)
+              const extTotal =
+                n != null && e.quantity != null && e.quantity > 0 ? n * e.quantity : null
+              const vsBest =
+                n != null && bestPrice != null ? n - bestPrice : null
+              const sourceLabel = href ? vendorUrlLinkLabel(href) : null
+              return (
+                <tr
+                  key={`${group.rowId}-dist-${vi}`}
+                  className="border-b border-app-separator last:border-b-0 hover:bg-app-fill/70"
+                >
+                  <td className="px-4 py-2.5 sm:px-5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      {isBest ? (
+                        <Star className="h-3.5 w-3.5 shrink-0 fill-app-ok text-app-ok" strokeWidth={1.5} />
+                      ) : (
+                        <span className="inline-block w-3.5 shrink-0" />
+                      )}
+                      {href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate font-medium text-app-accent hover:text-app-accent-hover"
+                        >
+                          {e.vendor_name ?? vendorUrlLinkLabel(href)}
+                        </a>
+                      ) : (
+                        <span className="truncate font-medium text-app-label">{e.vendor_name ?? "—"}</span>
+                      )}
+                      {href && (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-app-tertiary hover:text-app-accent"
+                          aria-label={`Open ${e.vendor_name ?? "distributor"} site`}
+                        >
+                          <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="whitespace-nowrap font-mono text-[12px] text-app-accent hover:text-app-accent-hover"
+                      >
+                        {partLabel}
+                      </a>
+                    ) : (
+                      <span className="whitespace-nowrap font-mono text-[12px] text-app-label">{partLabel}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-app-secondary">
+                    {e.quantity != null ? e.quantity.toLocaleString() : "—"}
+                  </td>
+                  <td
+                    className={`px-3 py-2.5 text-right font-medium tabular-nums ${
+                      n == null ? "text-app-tertiary" : "text-app-ok"
+                    }`}
+                  >
+                    {n != null ? formatUsd(n) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-app-label">
+                    {extTotal != null ? formatUsd(extTotal) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {vsBest == null ? (
+                      <span className="text-app-tertiary">—</span>
+                    ) : isBest ? (
+                      <span className="font-medium text-app-ok">Best</span>
+                    ) : (
+                      <span className="text-app-secondary">+{formatUsd(vsBest)}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {href && sourceLabel ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate text-app-secondary hover:text-app-accent"
+                        title={href}
+                      >
+                        {sourceLabel}
+                      </a>
+                    ) : (
+                      <span className="text-app-tertiary">—</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <div className="flex items-center justify-end gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => onAddOfferToBom(e)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-tertiary hover:bg-app-fill hover:text-app-label"
+                        title="Add this offer to BOM"
+                      >
+                        <ShoppingBag className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenDetails(e)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-tertiary hover:bg-app-fill hover:text-app-label"
+                        title="View details"
+                      >
+                        <Info className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveOffer(e)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-app-tertiary hover:bg-app-danger-soft hover:text-app-destructive"
+                        title="Remove this offer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5">
+        {hiddenCount > 0 || expanded ? (
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            className="text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+          >
+            {expanded ? "Show less" : `Show all (${group.entries.length})`}
+          </button>
+        ) : (
+          <span className="text-[13px] text-app-tertiary">{group.entries.length} offer{group.entries.length === 1 ? "" : "s"}</span>
+        )}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => bestOffer && onOpenDetails(bestOffer)}
+            className="text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+          >
+            Specification
+          </button>
+          <button
+            type="button"
+            onClick={() => bestOffer && onOpenDetails(bestOffer)}
+            className="text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+          >
+            Descriptions
+          </button>
+        </div>
+      </div>
+    </article>
   )
 }
 
@@ -210,7 +567,7 @@ function DeleteConfirmModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10"
+        className="w-full max-w-md overflow-hidden rounded-xl bg-app-surface shadow-2xl ring-1 ring-black/10"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-red-100 bg-red-50 px-6 py-4">
@@ -219,56 +576,56 @@ function DeleteConfirmModal({
               <AlertTriangle className="h-5 w-5" strokeWidth={2} />
             </span>
             <div>
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-app-label">
                 {target.excludeEntirePart
                   ? "Remove Part Research"
                   : "Remove Vendor Offer"}
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-app-secondary">
                 This can be undone by re-running research.
               </p>
             </div>
           </div>
         </div>
         <div className="space-y-3 px-6 py-5">
-          <div className="rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200/80">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-lg bg-app-fill px-4 py-3 ring-1 ring-app-separator">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
               Part
             </p>
-            <p className="mt-1 font-medium text-slate-900">{target.partNumber ?? "Unknown"}</p>
+            <p className="mt-1 font-medium text-app-label">{target.partNumber ?? "Unknown"}</p>
           </div>
           {!target.excludeEntirePart && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200/80">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="rounded-lg bg-app-fill px-4 py-3 ring-1 ring-app-separator">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                   Vendor
                 </p>
-                <p className="mt-1 font-medium text-slate-900">
+                <p className="mt-1 font-medium text-app-label">
                   {target.vendorName?.trim() ? target.vendorName : "—"}
                 </p>
               </div>
-              <div className="rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200/80">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="rounded-lg bg-app-fill px-4 py-3 ring-1 ring-app-separator">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                   Price
                 </p>
-                <p className="mt-1 font-medium tabular-nums text-slate-900">
+                <p className="mt-1 font-medium tabular-nums text-app-label">
                   {target.price?.trim() ? target.price : "—"}
                 </p>
               </div>
             </div>
           )}
-          <p className="text-sm leading-relaxed text-slate-600">
+          <p className="text-sm leading-relaxed text-app-secondary">
             {target.excludeEntirePart
               ? "This will remove all vendor offers for this part from your portfolio view."
               : "This will remove only this vendor line from your portfolio view."}
           </p>
         </div>
-        <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+        <div className="flex items-center justify-end gap-3 border-t border-app-separator bg-app-fill/50 px-6 py-4">
           <button
             type="button"
             onClick={onCancel}
             disabled={deleting}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary shadow-sm transition hover:bg-app-fill disabled:opacity-50"
           >
             Cancel
           </button>
@@ -302,44 +659,44 @@ function DetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10"
+        className="w-full max-w-md overflow-hidden rounded-xl bg-app-surface shadow-2xl ring-1 ring-black/10"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-slate-100 bg-slate-900 px-6 py-4">
+        <div className="border-b border-app-separator bg-slate-900 px-6 py-4">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-teal-300/90">
             Offer
           </p>
           <h2 className="mt-1 text-lg font-semibold text-white">Details</h2>
         </div>
         <dl className="space-y-4 px-6 py-5 text-sm">
-          <div className="rounded-xl bg-slate-50/90 px-4 py-3 ring-1 ring-slate-200/80">
-            <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-xl bg-app-fill/90 px-4 py-3 ring-1 ring-app-separator">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
               Vendor
             </dt>
-            <dd className="mt-1 font-medium text-slate-900">
+            <dd className="mt-1 font-medium text-app-label">
               {entry.vendor_name ?? "—"}
             </dd>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-slate-50/90 px-4 py-3 ring-1 ring-slate-200/80">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl bg-app-fill/90 px-4 py-3 ring-1 ring-app-separator">
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                 Price
               </dt>
-              <dd className="mt-1 font-semibold tabular-nums text-slate-900">
+              <dd className="mt-1 font-semibold tabular-nums text-app-label">
                 {entry.price ?? "—"}
               </dd>
             </div>
-            <div className="rounded-xl bg-slate-50/90 px-4 py-3 ring-1 ring-slate-200/80">
-              <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <div className="rounded-xl bg-app-fill/90 px-4 py-3 ring-1 ring-app-separator">
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                 Qty
               </dt>
-              <dd className="mt-1 font-medium tabular-nums text-slate-900">
+              <dd className="mt-1 font-medium tabular-nums text-app-label">
                 {entry.quantity != null ? String(entry.quantity) : "—"}
               </dd>
             </div>
           </div>
           <div>
-            <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
               URL
             </dt>
             <dd className="mt-1.5 break-all text-sm text-teal-700">
@@ -353,16 +710,16 @@ function DetailModal({
                   {entry.url}
                 </a>
               ) : (
-                <span className="text-slate-500">—</span>
+                <span className="text-app-secondary">—</span>
               )}
             </dd>
           </div>
         </dl>
-        <div className="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+        <div className="border-t border-app-separator bg-app-fill/50 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-800"
+            className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-app-fill-strong"
           >
             Close
           </button>
@@ -398,6 +755,7 @@ export function PortfolioPage() {
   const [deleting, setDeleting] = useState(false)
 
   const [detailEntry, setDetailEntry] = useState<PortfolioItem | null>(null)
+  const [expandedPartIds, setExpandedPartIds] = useState<Set<string>>(() => new Set())
 
   const navigate = useNavigate()
   const { items: bucketItems, addItem, showToast } = useBucket()
@@ -1223,7 +1581,7 @@ export function PortfolioPage() {
     portfolioSummary?.unique_parts ?? partGroups.length
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] w-full overflow-x-hidden bg-slate-50">
+    <div className="min-h-[calc(100vh-3.5rem)] w-full overflow-x-hidden bg-app-bg">
       <div className="flex w-full flex-col gap-4 px-4 py-5 sm:px-6">
         <PortfolioDashboard
           loading={loading}
@@ -1241,16 +1599,16 @@ export function PortfolioPage() {
           coverageRows={dashboardCoverageRows}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-app-separator pb-3">
           <div>
-            <h2 className="text-base font-bold tracking-tight text-slate-900">Portfolio data</h2>
-            <p className="text-xs text-slate-500">
-              Review quotes, remove incorrect research, and compare selected parts.
+            <h2 className="text-[22px] font-semibold tracking-[-0.03em] text-app-label">Portfolio information</h2>
+            <p className="mt-0.5 text-[13px] text-app-secondary">
+              Parts, distributor offers, and quoted prices from your research.
             </p>
           </div>
           {token && !loading && portfolioItems.length > 0 && (
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
-              <span className="font-semibold tabular-nums text-slate-900">{activeFilteredList.length}</span>
+            <span className="rounded-full border border-app-separator bg-app-surface px-3 py-1 text-xs text-app-secondary">
+              <span className="font-semibold tabular-nums text-app-label">{activeFilteredList.length}</span>
               {' '}
               {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"} in view
             </span>
@@ -1288,21 +1646,21 @@ export function PortfolioPage() {
         )}
 
         {/* ── Toolbar ── */}
-        <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-5 rounded-lg border border-app-separator bg-app-surface p-4 sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
             <div className="relative min-w-0 flex-1 lg:max-w-md">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-app-tertiary" />
               <input
                 type="search"
                 placeholder="Search parts, vendors, or prices…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/90 py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-teal-300/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                className="w-full rounded-lg border border-app-separator bg-app-fill/90 py-2.5 pl-10 pr-4 text-sm text-app-label placeholder:text-app-tertiary transition focus:border-teal-300/80 focus:bg-app-surface focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
               <div
-                className="inline-flex rounded-lg border border-slate-200/90 bg-slate-50/80 p-1"
+                className="inline-flex rounded-lg border border-app-separator bg-app-fill/80 p-1"
                 role="group"
                 aria-label="Group by"
               >
@@ -1311,8 +1669,8 @@ export function PortfolioPage() {
                   onClick={() => setViewMode("part")}
                   className={`rounded-md px-3 py-2 text-sm font-semibold transition-all ${
                     viewMode === "part"
-                      ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-app-surface text-app-label shadow-sm ring-1 ring-black/5"
+                      : "text-app-secondary hover:text-app-label"
                   }`}
                 >
                   By part
@@ -1322,8 +1680,8 @@ export function PortfolioPage() {
                   onClick={() => setViewMode("vendor")}
                   className={`rounded-md px-3 py-2 text-sm font-semibold transition-all ${
                     viewMode === "vendor"
-                      ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-app-surface text-app-label shadow-sm ring-1 ring-black/5"
+                      : "text-app-secondary hover:text-app-label"
                   }`}
                 >
                   By vendor
@@ -1333,8 +1691,8 @@ export function PortfolioPage() {
                   onClick={() => setViewMode("source")}
                   className={`rounded-md px-3 py-2 text-sm font-semibold transition-all ${
                     viewMode === "source"
-                      ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-app-surface text-app-label shadow-sm ring-1 ring-black/5"
+                      : "text-app-secondary hover:text-app-label"
                   }`}
                 >
                   By source
@@ -1345,7 +1703,7 @@ export function PortfolioPage() {
                   <select
                     value={sortMode}
                     onChange={(e) => setSortMode(e.target.value as SortMode)}
-                    className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    className="cursor-pointer appearance-none rounded-lg border border-app-separator bg-app-surface py-2.5 pl-3 pr-9 text-sm font-medium text-app-label shadow-sm transition hover:border-app-separator focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     aria-label="Sort parts"
                   >
                     <option value="part-asc">Sort: Part A–Z</option>
@@ -1358,7 +1716,7 @@ export function PortfolioPage() {
                   <select
                     value={vendorSortMode}
                     onChange={(e) => setVendorSortMode(e.target.value as VendorSortMode)}
-                    className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    className="cursor-pointer appearance-none rounded-lg border border-app-separator bg-app-surface py-2.5 pl-3 pr-9 text-sm font-medium text-app-label shadow-sm transition hover:border-app-separator focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     aria-label="Sort vendors"
                   >
                     <option value="vendor-asc">Sort: Vendor A–Z</option>
@@ -1371,7 +1729,7 @@ export function PortfolioPage() {
                   <select
                     value={sourceSortMode}
                     onChange={(e) => setSourceSortMode(e.target.value as SourceSortMode)}
-                    className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    className="cursor-pointer appearance-none rounded-lg border border-app-separator bg-app-surface py-2.5 pl-3 pr-9 text-sm font-medium text-app-label shadow-sm transition hover:border-app-separator focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     aria-label="Sort sources"
                   >
                     <option value="source-asc">Sort: Source A–Z</option>
@@ -1381,13 +1739,13 @@ export function PortfolioPage() {
                     <option value="best-desc">Sort: Highest price</option>
                   </select>
                 )}
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-secondary" />
               </div>
               <div className="relative">
                 <select
                   value={itemsPerPage}
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  className="cursor-pointer appearance-none rounded-lg border border-app-separator bg-app-surface py-2.5 pl-3 pr-9 text-sm font-medium text-app-label shadow-sm transition hover:border-app-separator focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                   aria-label="Items per page"
                 >
                   {ITEMS_PER_PAGE_OPTIONS.map((n) => (
@@ -1396,13 +1754,13 @@ export function PortfolioPage() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-secondary" />
               </div>
               <button
                 type="button"
                 onClick={handleExportCsv}
                 disabled={!token || activeFilteredList.length === 0}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-app-separator bg-app-surface px-3.5 py-2.5 text-sm font-medium text-app-label shadow-sm transition hover:bg-app-fill disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
                 Export CSV
@@ -1413,19 +1771,19 @@ export function PortfolioPage() {
 
         {/* ── Page indicator ── */}
         {token && !loading && !errorMessage && activeFilteredList.length > 0 && (
-          <div className="mb-4 flex items-center justify-between px-1 text-sm text-slate-600">
+          <div className="mb-4 flex items-center justify-between px-1 text-sm text-app-secondary">
             <span>
               Showing{" "}
-              <span className="font-semibold text-slate-800">
+              <span className="font-semibold text-app-label">
                 {showingFrom}–{showingTo}
               </span>{" "}
               of{" "}
-              <span className="font-semibold text-slate-800">
+              <span className="font-semibold text-app-label">
                 {activeFilteredList.length}
               </span>{" "}
               {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"}
             </span>
-            <span className="text-slate-500">
+            <span className="text-app-secondary">
               Page {safePage} of {totalPages}
             </span>
           </div>
@@ -1433,12 +1791,12 @@ export function PortfolioPage() {
 
         {/* ── Loading ── */}
         {loading && token && (
-          <div className="flex items-center justify-center rounded-xl border border-slate-200/90 bg-white py-20 shadow-sm">
+          <div className="flex items-center justify-center rounded-xl border border-app-separator bg-app-surface py-20 shadow-sm">
             <div className="flex flex-col items-center gap-3">
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
                 <Loader2 className="h-7 w-7 animate-spin" />
               </span>
-              <span className="text-sm font-medium text-slate-700">
+              <span className="text-sm font-medium text-app-secondary">
                 Loading portfolio…
               </span>
             </div>
@@ -1447,9 +1805,9 @@ export function PortfolioPage() {
 
         {/* ── Error ── */}
         {!loading && errorMessage && (
-          <div className="flex items-center justify-center rounded-xl border border-slate-200/90 bg-white py-16 shadow-sm">
+          <div className="flex items-center justify-center rounded-xl border border-app-separator bg-app-surface py-16 shadow-sm">
             <p
-              className={`text-sm ${!token ? "text-slate-600" : "text-red-600"}`}
+              className={`text-sm ${!token ? "text-app-secondary" : "text-red-600"}`}
             >
               {errorMessage}
             </p>
@@ -1458,15 +1816,15 @@ export function PortfolioPage() {
 
         {/* ── Empty ── */}
         {token && !loading && !errorMessage && portfolioItems.length === 0 && (
-          <div className="flex items-center justify-center rounded-xl border border-slate-200/90 bg-white py-20 shadow-sm">
+          <div className="flex items-center justify-center rounded-xl border border-app-separator bg-app-surface py-20 shadow-sm">
             <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-fill text-app-secondary">
                 <Package className="h-8 w-8" strokeWidth={1.5} />
               </span>
-              <p className="text-base font-medium text-slate-800">
+              <p className="text-base font-medium text-app-label">
                 No portfolio data yet
               </p>
-              <p className="text-sm leading-relaxed text-slate-500">
+              <p className="text-sm leading-relaxed text-app-secondary">
                 Run &quot;Research Selected&quot; from your datasheet workflow to
                 populate offers here.
               </p>
@@ -1477,189 +1835,46 @@ export function PortfolioPage() {
         {/* ── Part cards ── */}
         {token && !loading && !errorMessage && viewMode === "part" && paginatedPartGroups.length > 0 && (
           <div className="space-y-4">
-            {paginatedPartGroups.map((g) => {
-              const minForGroup = (() => {
-                const nums = g.entries
-                  .map((e) => parsePrice(e.price))
-                  .filter((n): n is number => n != null)
-                return nums.length ? Math.min(...nums) : null
-              })()
-              const isChecked = selectedPartIds.has(g.rowId)
-
-              return (
-                <article
-                  key={g.rowId}
-                  className={`overflow-hidden rounded-xl border bg-white shadow-sm transition ${
-                    isChecked
-                      ? "border-teal-300 ring-2 ring-teal-500/20"
-                      : "border-slate-200/90 hover:shadow-md"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => togglePartSelected(g.rowId)}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
-                        aria-label={`Select ${g.part_number ?? "part"}`}
-                      />
-                      <div className="min-w-0">
-                        <h3 className="truncate text-base font-semibold text-slate-900">
-                          {g.part_number ?? "Unknown Part"}
-                        </h3>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {g.entries.length} vendor{g.entries.length === 1 ? "" : "s"}
-                          {minForGroup != null && (
-                            <>
-                              {" "}
-                              &middot; Best:{" "}
-                              <span className="font-semibold text-emerald-600">{formatUsd(minForGroup)}</span>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => openCompareForGroup(g)}
-                        disabled={g.entries.length < 2}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        title="Compare vendors"
-                      >
-                        <Monitor className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const best = bestEntryForGroup(g) ?? g.entries[0]
-                          if (best) addToBucket(g, best)
-                        }}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
-                        title="Add best to bucket"
-                      >
-                        <ShoppingBag className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDeleteTarget({
-                            partNumber: g.part_number,
-                            excludeEntirePart: true,
-                          })
-                        }
-                        className="rounded-lg border border-red-200 bg-white p-2 text-red-400 shadow-sm transition hover:bg-red-50 hover:text-red-600"
-                        title="Remove part research"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {g.entries.map((e, vi) => {
-                      const n = parsePrice(e.price)
-                      const isBest = n != null && minForGroup != null && n === minForGroup
-                      const safeUrl = portfolioOfferImageSrc(e.url)
-                      return (
-                        <div
-                          key={`${g.rowId}-v-${vi}`}
-                          className={`rounded-xl border bg-white p-3 shadow-sm transition ${
-                            isBest
-                              ? "border-emerald-200 ring-1 ring-emerald-500/20"
-                              : "border-slate-200 hover:border-slate-300"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-2.5">
-                              <OfferThumb imageUrl={e.image_url} />
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-slate-800">
-                                  {e.vendor_name ?? "—"}
-                                </p>
-                                {isBest && (
-                                  <span className="mt-1 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                    <DollarSign className="h-2.5 w-2.5" />
-                                    Best offer
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                              <p className="font-medium uppercase tracking-wider text-slate-500">Price</p>
-                              <p className="mt-1 font-semibold tabular-nums text-slate-900">
-                                {displayPrice(e.price, n)}
-                              </p>
-                            </div>
-                            <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                              <p className="font-medium uppercase tracking-wider text-slate-500">Qty</p>
-                              <p className="mt-1 font-semibold tabular-nums text-slate-900">
-                                {e.quantity != null ? e.quantity.toLocaleString() : "—"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            {safeUrl ? (
-                              <a
-                                href={safeUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex min-w-0 items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 hover:underline"
-                              >
-                                <ExternalLink className="h-3 w-3 shrink-0" />
-                                <span className="max-w-32 truncate">{vendorUrlLinkLabel(safeUrl)}</span>
-                              </a>
-                            ) : (
-                              <span className="text-xs text-slate-400">No source URL</span>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => addToBucket(g, e)}
-                                className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                title="Add to bucket"
-                              >
-                                <ShoppingBag className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDetailEntry(e)}
-                                className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                title="View details"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDeleteTarget({
-                                    partNumber: g.part_number,
-                                    excludeEntirePart: false,
-                                    vendorName: e.vendor_name ?? null,
-                                    url: e.url ?? null,
-                                    price: e.price ?? null,
-                                    quantity: e.quantity ?? null,
-                                  })
-                                }
-                                className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                                title="Remove this vendor offer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </article>
-              )
-            })}
+            {paginatedPartGroups.map((g) => (
+              <PartOfferCard
+                key={g.rowId}
+                group={g}
+                selected={selectedPartIds.has(g.rowId)}
+                expanded={expandedPartIds.has(g.rowId)}
+                onToggleSelected={() => togglePartSelected(g.rowId)}
+                onToggleExpanded={() =>
+                  setExpandedPartIds((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(g.rowId)) next.delete(g.rowId)
+                    else next.add(g.rowId)
+                    return next
+                  })
+                }
+                onCompare={() => openCompareForGroup(g)}
+                onAddBestToBom={() => {
+                  const best = bestEntryForGroup(g) ?? g.entries[0]
+                  if (best) addToBucket(g, best)
+                }}
+                onAddOfferToBom={(e) => addToBucket(g, e)}
+                onOpenDetails={(e) => setDetailEntry(e)}
+                onRemovePart={() =>
+                  setDeleteTarget({
+                    partNumber: g.part_number,
+                    excludeEntirePart: true,
+                  })
+                }
+                onRemoveOffer={(e) =>
+                  setDeleteTarget({
+                    partNumber: g.part_number,
+                    excludeEntirePart: false,
+                    vendorName: e.vendor_name ?? null,
+                    url: e.url ?? null,
+                    price: e.price ?? null,
+                    quantity: e.quantity ?? null,
+                  })
+                }
+              />
+            ))}
           </div>
         )}
 
@@ -1667,17 +1882,17 @@ export function PortfolioPage() {
         {token && !loading && !errorMessage && viewMode === "vendor" && paginatedVendorGroups.length > 0 && (
           <div className="space-y-4">
             {sharedVendorMatrix.rows.length > 0 && sharedVendorMatrix.parts.length > 0 && (
-              <section className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm">
-                <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <section className="overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-sm">
+                <div className="border-b border-app-separator bg-app-fill/60 px-5 py-3.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-app-secondary">
                       Shared Vendors - Price By Part
                     </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/30 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                        <th className="sticky left-0 z-10 min-w-40 bg-slate-50/90 py-2.5 pl-5 pr-3">
+                      <tr className="border-b border-app-separator bg-app-fill/30 text-left text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
+                        <th className="sticky left-0 z-10 min-w-40 bg-app-fill/90 py-2.5 pl-5 pr-3">
                           Vendor
                         </th>
                         {sharedVendorMatrix.parts.map((part) => (
@@ -1691,9 +1906,9 @@ export function PortfolioPage() {
                       {sharedVendorMatrix.rows.map((row) => (
                         <tr
                           key={`matrix-row-${row.vendor}`}
-                          className="border-b border-slate-50 transition last:border-0 hover:bg-slate-50/50"
+                          className="border-b border-slate-50 transition last:border-0 hover:bg-app-fill/50"
                         >
-                          <td className="sticky left-0 z-10 bg-white py-2.5 pl-5 pr-3 font-medium text-slate-800">
+                          <td className="sticky left-0 z-10 bg-app-surface py-2.5 pl-5 pr-3 font-medium text-app-label">
                             {row.vendor}
                           </td>
                           {sharedVendorMatrix.parts.map((part) => {
@@ -1702,7 +1917,7 @@ export function PortfolioPage() {
                               return (
                                 <td
                                   key={`matrix-cell-${row.vendor}-${part}`}
-                                  className="px-3 py-2.5 text-slate-400"
+                                  className="px-3 py-2.5 text-app-tertiary"
                                 >
                                   —
                                 </td>
@@ -1716,13 +1931,13 @@ export function PortfolioPage() {
                                     href={safeUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 font-medium tabular-nums text-slate-700 hover:text-teal-700 hover:underline"
+                                    className="inline-flex items-center gap-1 font-medium tabular-nums text-app-secondary hover:text-teal-700 hover:underline"
                                   >
                                     {displayPrice(offer.price, parsePrice(offer.price))}
                                     <ExternalLink className="h-3 w-3 shrink-0" />
                                   </a>
                                 ) : (
-                                  <span className="font-medium tabular-nums text-slate-700">
+                                  <span className="font-medium tabular-nums text-app-secondary">
                                     {displayPrice(offer.price, parsePrice(offer.price))}
                                   </span>
                                 )}
@@ -1749,25 +1964,25 @@ export function PortfolioPage() {
               return (
                 <article
                   key={vg.rowId}
-                  className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm transition hover:shadow-md"
+                  className="overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-sm transition hover:shadow-md"
                 >
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
+                  <div className="flex items-center justify-between gap-3 border-b border-app-separator bg-app-fill/60 px-5 py-3.5">
                     <div className="flex min-w-0 items-center gap-3">
                       <input
                         type="checkbox"
                         checked={vendorSelected}
                         onChange={() => toggleVendorPartsSelected(vg)}
-                        className="h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+                        className="h-4 w-4 rounded border-app-separator text-teal-600 accent-teal-600 focus:ring-teal-500/40"
                         aria-label={`Select one part from ${vg.vendor_name ?? "vendor"}`}
                       />
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-app-fill text-app-secondary">
                         <Building2 className="h-4 w-4" strokeWidth={1.75} />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="truncate text-base font-semibold text-slate-900">
+                        <h3 className="truncate text-base font-semibold text-app-label">
                           {vg.vendor_name ?? "Unknown vendor"}
                         </h3>
-                        <p className="mt-0.5 text-xs text-slate-500">
+                        <p className="mt-0.5 text-xs text-app-secondary">
                           {vg.entries.length} part{vg.entries.length === 1 ? "" : "s"}
                           {minForVendor != null && (
                             <>
@@ -1786,7 +2001,7 @@ export function PortfolioPage() {
                         type="button"
                         onClick={() => openCompareForVendorGroup(vg)}
                         disabled={vg.entries.length < 2}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-lg border border-app-separator bg-app-surface p-2 text-app-secondary shadow-sm transition hover:bg-app-fill hover:text-app-secondary disabled:cursor-not-allowed disabled:opacity-40"
                         title="Compare parts from this vendor"
                       >
                         <Monitor className="h-4 w-4" />
@@ -1797,7 +2012,7 @@ export function PortfolioPage() {
                           const best = bestEntryForVendorGroup(vg) ?? vg.entries[0]
                           if (best) addToBucketFromVendorRow(best)
                         }}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                        className="rounded-lg border border-app-separator bg-app-surface p-2 text-app-secondary shadow-sm transition hover:bg-app-fill hover:text-app-secondary"
                         title="Add best price to bucket"
                       >
                         <ShoppingBag className="h-4 w-4" />
@@ -1808,7 +2023,7 @@ export function PortfolioPage() {
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/30 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        <tr className="border-b border-app-separator bg-app-fill/30 text-left text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                           <th className="w-10 py-2.5 pl-5" aria-label="Select" />
                           <th className="py-2.5 pr-3">Part number</th>
                           <th className="px-3 py-2.5">Price</th>
@@ -1830,7 +2045,7 @@ export function PortfolioPage() {
                           return (
                             <tr
                               key={`${vg.rowId}-p-${vi}`}
-                              className="border-b border-slate-50 transition last:border-0 hover:bg-slate-50/50"
+                              className="border-b border-slate-50 transition last:border-0 hover:bg-app-fill/50"
                             >
                               <td className="py-3 pl-5 align-middle">
                                 {partRowId ? (
@@ -1838,7 +2053,7 @@ export function PortfolioPage() {
                                     type="checkbox"
                                     checked={selectedVendorOfferKey === offerKey}
                                     onChange={() => toggleVendorOfferRowSelected(e)}
-                                    className="h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+                                    className="h-4 w-4 rounded border-app-separator text-teal-600 accent-teal-600 focus:ring-teal-500/40"
                                     aria-label={`Select part ${e.part_number ?? "—"}`}
                                   />
                                 ) : null}
@@ -1847,7 +2062,7 @@ export function PortfolioPage() {
                                 <div className="flex items-center gap-2.5">
                                   <OfferThumb imageUrl={e.image_url} />
                                   <div className="min-w-0">
-                                    <p className="truncate font-medium text-slate-800">
+                                    <p className="truncate font-medium text-app-label">
                                       {e.part_number ?? "—"}
                                     </p>
                                     {isBest && (
@@ -1859,10 +2074,10 @@ export function PortfolioPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-3 py-3 align-middle font-medium tabular-nums text-slate-900">
+                              <td className="px-3 py-3 align-middle font-medium tabular-nums text-app-label">
                                 {displayPrice(e.price, n)}
                               </td>
-                              <td className="px-3 py-3 align-middle tabular-nums text-slate-600">
+                              <td className="px-3 py-3 align-middle tabular-nums text-app-secondary">
                                 {e.quantity != null ? e.quantity.toLocaleString() : "—"}
                               </td>
                               <td className="px-3 py-3 align-middle">
@@ -1879,7 +2094,7 @@ export function PortfolioPage() {
                                     </span>
                                   </a>
                                 ) : (
-                                  <span className="text-xs text-slate-400">—</span>
+                                  <span className="text-xs text-app-tertiary">—</span>
                                 )}
                               </td>
                               <td className="py-3 pl-3 pr-5 align-middle">
@@ -1887,7 +2102,7 @@ export function PortfolioPage() {
                                   <button
                                     type="button"
                                     onClick={() => addToBucketFromVendorRow(e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-app-fill-strong hover:text-app-secondary"
                                     title="Add to bucket"
                                   >
                                     <ShoppingBag className="h-3.5 w-3.5" />
@@ -1895,7 +2110,7 @@ export function PortfolioPage() {
                                   <button
                                     type="button"
                                     onClick={() => setDetailEntry(e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-app-fill-strong hover:text-app-secondary"
                                     title="View details"
                                   >
                                     <Info className="h-3.5 w-3.5" />
@@ -1913,7 +2128,7 @@ export function PortfolioPage() {
                                       })
                                     }
                                     disabled={!e.part_number?.trim()}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
                                     title={
                                       e.part_number?.trim()
                                         ? "Remove this offer"
@@ -1949,18 +2164,18 @@ export function PortfolioPage() {
               return (
                 <article
                   key={sg.rowId}
-                  className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm transition hover:shadow-md"
+                  className="overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-sm transition hover:shadow-md"
                 >
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
+                  <div className="flex items-center justify-between gap-3 border-b border-app-separator bg-app-fill/60 px-5 py-3.5">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-app-fill text-app-secondary">
                         <ExternalLink className="h-4 w-4" strokeWidth={1.75} />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="truncate text-base font-semibold text-slate-900">
+                        <h3 className="truncate text-base font-semibold text-app-label">
                           {sg.source_label ?? "Unknown source"}
                         </h3>
-                        <p className="mt-0.5 text-xs text-slate-500">
+                        <p className="mt-0.5 text-xs text-app-secondary">
                           {sg.entries.length} offer{sg.entries.length === 1 ? "" : "s"}
                           {minForSource != null && (
                             <>
@@ -1979,7 +2194,7 @@ export function PortfolioPage() {
                         type="button"
                         onClick={() => openCompareForSourceGroup(sg)}
                         disabled={sg.entries.length < 2}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-lg border border-app-separator bg-app-surface p-2 text-app-secondary shadow-sm transition hover:bg-app-fill hover:text-app-secondary disabled:cursor-not-allowed disabled:opacity-40"
                         title="Compare offers from this source"
                       >
                         <Monitor className="h-4 w-4" />
@@ -1990,7 +2205,7 @@ export function PortfolioPage() {
                           const best = bestEntryForSourceGroup(sg) ?? sg.entries[0]
                           if (best) addToBucketFromVendorRow(best)
                         }}
-                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                        className="rounded-lg border border-app-separator bg-app-surface p-2 text-app-secondary shadow-sm transition hover:bg-app-fill hover:text-app-secondary"
                         title="Add best price to bucket"
                       >
                         <ShoppingBag className="h-4 w-4" />
@@ -2001,7 +2216,7 @@ export function PortfolioPage() {
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/30 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        <tr className="border-b border-app-separator bg-app-fill/30 text-left text-[11px] font-semibold uppercase tracking-wider text-app-secondary">
                           <th className="w-10 py-2.5 pl-5" aria-label="Select" />
                           <th className="py-2.5 pr-3">Part number</th>
                           <th className="px-3 py-2.5">Vendor</th>
@@ -2022,7 +2237,7 @@ export function PortfolioPage() {
                           return (
                             <tr
                               key={`${sg.rowId}-o-${vi}`}
-                              className="border-b border-slate-50 transition last:border-0 hover:bg-slate-50/50"
+                              className="border-b border-slate-50 transition last:border-0 hover:bg-app-fill/50"
                             >
                               <td className="py-3 pl-5 align-middle">
                                 {partRowId ? (
@@ -2030,7 +2245,7 @@ export function PortfolioPage() {
                                     type="checkbox"
                                     checked={selectedVendorOfferKey === offerKey}
                                     onChange={() => toggleVendorOfferRowSelected(e)}
-                                    className="h-4 w-4 rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40"
+                                    className="h-4 w-4 rounded border-app-separator text-teal-600 accent-teal-600 focus:ring-teal-500/40"
                                     aria-label={`Select part ${e.part_number ?? "—"}`}
                                   />
                                 ) : null}
@@ -2039,16 +2254,16 @@ export function PortfolioPage() {
                                 <div className="flex items-center gap-2.5">
                                   <OfferThumb imageUrl={e.image_url} />
                                   <div className="min-w-0">
-                                    <p className="truncate font-medium text-slate-800">
+                                    <p className="truncate font-medium text-app-label">
                                       {e.part_number ?? "—"}
                                     </p>
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-3 py-3 align-middle text-slate-700">
+                              <td className="px-3 py-3 align-middle text-app-secondary">
                                 {e.vendor_name ?? "—"}
                               </td>
-                              <td className="px-3 py-3 align-middle font-medium tabular-nums text-slate-900">
+                              <td className="px-3 py-3 align-middle font-medium tabular-nums text-app-label">
                                 <span>{displayPrice(e.price, n)}</span>
                                 {isBest ? (
                                   <span className="ml-2 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
@@ -2057,7 +2272,7 @@ export function PortfolioPage() {
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="px-3 py-3 align-middle tabular-nums text-slate-600">
+                              <td className="px-3 py-3 align-middle tabular-nums text-app-secondary">
                                 {e.quantity != null ? e.quantity.toLocaleString() : "—"}
                               </td>
                               <td className="px-3 py-3 align-middle">
@@ -2074,7 +2289,7 @@ export function PortfolioPage() {
                                     </span>
                                   </a>
                                 ) : (
-                                  <span className="text-xs text-slate-400">—</span>
+                                  <span className="text-xs text-app-tertiary">—</span>
                                 )}
                               </td>
                               <td className="py-3 pl-3 pr-5 align-middle">
@@ -2082,7 +2297,7 @@ export function PortfolioPage() {
                                   <button
                                     type="button"
                                     onClick={() => addToBucketFromVendorRow(e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-app-fill-strong hover:text-app-secondary"
                                     title="Add to bucket"
                                   >
                                     <ShoppingBag className="h-3.5 w-3.5" />
@@ -2090,7 +2305,7 @@ export function PortfolioPage() {
                                   <button
                                     type="button"
                                     onClick={() => setDetailEntry(e)}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-app-fill-strong hover:text-app-secondary"
                                     title="View details"
                                   >
                                     <Info className="h-3.5 w-3.5" />
@@ -2108,7 +2323,7 @@ export function PortfolioPage() {
                                       })
                                     }
                                     disabled={!e.part_number?.trim()}
-                                    className="rounded p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="rounded p-1.5 text-app-tertiary transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
                                     title={
                                       e.part_number?.trim()
                                         ? "Remove this offer"
@@ -2137,16 +2352,16 @@ export function PortfolioPage() {
           !errorMessage &&
           activeFilteredList.length > itemsPerPage && (
             <nav
-              className="mt-6 flex flex-col items-center justify-between gap-4 rounded-xl border border-slate-200/90 bg-white/90 px-5 py-4 shadow-sm backdrop-blur-sm sm:flex-row"
+              className="mt-6 flex flex-col items-center justify-between gap-4 rounded-xl border border-app-separator bg-app-surface/90 px-5 py-4 shadow-sm backdrop-blur-sm sm:flex-row"
               aria-label="Pagination"
             >
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-app-secondary">
                 Showing{" "}
-                <span className="font-medium text-slate-800">{showingFrom}</span>
+                <span className="font-medium text-app-label">{showingFrom}</span>
                 –
-                <span className="font-medium text-slate-800">{showingTo}</span>{" "}
+                <span className="font-medium text-app-label">{showingTo}</span>{" "}
                 of{" "}
-                <span className="font-medium text-slate-800">
+                <span className="font-medium text-app-label">
                   {activeFilteredList.length}
                 </span>{" "}
                 {viewMode === "part" ? "parts" : viewMode === "vendor" ? "vendors" : "sources"}
@@ -2156,7 +2371,7 @@ export function PortfolioPage() {
                   type="button"
                   onClick={() => setCurrentPage(1)}
                   disabled={safePage <= 1}
-                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg p-2 text-app-secondary transition hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="First page"
                 >
                   <ChevronsLeft className="h-4 w-4" />
@@ -2167,7 +2382,7 @@ export function PortfolioPage() {
                     setCurrentPage((p) => Math.max(1, p - 1))
                   }
                   disabled={safePage <= 1}
-                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg p-2 text-app-secondary transition hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Previous page"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -2176,7 +2391,7 @@ export function PortfolioPage() {
                   pg === "ellipsis" ? (
                     <span
                       key={`ellipsis-${idx}`}
-                      className="px-1 text-slate-400"
+                      className="px-1 text-app-tertiary"
                     >
                       …
                     </span>
@@ -2188,7 +2403,7 @@ export function PortfolioPage() {
                       className={`min-w-9 rounded-lg px-2 py-1.5 text-sm font-medium transition ${
                         pg === safePage
                           ? "bg-slate-900 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          : "text-app-secondary hover:bg-app-fill-strong hover:text-app-label"
                       }`}
                     >
                       {pg}
@@ -2201,7 +2416,7 @@ export function PortfolioPage() {
                     setCurrentPage((p) => Math.min(totalPages, p + 1))
                   }
                   disabled={safePage >= totalPages}
-                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg p-2 text-app-secondary transition hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Next page"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -2210,7 +2425,7 @@ export function PortfolioPage() {
                   type="button"
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={safePage >= totalPages}
-                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg p-2 text-app-secondary transition hover:bg-app-fill-strong disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Last page"
                 >
                   <ChevronsRight className="h-4 w-4" />

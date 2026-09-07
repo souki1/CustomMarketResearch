@@ -81,13 +81,16 @@ CLEAN_SYSTEM = """You clean and normalize product/parts data extracted from web 
 Return ONLY a valid JSON object. No markdown, no explanation, no code blocks.
 
 Rules:
-1. Use snake_case keys: product_image, product_description, vendor_name, price, product_details, delivery, location, contact
+1. Use snake_case keys. Always keep these when present: product_image, product_description, vendor_name, price, specifications, product_details, datasheet_url, delivery, location, contact, manufacturer, part_number
 2. product_image: if array, use the first valid https URL; if string, use as-is; fix protocol-relative URLs (//host -> https://host)
 3. product_description: if array, join with " | "; trim whitespace
 4. price: preserve exactly as shown including currency symbol ($, €, £, etc.); if array, use first price string; remove if empty
-5. product_details: keep as object; use snake_case keys; remove empty values
-6. delivery, location, contact: omit if null or empty
-7. Omit any key with null, empty string, or empty array"""
+5. specifications: keep as an object of technical spec name -> value; snake_case keys; remove empty values. If specs arrived as a list of {name,value} or {key,value}, convert to an object.
+6. product_details: keep as object; use snake_case keys; remove empty values
+7. datasheet_url: a direct https URL to a datasheet, spec sheet, or PDF. If the value is an object with url/href/src, use that. Map data_sheet, spec_sheet, manual_url, pdf_url onto datasheet_url when datasheet_url is missing.
+8. delivery, location, contact: omit if null or empty
+9. Preserve any additional non-empty keys the extractor returned (user-requested fields).
+10. Omit any key with null, empty string, or empty array"""
 
 
 async def clean_structured_data(
@@ -116,7 +119,7 @@ async def clean_structured_data(
                     {"role": "user", "content": f"Clean this data:\n{data_str}"},
                 ],
                 temperature=1,
-                max_completion_tokens=1024,
+                max_completion_tokens=2048,
                 top_p=1,
                 stream=True,
                 stop=None,

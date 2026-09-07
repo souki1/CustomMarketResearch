@@ -47,11 +47,11 @@ export function CompareWorkspaceSection({
   const selectedCount = fileData ? (selectedFileRows[fileData.fileId]?.length ?? 0) : 0
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+    <section className="rounded-lg border border-app-separator bg-app-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-app-separator px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Workspace files</span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-app-tertiary">Workspace files</span>
+          <span className="text-[11px] text-app-tertiary">
             {selectedFilesData.length} file{selectedFilesData.length !== 1 ? 's' : ''} · {totalSelectedAcrossFiles} row
             {totalSelectedAcrossFiles !== 1 ? 's' : ''} selected
           </span>
@@ -60,14 +60,14 @@ export function CompareWorkspaceSection({
           <button
             type="button"
             onClick={onOpenFilePicker}
-            className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-md border border-app-separator bg-app-surface px-2.5 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
           >
             Choose file…
           </button>
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-md border border-app-separator px-2.5 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
             aria-expanded={!collapsed}
           >
             {collapsed ? (
@@ -88,7 +88,7 @@ export function CompareWorkspaceSection({
       {!collapsed && (
         <div className="px-4 py-3">
           {fileContentLoadingSize > 0 && (
-            <p className="mb-2 text-xs text-slate-500">Loading file…</p>
+            <p className="mb-2 text-xs text-app-secondary">Loading file…</p>
           )}
           {selectedFilesData.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-1.5">
@@ -101,7 +101,7 @@ export function CompareWorkspaceSection({
                     className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors ${
                       isActive
                         ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        : 'border-app-separator bg-app-surface text-app-secondary hover:border-app-separator'
                     }`}
                   >
                     <span className="max-w-[200px] truncate font-medium">{file.name}</span>
@@ -112,7 +112,7 @@ export function CompareWorkspaceSection({
                         onRemoveFile(file.fileId)
                       }}
                       className={`rounded px-0.5 ${
-                        isActive ? 'text-slate-300 hover:text-white' : 'text-slate-400 hover:text-slate-700'
+                        isActive ? 'text-app-tertiary hover:text-white' : 'text-app-tertiary hover:text-app-secondary'
                       }`}
                       aria-label={`Remove ${file.name}`}
                     >
@@ -127,13 +127,13 @@ export function CompareWorkspaceSection({
           {fileData && fileData.content.length > 1 && (
             <>
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Select parts</span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-app-tertiary">Select parts</span>
+                <span className="text-[11px] text-app-tertiary">
                   {filtRows.length} parts · {selectedCount} selected
                 </span>
                 <div className="flex-1" />
-                <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
-                  <Search className="h-2.5 w-2.5 text-slate-400" strokeWidth={2} />
+                <div className="flex items-center gap-1 rounded-md border border-app-separator bg-app-fill px-2 py-1">
+                  <Search className="h-2.5 w-2.5 text-app-tertiary" strokeWidth={2} />
                   <input
                     value={partQ}
                     onChange={(e) => setPartQ(e.target.value)}
@@ -144,7 +144,7 @@ export function CompareWorkspaceSection({
               </div>
               <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
                 {filtRows.length === 0 ? (
-                  <p className="text-xs text-slate-500">No rows match filter.</p>
+                  <p className="text-xs text-app-secondary">No rows match filter.</p>
                 ) : (
                   filtRows.map(({ rowIdx, label }) => {
                     const isChecked = (selectedFileRows[fileData.fileId] ?? []).includes(rowIdx)
@@ -159,12 +159,12 @@ export function CompareWorkspaceSection({
                         title={label}
                         className={`inline-flex max-w-[200px] items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
                           isActive
-                            ? 'border-blue-600 bg-blue-600 text-white'
+                            ? 'border-app-accent bg-app-accent text-white'
                             : isChecked
-                              ? 'border-slate-300 bg-slate-900 text-white'
+                              ? 'border-app-separator bg-slate-900 text-white'
                               : inPortfolio
                                 ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                                : 'border-app-separator bg-app-surface text-app-secondary hover:border-app-separator'
                         }`}
                       >
                         <span className="truncate font-semibold">{label}</span>
@@ -177,7 +177,7 @@ export function CompareWorkspaceSection({
           )}
 
           {selectedFilesData.length === 0 && (
-            <p className="text-xs text-slate-500">Choose a workspace file to load parts for comparison.</p>
+            <p className="text-xs text-app-secondary">Choose a workspace file to load parts for comparison.</p>
           )}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
@@ -45,6 +45,10 @@ export function SignUpPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
+  useEffect(() => {
+    document.title = 'Sign up — Intelligent Research'
+  }, [])
+
   function handleGoogleSignUp() {
     window.location.href = getGoogleLoginUrl()
   }
@@ -76,19 +80,19 @@ export function SignUpPage() {
   }
 
   return (
-    <section className="min-h-[60vh] flex items-center justify-center py-12">
-      <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-sm border border-gray-200/80 p-8">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 mb-1">
+    <section className="flex min-h-screen items-center justify-center bg-app-bg px-4 py-12">
+      <div className="mx-auto w-full max-w-md rounded-[16px] border border-app-separator bg-app-surface p-8 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
+        <h1 className="mb-1 text-[28px] font-semibold tracking-[-0.03em] text-app-label">
           Create an account
         </h1>
-        <p className="text-sm text-gray-600 mb-6">
+        <p className="text-sm text-app-secondary mb-6">
           Get started with Intelligent Research — in minutes.
         </p>
 
         <button
           type="button"
           onClick={handleGoogleSignUp}
-          className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors"
+          className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-secondary font-medium hover:bg-app-fill focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-gray-400 transition-colors"
         >
           <GoogleIcon />
           Sign up with Google
@@ -96,10 +100,10 @@ export function SignUpPage() {
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200" />
+            <div className="w-full border-t border-app-separator" />
           </div>
           <div className="relative flex justify-center">
-            <span className="bg-white px-3 text-sm font-medium text-gray-500">OR</span>
+            <span className="bg-app-surface px-3 text-sm font-medium text-app-secondary">OR</span>
           </div>
         </div>
 
@@ -110,7 +114,7 @@ export function SignUpPage() {
             </p>
           )}
           <div className="space-y-2">
-            <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="signup-email" className="block text-sm font-medium text-app-secondary">
               Email
             </label>
             <input
@@ -121,11 +125,11 @@ export function SignUpPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-app-accent transition-colors"
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="signup-password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="signup-password" className="block text-sm font-medium text-app-secondary">
               Password
             </label>
             <input
@@ -136,11 +140,11 @@ export function SignUpPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-app-accent transition-colors"
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="signup-confirm" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="signup-confirm" className="block text-sm font-medium text-app-secondary">
               Confirm password
             </label>
             <input
@@ -151,20 +155,20 @@ export function SignUpPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-app-accent transition-colors"
             />
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-5 py-2.5 rounded-lg font-semibold text-white bg-app-accent hover:bg-app-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
-        <p className="mt-6 text-center text-sm text-gray-600">
+        <p className="mt-6 text-center text-sm text-app-secondary">
           Already have an account?{' '}
-          <Link to="/signin" className="font-semibold text-blue-600 hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded">
+          <Link to="/signin" className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
             Sign in
           </Link>
         </p>

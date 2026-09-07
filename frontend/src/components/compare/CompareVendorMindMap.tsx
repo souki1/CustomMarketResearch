@@ -24,7 +24,7 @@ export type CompareVendorMindMapModel = {
 /** Stroke colors matching a typical mind-map palette (blue, pink, red, violet, amber) */
 const BRANCH_STROKES = ['#2563eb', '#db2777', '#dc2626', '#7c3aed', '#d97706']
 const BRANCH_BG = [
-  'bg-blue-50 border-blue-200/90',
+  'bg-app-accent-soft border-app-accent/30/90',
   'bg-pink-50 border-pink-200/90',
   'bg-red-50 border-red-200/90',
   'bg-violet-50 border-violet-200/90',
@@ -169,7 +169,7 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
   return (
     <div
       ref={containerRef}
-      className="relative mb-8 min-h-[280px] overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/60 p-6 shadow-sm ring-1 ring-slate-950/5"
+      className="relative mb-8 min-h-[280px] overflow-x-auto rounded-xl border border-app-separator bg-app-fill/60 p-6 shadow-sm ring-1 ring-black/5"
       style={{
         backgroundImage: 'radial-gradient(circle, rgb(148 163 184 / 0.35) 1px, transparent 1px)',
         backgroundSize: '14px 14px',
@@ -191,10 +191,10 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
               role="dialog"
               aria-modal="true"
               aria-labelledby="common-vendor-dialog-title"
-              className="relative z-[101] max-h-[min(85vh,640px)] w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl ring-1 ring-slate-950/10"
+              className="relative z-[101] max-h-[min(85vh,640px)] w-full max-w-lg overflow-hidden rounded-2xl border border-app-separator bg-app-surface shadow-xl ring-1 ring-slate-950/10"
             >
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-                <h2 id="common-vendor-dialog-title" className="pr-8 text-base font-semibold text-slate-900">
+              <div className="flex items-start justify-between gap-3 border-b border-app-separator px-5 py-4">
+                <h2 id="common-vendor-dialog-title" className="pr-8 text-base font-semibold text-app-label">
                   {detail.mode === 'all'
                     ? 'Shared vendors & parts'
                     : detail.domain}
@@ -202,7 +202,7 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                 <button
                   type="button"
                   onClick={() => setDetail(null)}
-                  className="shrink-0 rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                  className="shrink-0 rounded-lg p-1.5 text-app-secondary transition-colors hover:bg-app-fill-strong hover:text-app-label"
                   aria-label="Close dialog"
                 >
                   <X className="h-5 w-5" />
@@ -214,10 +214,10 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                     const rowsOne = partsForDomain(model, detail.domain)
                     return (
                       <>
-                        <p className="text-sm text-slate-600">
+                        <p className="text-sm text-app-secondary">
                           Listed on{' '}
-                          <span className="font-medium text-slate-800">{rowsOne.length}</span> of{' '}
-                          <span className="font-medium text-slate-800">{model.parts.length}</span> compared parts. A
+                          <span className="font-medium text-app-label">{rowsOne.length}</span> of{' '}
+                          <span className="font-medium text-app-label">{model.parts.length}</span> compared parts. A
                           shared vendor is any domain that appears on at least two parts. Prices are from scraped
                           fields; parts without this vendor are omitted below.
                         </p>
@@ -225,10 +225,10 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                           {rowsOne.map((row) => (
                             <li
                               key={row.partId}
-                              className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5"
+                              className="rounded-lg border border-app-separator bg-app-fill/80 px-3 py-2.5"
                             >
-                              <p className="text-sm font-medium text-slate-900">{row.partLabel}</p>
-                              <p className="mt-0.5 text-xs tabular-nums text-slate-600">
+                              <p className="text-sm font-medium text-app-label">{row.partLabel}</p>
+                              <p className="mt-0.5 text-xs tabular-nums text-app-secondary">
                                 Price: {row.priceLabel ?? '—'}
                               </p>
                             </li>
@@ -239,23 +239,23 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                   })()
                 ) : (
                   <>
-                    <p className="text-sm text-slate-600">
-                      Vendors whose domain appears on <span className="font-medium text-slate-800">at least two</span> of
+                    <p className="text-sm text-app-secondary">
+                      Vendors whose domain appears on <span className="font-medium text-app-label">at least two</span> of
                       your {model.parts.length} selected parts — not required on every part.
                     </p>
-                    <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+                    <div className="mt-4 overflow-x-auto rounded-lg border border-app-separator">
                       <table className="w-full min-w-[280px] border-collapse text-left text-sm">
                         <thead>
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            <th className="px-3 py-2 font-semibold text-slate-700">Vendor</th>
-                            <th className="px-3 py-2 font-semibold text-slate-700">Parts</th>
+                          <tr className="border-b border-app-separator bg-app-fill">
+                            <th className="px-3 py-2 font-semibold text-app-secondary">Vendor</th>
+                            <th className="px-3 py-2 font-semibold text-app-secondary">Parts</th>
                           </tr>
                         </thead>
                         <tbody>
                           {commonDomainsSorted.map((domain) => {
                             const rows = partsForDomain(model, domain)
                             return (
-                              <tr key={domain} className="border-b border-slate-100 last:border-0">
+                              <tr key={domain} className="border-b border-app-separator last:border-0">
                                 <td className="max-w-[10rem] align-top px-3 py-2.5">
                                   <button
                                     type="button"
@@ -271,9 +271,9 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                                 <td className="px-3 py-2.5 align-top">
                                   <ul className="space-y-1.5">
                                     {rows.map((r) => (
-                                      <li key={r.partId} className="text-xs text-slate-700">
-                                        <span className="font-medium text-slate-900">{r.partLabel}</span>
-                                        <span className="text-slate-500">
+                                      <li key={r.partId} className="text-xs text-app-secondary">
+                                        <span className="font-medium text-app-label">{r.partLabel}</span>
+                                        <span className="text-app-secondary">
                                           {' '}
                                           · {r.priceLabel ?? '—'}
                                         </span>
@@ -318,7 +318,7 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
       <div className="relative z-10 flex min-w-max flex-row flex-wrap items-start gap-10 lg:gap-14">
         <div className="flex flex-col items-center pt-4">
           <div className="mb-2 flex w-full max-w-[220px] flex-col items-center gap-2">
-            <div className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-app-secondary">
               <GitBranch className="h-4 w-4" aria-hidden />
               <span className="text-[10px] font-semibold uppercase tracking-wider">Mind map</span>
             </div>
@@ -335,9 +335,9 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
           </div>
           <div
             ref={rootRef}
-            className="max-w-[200px] rounded-2xl border-2 border-white bg-white px-5 py-4 text-center shadow-md ring-1 ring-slate-200/80"
+            className="max-w-[200px] rounded-2xl border-2 border-white bg-app-surface px-5 py-4 text-center shadow-md ring-1 ring-app-separator"
           >
-            <p className="text-sm font-semibold leading-snug text-slate-900">{model.rootLabel}</p>
+            <p className="text-sm font-semibold leading-snug text-app-label">{model.rootLabel}</p>
           </div>
         </div>
 
@@ -385,7 +385,7 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                           setDetail({ mode: 'one', domain: v.domain })
                         }
                       }}
-                      className={`rounded-lg border bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/60 ${
+                      className={`rounded-lg border bg-app-surface px-3 py-2 shadow-sm ring-1 ring-slate-200/60 ${
                         v.isCommon && !isSyntheticVendorDomain(v.domain)
                           ? 'cursor-pointer ring-2 ring-emerald-300/80 transition-colors hover:bg-emerald-50/50 hover:ring-emerald-400/90'
                           : v.isCommon
@@ -398,11 +398,11 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                           : undefined
                       }
                     >
-                      <p className="truncate text-xs font-medium text-slate-800" title={v.domain}>
+                      <p className="truncate text-xs font-medium text-app-label" title={v.domain}>
                         {v.domain}
                       </p>
                       {v.priceLabel ? (
-                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">{v.priceLabel}</p>
+                        <p className="mt-0.5 text-[11px] tabular-nums text-app-secondary">{v.priceLabel}</p>
                       ) : null}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         {v.isCommon && !isSyntheticVendorDomain(v.domain) ? (
@@ -419,7 +419,7 @@ export function CompareVendorMindMap({ model, onSelectVendor, onAddVendorToBucke
                               if (rows.length === 0) return
                               onAddVendorToBucket({ domain: v.domain, parts: rows })
                             }}
-                            className="inline-flex items-center rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm hover:bg-slate-800"
+                            className="inline-flex items-center rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm hover:bg-app-fill-strong"
                           >
                             Add to Bucket
                           </button>

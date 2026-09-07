@@ -5,8 +5,8 @@ export function SettingsCompanyPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-lg font-semibold text-gray-900">Company</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-lg font-semibold text-app-label">Company</h1>
+        <p className="mt-1 text-sm text-app-secondary">
           Manage company details and billing address.
         </p>
       </header>
@@ -31,8 +31,8 @@ export function SettingsCompanyPage() {
           <div>
             <label className={SETTINGS_LABEL_CLASS}>Company logo</label>
             <div className="mt-1.5 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg border border-dashed border-gray-300 bg-gray-50" />
-              <button type="button" className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Upload logo</button>
+              <div className="h-10 w-10 rounded-lg border border-dashed border-app-separator bg-app-fill" />
+              <button type="button" className="rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill">Upload logo</button>
             </div>
           </div>
           <div>

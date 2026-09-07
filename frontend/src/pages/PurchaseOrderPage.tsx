@@ -138,7 +138,7 @@ function statusBadgeClass(status: POStatus): string {
   const base = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium'
   switch (status) {
     case 'draft':
-      return `${base} bg-gray-100 text-gray-700`
+      return `${base} bg-app-fill text-app-secondary`
     case 'submitted':
       return `${base} bg-amber-100 text-amber-900`
     case 'approved':
@@ -635,20 +635,21 @@ export function PurchaseOrderPage() {
   const grand = subtotal + tax
 
   const inputClass =
-    'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
+    'w-full rounded-lg border border-app-separator bg-app-surface px-2.5 py-1.5 text-sm text-app-label placeholder:text-app-tertiary focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20'
 
   return (
+    <div className="min-h-full bg-app-bg">
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Purchase order board</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.03em] text-app-label">Purchase orders</h1>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-0">
           <button
             type="button"
             onClick={() => void createNewPo()}
             disabled={!token || creating}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-app-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-app-accent-hover focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin text-white" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
             New PO
@@ -677,10 +678,10 @@ export function PurchaseOrderPage() {
       )}
 
       <div className="mt-8 space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="rounded-xl border border-app-separator bg-app-surface shadow-sm">
             <div className="p-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-app-tertiary" />
                 <input
                   type="search"
                   placeholder="Search PO #, vendor, SKU…"
@@ -717,10 +718,10 @@ export function PurchaseOrderPage() {
                   key={col.id}
                   className="w-[min(100vw-2rem,280px)] shrink-0 sm:w-[280px]"
                 >
-                  <div className="mb-2 h-4 w-24 animate-pulse rounded bg-gray-200" />
-                  <div className="min-h-[min(60vh,480px)] space-y-2 rounded-xl bg-gray-100/90 p-2">
-                    <div className="h-24 animate-pulse rounded-lg bg-gray-200/80" />
-                    <div className="h-24 animate-pulse rounded-lg bg-gray-200/80" />
+                  <div className="mb-2 h-4 w-24 animate-pulse rounded bg-app-fill-strong" />
+                  <div className="min-h-[min(60vh,480px)] space-y-2 rounded-xl bg-app-fill/90 p-2">
+                    <div className="h-24 animate-pulse rounded-lg bg-app-fill-strong" />
+                    <div className="h-24 animate-pulse rounded-lg bg-app-fill-strong" />
                   </div>
                 </div>
               ))}
@@ -733,16 +734,16 @@ export function PurchaseOrderPage() {
                     className="w-[min(100vw-2rem,280px)] shrink-0 sm:w-[280px]"
                   >
                     <div className="mb-2 flex items-baseline justify-between gap-2 px-0.5">
-                      <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-gray-600">
+                      <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-app-secondary">
                         {col.title}
                       </h2>
-                      <span className="text-xs font-semibold tabular-nums text-gray-400">
+                      <span className="text-xs font-semibold tabular-nums text-app-tertiary">
                         ({items.length})
                       </span>
                     </div>
                     <div
-                      className={`max-h-[min(65vh,560px)] min-h-[120px] space-y-2.5 overflow-y-auto rounded-xl bg-[#f4f5f7] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors ${
-                        dropColumnId === col.id ? 'ring-2 ring-blue-300/80 bg-blue-50/60' : ''
+                      className={`max-h-[min(65vh,560px)] min-h-[120px] space-y-2.5 overflow-y-auto rounded-xl bg-app-fill p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors ${
+                        dropColumnId === col.id ? 'ring-2 ring-blue-300/80 bg-app-accent-soft/60' : ''
                       }`}
                       onDragOver={(e) => {
                         if (!token || draggingPoId == null) return
@@ -759,7 +760,7 @@ export function PurchaseOrderPage() {
                       }}
                     >
                       {items.length === 0 ? (
-                        <p className="px-2 py-6 text-center text-xs text-gray-400">No cards</p>
+                        <p className="px-2 py-6 text-center text-xs text-app-tertiary">No cards</p>
                       ) : (
                         items.map((o) => {
                           const active = o.id === selectedId
@@ -781,40 +782,40 @@ export function PurchaseOrderPage() {
                                   setDraggingPoId(null)
                                   setDropColumnId(null)
                                 }}
-                                className={`w-full rounded-lg border bg-white p-3 text-left shadow-sm transition-[box-shadow,transform] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                                  active ? 'border-blue-300 ring-2 ring-blue-400/30' : 'border-gray-200/90'
+                                className={`w-full rounded-lg border bg-app-surface p-3 text-left shadow-sm transition-[box-shadow,transform] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-app-accent/40 ${
+                                  active ? 'border-blue-300 ring-2 ring-blue-400/30' : 'border-app-separator/90'
                                 } ${token ? 'cursor-grab active:cursor-grabbing' : ''}`}
                               >
-                                <p className="line-clamp-3 text-sm font-medium leading-snug text-gray-900">
+                                <p className="line-clamp-3 text-sm font-medium leading-snug text-app-label">
                                   {cardPrimaryTitle(o)}
                                 </p>
-                                <p className="mt-1 line-clamp-1 text-xs text-gray-500">
+                                <p className="mt-1 line-clamp-1 text-xs text-app-secondary">
                                   {o.vendor_name.trim() || '—'} · {formatMoney(poSubtotal(o))}
                                 </p>
-                                <div className="mt-3 flex items-center justify-between gap-1 border-t border-gray-100 pt-2.5">
+                                <div className="mt-3 flex items-center justify-between gap-1 border-t border-app-separator pt-2.5">
                                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                     <span
                                       className={`h-2.5 w-2.5 shrink-0 rounded-sm ${projectSwatchClass(o.vendor_name || o.number)}`}
                                       aria-hidden
                                     />
-                                    <span className="truncate font-mono text-[11px] font-semibold text-gray-600">
+                                    <span className="truncate font-mono text-[11px] font-semibold text-app-secondary">
                                       {o.number}
                                     </span>
                                   </div>
-                                  <div className="flex shrink-0 items-center gap-1 text-gray-500">
+                                  <div className="flex shrink-0 items-center gap-1 text-app-secondary">
                                     <span className="inline-flex items-center gap-0.5" title="Line items">
                                       <GitBranch className="h-3.5 w-3.5 opacity-70" aria-hidden />
                                       <span className="text-[11px] tabular-nums">{o.lines.length}</span>
                                     </span>
                                     <span
-                                      className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1 text-[10px] font-semibold text-gray-700"
+                                      className="flex h-5 min-w-5 items-center justify-center rounded-full bg-app-fill px-1 text-[10px] font-semibold text-app-secondary"
                                       title="Size (lines)"
                                     >
                                       {storyPointsDisplay(o)}
                                     </span>
                                     <span title={STATUS_LABEL[o.status]}>{priorityGlyph(o.status)}</span>
                                     <span
-                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-100 to-slate-200 text-[9px] font-bold uppercase text-slate-700 ring-1 ring-slate-200/80"
+                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-100 to-slate-200 text-[11px] font-bold uppercase text-app-secondary ring-1 ring-app-separator"
                                       title="Vendor"
                                     >
                                       {vendorInitials(o.vendor_name)}
@@ -831,7 +832,7 @@ export function PurchaseOrderPage() {
                                     onChange={(e) => {
                                       void persistPoStatus(o.id, e.target.value as POStatus)
                                     }}
-                                    className="w-full cursor-pointer rounded-md border border-gray-200 bg-white py-1 pl-2 pr-1 text-[11px] text-gray-700 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+                                    className="w-full cursor-pointer rounded-md border border-app-separator bg-app-surface py-1 pl-2 pr-1 text-[11px] text-app-secondary shadow-sm focus:border-app-accent focus:outline-none focus:ring-1 focus:ring-app-accent/30"
                                   >
                                     {STATUS_ORDER.map((s) => (
                                       <option key={s} value={s}>
@@ -851,7 +852,7 @@ export function PurchaseOrderPage() {
               })}
           </div>
           {!loadingList && filteredList.length === 0 ? (
-            <p className="text-center text-sm text-gray-500">No matching POs for this search or filter.</p>
+            <p className="text-center text-sm text-app-secondary">No matching POs for this search or filter.</p>
           ) : null}
       </div>
 
@@ -867,12 +868,12 @@ export function PurchaseOrderPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="po-editor-title"
-            className="my-auto w-full max-w-5xl rounded-xl border border-gray-200 bg-white shadow-2xl"
+            className="my-auto w-full max-w-5xl rounded-xl border border-app-separator bg-app-surface shadow-2xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 sm:px-5">
-              <FileText className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-              <h2 id="po-editor-title" className="min-w-0 flex-1 truncate text-lg font-semibold text-gray-900">
+            <div className="flex flex-wrap items-center gap-2 border-b border-app-separator bg-app-surface px-4 py-3 sm:px-5">
+              <FileText className="h-5 w-5 shrink-0 text-app-tertiary" aria-hidden />
+              <h2 id="po-editor-title" className="min-w-0 flex-1 truncate text-lg font-semibold text-app-label">
                 {selected.number}
               </h2>
               <span className={statusBadgeClass(selected.status)}>{STATUS_LABEL[selected.status]}</span>
@@ -881,7 +882,7 @@ export function PurchaseOrderPage() {
                   type="button"
                   onClick={() => void createSummaryReport()}
                   disabled={reportBusy}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-app-accent/25"
                 >
                   {reportBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -896,7 +897,7 @@ export function PurchaseOrderPage() {
                   type="button"
                   onClick={() => void saveSelected()}
                   disabled={!dirty || saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-app-accent px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-app-accent-hover focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin text-white" aria-hidden /> : null}
                   Save
@@ -905,7 +906,7 @@ export function PurchaseOrderPage() {
               <button
                 type="button"
                 onClick={() => setPoEditorOpen(false)}
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                className="rounded-lg p-2 text-app-secondary hover:bg-app-fill focus:outline-none focus:ring-2 focus:ring-gray-300/50"
                 aria-label="Close editor"
               >
                 <X className="h-5 w-5" aria-hidden />
@@ -913,8 +914,8 @@ export function PurchaseOrderPage() {
             </div>
             <div className="max-h-[min(85vh,880px)] overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
               <div className="space-y-6">
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Workflow</p>
+              <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-app-secondary">Workflow</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {STATUS_ORDER.map((s, idx) => {
                     const currentIdx = STATUS_ORDER.indexOf(selected.status)
@@ -923,17 +924,17 @@ export function PurchaseOrderPage() {
                     return (
                       <div key={s} className="flex items-center gap-2">
                         {idx > 0 && (
-                          <span className="hidden text-gray-300 sm:inline" aria-hidden>
+                          <span className="hidden text-app-tertiary sm:inline" aria-hidden>
                             →
                           </span>
                         )}
                         <span
                           className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                             current
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-app-accent text-white'
                               : done
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-gray-100 text-gray-500'
+                                : 'bg-app-fill text-app-secondary'
                           }`}
                         >
                           {STATUS_LABEL[s]}
@@ -945,7 +946,7 @@ export function PurchaseOrderPage() {
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                   {token ? (
                     <div className="min-w-[200px] flex-1">
-                      <label htmlFor="po-status-select" className="text-xs font-medium text-gray-600">
+                      <label htmlFor="po-status-select" className="text-xs font-medium text-app-secondary">
                         Board status
                       </label>
                       <select
@@ -968,7 +969,7 @@ export function PurchaseOrderPage() {
                     type="button"
                     onClick={advanceStatus}
                     disabled={selected.status === 'closed' || !token}
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-sm font-medium text-app-label hover:bg-app-fill disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-app-accent/30"
                   >
                     Advance status
                   </button>
@@ -977,25 +978,25 @@ export function PurchaseOrderPage() {
                   {dirty && token && (
                     <span className="text-xs text-amber-700">Unsaved line/header edits — use Save changes.</span>
                   )}
-                  {!dirty && token && <span className="text-xs text-gray-500">Header & lines in sync with server.</span>}
+                  {!dirty && token && <span className="text-xs text-app-secondary">Header & lines in sync with server.</span>}
                 </div>
               </div>
 
               {token && (
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-app-separator pb-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-gray-900">Import from scraped data</h2>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        Pick a <span className="font-medium text-gray-700">vendor</span> to see every part they offer, or
-                        a <span className="font-medium text-gray-700">part</span> to see every vendor. Choose both to
+                      <h2 className="text-sm font-semibold text-app-label">Import from scraped data</h2>
+                      <p className="mt-0.5 text-xs text-app-secondary">
+                        Pick a <span className="font-medium text-app-secondary">vendor</span> to see every part they offer, or
+                        a <span className="font-medium text-app-secondary">part</span> to see every vendor. Choose both to
                         narrow. Data includes all saved research sheets.
                       </p>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <div>
-                      <label className="text-xs font-medium text-gray-600">Vendor</label>
+                      <label className="text-xs font-medium text-app-secondary">Vendor</label>
                       <select
                         className={`${inputClass} mt-1`}
                         aria-label="Filter by vendor"
@@ -1012,7 +1013,7 @@ export function PurchaseOrderPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-600">Part number</label>
+                      <label className="text-xs font-medium text-app-secondary">Part number</label>
                       <select
                         className={`${inputClass} mt-1`}
                         aria-label="Filter by part number"
@@ -1030,27 +1031,27 @@ export function PurchaseOrderPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 overflow-x-auto rounded-lg border border-gray-100">
+                  <div className="mt-4 overflow-x-auto rounded-lg border border-app-separator">
                     {importLoading ? (
-                      <div className="flex items-center gap-2 px-4 py-8 text-sm text-gray-500">
+                      <div className="flex items-center gap-2 px-4 py-8 text-sm text-app-secondary">
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                         Loading offers…
                       </div>
                     ) : portfolioForImport.length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-gray-500">
+                      <p className="px-4 py-6 text-sm text-app-secondary">
                         No scraped offers yet. Save a datasheet selection and run research/scraping first, then return
                         here.
                       </p>
                     ) : !selectedVendor.trim() && !selectedPart.trim() ? (
-                      <p className="px-4 py-6 text-sm text-gray-500">
+                      <p className="px-4 py-6 text-sm text-app-secondary">
                         Select a vendor or a part (or both) above to list matching offers.
                       </p>
                     ) : displayedOffers.length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-gray-500">No offers match this vendor/part combination.</p>
+                      <p className="px-4 py-6 text-sm text-app-secondary">No offers match this vendor/part combination.</p>
                     ) : (
                       <table className="w-full min-w-[560px] text-left text-sm">
                         <thead>
-                          <tr className="border-b border-gray-100 bg-gray-50/80 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <tr className="border-b border-app-separator bg-app-fill/80 text-xs font-medium uppercase tracking-wide text-app-secondary">
                             <th className="w-10 px-3 py-2 sm:px-4" aria-label="Select" />
                             <th className="px-3 py-2 sm:px-4">Part</th>
                             <th className="px-3 py-2 sm:px-4">Vendor</th>
@@ -1060,22 +1061,22 @@ export function PurchaseOrderPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {displayedOffers.map((it, idx) => (
-                            <tr key={`${idx}-${it.part_number}-${it.url}`} className="hover:bg-gray-50/50">
+                            <tr key={`${idx}-${it.part_number}-${it.url}`} className="hover:bg-app-fill/50">
                               <td className="px-3 py-2 sm:px-4">
                                 <input
                                   type="checkbox"
                                   checked={selectedOfferIdx.has(idx)}
                                   onChange={() => toggleOffer(idx)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500/30"
+                                  className="rounded border-app-separator text-app-accent focus:ring-app-accent/30"
                                   aria-label={`Select offer ${it.part_number ?? idx}`}
                                 />
                               </td>
-                              <td className="px-3 py-2 font-mono text-xs text-gray-900 sm:px-4">
+                              <td className="px-3 py-2 font-mono text-xs text-app-label sm:px-4">
                                 {it.part_number ?? '—'}
                               </td>
-                              <td className="px-3 py-2 text-gray-700 sm:px-4">{it.vendor_name ?? '—'}</td>
-                              <td className="px-3 py-2 tabular-nums text-gray-700 sm:px-4">{it.price ?? '—'}</td>
-                              <td className="px-3 py-2 tabular-nums text-gray-700 sm:px-4">
+                              <td className="px-3 py-2 text-app-secondary sm:px-4">{it.vendor_name ?? '—'}</td>
+                              <td className="px-3 py-2 tabular-nums text-app-secondary sm:px-4">{it.price ?? '—'}</td>
+                              <td className="px-3 py-2 tabular-nums text-app-secondary sm:px-4">
                                 {it.quantity ?? '—'}
                               </td>
                             </tr>
@@ -1098,18 +1099,18 @@ export function PurchaseOrderPage() {
                       <Plus className="h-4 w-4" aria-hidden />
                       Add selected to PO
                     </button>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-app-secondary">
                       Vendor on the PO header fills automatically if it is still empty and offers share a vendor.
                     </span>
                   </div>
                 </div>
               )}
 
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">PO details</p>
+              <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm sm:p-6">
+                <p className="text-xs font-medium uppercase tracking-wide text-app-secondary">PO details</p>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-app-secondary">
                       <Building2 className="h-3.5 w-3.5" aria-hidden />
                       Vendor name
                     </label>
@@ -1120,7 +1121,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-600">Vendor email</label>
+                    <label className="text-xs font-medium text-app-secondary">Vendor email</label>
                     <input
                       type="email"
                       className={`${inputClass} mt-1`}
@@ -1129,7 +1130,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div>
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-app-secondary">
                       <Calendar className="h-3.5 w-3.5" aria-hidden />
                       Issue date
                     </label>
@@ -1141,7 +1142,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-600">Required by</label>
+                    <label className="text-xs font-medium text-app-secondary">Required by</label>
                     <input
                       type="date"
                       className={`${inputClass} mt-1`}
@@ -1150,7 +1151,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-app-secondary">
                       <Truck className="h-3.5 w-3.5" aria-hidden />
                       Ship to
                     </label>
@@ -1162,7 +1163,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-600">Payment terms</label>
+                    <label className="text-xs font-medium text-app-secondary">Payment terms</label>
                     <input
                       className={`${inputClass} mt-1`}
                       value={selected.payment_terms}
@@ -1170,7 +1171,7 @@ export function PurchaseOrderPage() {
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="text-xs font-medium text-gray-600">Notes</label>
+                    <label className="text-xs font-medium text-app-secondary">Notes</label>
                     <textarea
                       rows={2}
                       className={`${inputClass} mt-1 resize-y`}
@@ -1181,13 +1182,13 @@ export function PurchaseOrderPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 sm:px-6">
-                  <h3 className="text-sm font-semibold text-gray-900">Line items</h3>
+              <div className="rounded-xl border border-app-separator bg-app-surface shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-app-separator px-4 py-3 sm:px-6">
+                  <h3 className="text-sm font-semibold text-app-label">Line items</h3>
                   <button
                     type="button"
                     onClick={addLine}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill focus:outline-none focus:ring-2 focus:ring-app-accent/30"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden />
                     Add line
@@ -1196,7 +1197,7 @@ export function PurchaseOrderPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[900px] text-left text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/80 text-xs font-medium uppercase tracking-wide text-gray-500">
+                      <tr className="border-b border-app-separator bg-app-fill/80 text-xs font-medium uppercase tracking-wide text-app-secondary">
                         <th className="px-3 py-2 sm:px-4">SKU</th>
                         <th className="px-3 py-2 sm:px-4">Description</th>
                         <th className="min-w-[200px] px-3 py-2 sm:px-4">Vendor URL</th>
@@ -1211,7 +1212,7 @@ export function PurchaseOrderPage() {
                       {selected.lines.map((line) => {
                         const vendorHref = vendorUrlForLink(line.vendor_url)
                         return (
-                          <tr key={line.id} className="hover:bg-gray-50/50">
+                          <tr key={line.id} className="hover:bg-app-fill/50">
                             <td className="px-3 py-2 sm:px-4">
                               <input
                                 className={`${inputClass} font-mono text-xs`}
@@ -1241,7 +1242,7 @@ export function PurchaseOrderPage() {
                                     href={vendorHref}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="shrink-0 rounded p-1 text-blue-600 hover:bg-blue-50"
+                                    className="shrink-0 rounded p-1 text-app-accent hover:bg-app-accent-soft"
                                     title="Open link"
                                   >
                                     <ExternalLink className="h-4 w-4" aria-hidden />
@@ -1282,7 +1283,7 @@ export function PurchaseOrderPage() {
                                 }
                               />
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-900 sm:px-4">
+                            <td className="px-3 py-2 text-right tabular-nums font-medium text-app-label sm:px-4">
                               {formatMoney(lineTotal(line))}
                             </td>
                             <td className="px-2 py-2">
@@ -1290,7 +1291,7 @@ export function PurchaseOrderPage() {
                                 type="button"
                                 onClick={() => removeLine(line.id)}
                                 disabled={selected.lines.length <= 1}
-                                className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-md p-1.5 text-app-tertiary hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label="Remove line"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1303,17 +1304,17 @@ export function PurchaseOrderPage() {
                   </table>
                 </div>
 
-                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-4 sm:px-6">
+                <div className="border-t border-app-separator bg-app-fill/50 px-4 py-4 sm:px-6">
                   <div className="ml-auto max-w-xs space-y-2 text-sm">
-                    <div className="flex justify-between tabular-nums text-gray-600">
+                    <div className="flex justify-between tabular-nums text-app-secondary">
                       <span>Subtotal</span>
                       <span>{formatMoney(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between tabular-nums text-gray-600">
+                    <div className="flex justify-between tabular-nums text-app-secondary">
                       <span>Tax ({(taxRate * 100).toFixed(0)}%)</span>
                       <span>{formatMoney(tax)}</span>
                     </div>
-                    <div className="flex justify-between border-t border-gray-200 pt-2 text-base font-semibold tabular-nums text-gray-900">
+                    <div className="flex justify-between border-t border-app-separator pt-2 text-base font-semibold tabular-nums text-app-label">
                       <span>Total</span>
                       <span>{formatMoney(grand)}</span>
                     </div>
@@ -1326,6 +1327,7 @@ export function PurchaseOrderPage() {
         </div>
       )}
 
+    </div>
     </div>
   )
 }

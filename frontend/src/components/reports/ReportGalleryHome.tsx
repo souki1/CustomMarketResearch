@@ -29,12 +29,12 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 
 const REPORT_TYPE_STYLES: Record<string, { bg: string; text: string }> = {
   RFQ: { bg: 'bg-emerald-50', text: 'text-emerald-800' },
-  Comparison: { bg: 'bg-blue-50', text: 'text-blue-700' },
+  Comparison: { bg: 'bg-app-accent-soft', text: 'text-app-accent' },
   Vendor: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
   Insights: { bg: 'bg-amber-50', text: 'text-amber-700' },
   Research: { bg: 'bg-violet-50', text: 'text-violet-700' },
   Spend: { bg: 'bg-red-50', text: 'text-red-600' },
-  Design: { bg: 'bg-slate-100', text: 'text-slate-600' },
+  Design: { bg: 'bg-app-fill', text: 'text-app-secondary' },
 }
 
 function inferReportType(title: string, index: number): string {
@@ -123,12 +123,12 @@ export function ReportGalleryHome({
   }, [exportError])
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-slate-50 text-slate-900">
-      <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-app-bg text-app-label">
+      <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-6 py-7 sm:px-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="m-0 text-lg font-bold tracking-tight text-slate-900">Reports</h1>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <h1 className="m-0 text-[28px] font-semibold tracking-[-0.03em] text-app-label">Reports</h1>
+            <p className="mt-1 text-[13px] text-app-secondary">
               Create and edit Word-style reports; export as .docx.
             </p>
           </div>
@@ -137,7 +137,7 @@ export function ReportGalleryHome({
               type="button"
               disabled={uploadingDocx}
               onClick={() => docxInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-200 bg-white px-2.5 py-[5px] text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-app-separator bg-app-surface px-2.5 py-[5px] text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
             >
               {uploadingDocx ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -156,7 +156,7 @@ export function ReportGalleryHome({
             <button
               type="button"
               onClick={onOpenStudioAi}
-              className="inline-flex items-center gap-1.5 rounded-[5px] border border-slate-200 bg-white px-2.5 py-[5px] text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-[5px] border border-app-separator bg-app-surface px-2.5 py-[5px] text-xs font-medium text-app-secondary hover:bg-app-fill"
             >
               <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />
               AI report
@@ -164,7 +164,7 @@ export function ReportGalleryHome({
             <button
               type="button"
               onClick={onOpenStudioNew}
-              className="inline-flex items-center gap-1.5 rounded-[5px] bg-blue-600 px-2.5 py-[5px] text-xs font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-1.5 rounded-[5px] bg-app-accent px-2.5 py-[5px] text-xs font-medium text-white hover:bg-app-accent-hover"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
               New report
@@ -181,21 +181,21 @@ export function ReportGalleryHome({
         <div className="mt-4 flex flex-col gap-2.5">
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-app-tertiary" />
             </div>
           ) : sorted.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-white px-8 py-16 text-center">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+            <div className="rounded-lg border border-app-separator bg-app-surface px-8 py-16 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-app-fill text-app-tertiary">
                 <FileText className="h-5 w-5" strokeWidth={1.75} />
               </div>
-              <p className="mt-4 text-sm font-medium text-slate-700">No reports yet</p>
-              <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">
+              <p className="mt-4 text-sm font-medium text-app-secondary">No reports yet</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs text-app-secondary">
                 Create your first report from a blank canvas or generate one with AI.
               </p>
               <button
                 type="button"
                 onClick={onOpenStudioAi}
-                className="mt-5 inline-flex items-center gap-1.5 rounded-[5px] bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                className="mt-5 inline-flex items-center gap-1.5 rounded-[5px] bg-app-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-app-accent-hover"
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 Make report with AI
@@ -209,7 +209,7 @@ export function ReportGalleryHome({
               return (
                 <div
                   key={report.id}
-                  className="flex flex-wrap items-center gap-3.5 rounded-lg border border-slate-200 bg-white px-4 py-3.5 sm:flex-nowrap"
+                  className="flex flex-wrap items-center gap-3.5 rounded-lg border border-app-separator bg-app-surface px-4 py-3.5 sm:flex-nowrap"
                 >
                   <div
                     className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg ${typeStyle.bg}`}
@@ -218,21 +218,21 @@ export function ReportGalleryHome({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-800">{report.title}</span>
+                      <span className="text-sm font-semibold text-app-label">{report.title}</span>
                       <span
                         className={`rounded px-1.5 py-px text-[11px] font-medium ${typeStyle.bg} ${typeStyle.text}`}
                       >
                         {type}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500">{reportDescription(report)}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">{formatCreated(report.createdAt)}</p>
+                    <p className="text-xs text-app-secondary">{reportDescription(report)}</p>
+                    <p className="mt-0.5 text-[11px] text-app-tertiary">{formatCreated(report.createdAt)}</p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => onOpenStudioEdit(report)}
-                      className="inline-flex items-center gap-1 rounded-[5px] border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-1 rounded-[5px] border border-app-separator bg-app-surface px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
                     >
                       <Pencil className="h-3 w-3" strokeWidth={1.75} />
                       Edit
@@ -241,7 +241,7 @@ export function ReportGalleryHome({
                       type="button"
                       disabled={isExporting}
                       onClick={() => void handleExport(report.id, report.title)}
-                      className="inline-flex items-center gap-1 rounded-[5px] px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-[5px] px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill-strong disabled:opacity-50"
                     >
                       {isExporting ? (
                         <RefreshCw className="h-3 w-3 animate-spin" />
@@ -253,7 +253,7 @@ export function ReportGalleryHome({
                     <button
                       type="button"
                       onClick={() => onDeleteReport(report.id)}
-                      className="inline-flex items-center rounded-[5px] p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      className="inline-flex items-center rounded-[5px] p-1.5 text-app-tertiary hover:bg-red-50 hover:text-red-600"
                       title="Delete report"
                       aria-label={`Delete ${report.title}`}
                     >

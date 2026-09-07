@@ -68,21 +68,21 @@ function formatUsd(n: number, maxFraction = 0): string {
 
 function ScoreBar({ score }: { score: number }) {
   const barColor =
-    score >= 70 ? 'bg-emerald-500' : score >= 45 ? 'bg-blue-500' : score >= 25 ? 'bg-amber-500' : 'bg-red-500'
+    score >= 70 ? 'bg-emerald-500' : score >= 45 ? 'bg-app-accent' : score >= 25 ? 'bg-amber-500' : 'bg-red-500'
   const textColor =
     score >= 70
       ? 'text-emerald-600'
       : score >= 45
-        ? 'text-blue-600'
+        ? 'text-app-accent'
         : score >= 25
           ? 'text-amber-600'
           : 'text-red-600'
   return (
     <div className="flex items-center gap-1.5">
-      <div className="h-[3px] w-11 overflow-hidden rounded-sm bg-slate-200">
-        <div className={`h-full rounded-sm ${barColor}`} style={{ width: `${Math.min(100, score)}%` }} />
+      <div className="h-1 w-11 overflow-hidden rounded-full bg-app-fill">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, score)}%` }} />
       </div>
-      <span className={`min-w-[18px] font-mono text-[11px] font-semibold ${textColor}`}>{score}</span>
+      <span className={`min-w-[18px] font-medium tabular-nums text-xs ${textColor}`}>{score}</span>
     </div>
   )
 }
@@ -99,12 +99,12 @@ function DashboardCard({
   className?: string
 }) {
   return (
-    <div className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${className}`}>
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-        <span className="text-[13px] font-semibold text-slate-800">{title}</span>
+    <div className={`overflow-hidden rounded-[12px] border border-app-separator bg-app-surface ${className}`}>
+      <div className="flex items-center justify-between px-4 py-3">
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-app-label">{title}</span>
         {action && (
-          <Link to={action.to} className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
-            {action.label} →
+          <Link to={action.to} className="text-[13px] font-medium text-app-accent hover:text-app-accent-hover">
+            {action.label}
           </Link>
         )}
       </div>
@@ -139,7 +139,9 @@ export function EnterpriseDashboard({
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const coveragePct = totalParts > 0 ? Math.round((partsResearched / totalParts) * 100) : 0
   const spendLatest = spendTrend[spendTrend.length - 1] ?? 0
-  const researchLatest = researchTrend[researchTrend.length - 1] ?? coveragePct
+  const researchLatest = coveragePct
+  const spendHasHistory = spendLatest > 0
+  const researchHasHistory = totalParts > 0
 
   const kpis = [
     {
@@ -154,7 +156,7 @@ export function EnterpriseDashboard({
             : 'No parts yet',
       trend: partsResearched > 0 ? `${coveragePct}% coverage` : '—',
       trendUp: partsResearched > 0,
-      color: 'text-blue-600',
+      color: 'text-app-accent',
     },
     {
       label: 'Active Vendors',
@@ -191,7 +193,7 @@ export function EnterpriseDashboard({
             ? `${unresearchedParts} pending research`
             : 'All caught up',
       trendUp: false,
-      color: 'text-slate-600',
+      color: 'text-app-secondary',
     },
   ]
 
@@ -200,9 +202,9 @@ export function EnterpriseDashboard({
       icon: FileUp,
       label: 'Upload new file',
       sub: 'CSV or XLSX',
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
-      border: 'border-blue-600/15',
+      color: 'text-app-accent',
+      bg: 'bg-app-accent-soft',
+      border: 'border-app-accent/15',
       to: FILES_PATH,
     },
     {
@@ -236,117 +238,140 @@ export function EnterpriseDashboard({
       icon: ShoppingCart,
       label: 'Finalize bucket order',
       sub: `${formatUsd(bucketTotal, 2)} ready`,
-      color: 'text-slate-600',
-      bg: 'bg-slate-50',
-      border: 'border-slate-300/40',
+      color: 'text-app-secondary',
+      bg: 'bg-app-fill',
+      border: 'border-app-separator/40',
       to: BUCKET_PATH,
     },
   ]
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] bg-slate-800 px-5 py-4 sm:px-6">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-4 px-0.5 pt-1">
         <div>
-          <div className="mb-1 text-[11px] uppercase tracking-[0.06em] text-slate-400">{dateLabel}</div>
-          <div className="text-xl font-bold tracking-tight text-white">
-            {greeting}, {displayName} 👋
-          </div>
-          <div className="mt-1.5 text-[13px] text-slate-400">
-            <span className="font-medium text-blue-400">{unresearchedParts} parts</span> still unresearched
-            {' · '}
-            <span className="font-medium text-emerald-400">{formatUsd(savingsTotal)}</span> in savings ready to
-            action
-          </div>
+          <p className="text-xs font-medium tracking-[0.02em] text-app-tertiary">{dateLabel}</p>
+          <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-[-0.03em] text-app-label">
+            {greeting}, {displayName}
+          </h1>
+          <p className="mt-1.5 text-[13px] text-app-secondary">
+            {unresearchedParts > 0 ? (
+              <>
+                <span className="font-medium text-app-label">{unresearchedParts} parts</span> still need
+                research
+              </>
+            ) : totalParts > 0 ? (
+              'All tracked parts are researched'
+            ) : (
+              'Upload a file to start researching parts'
+            )}
+            {savingsTotal > 0 ? (
+              <>
+                {' · '}
+                <span className="font-medium text-app-label">{formatUsd(savingsTotal)}</span> in savings
+              </>
+            ) : null}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             to={FILES_PATH}
-            className="rounded-md border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/10"
+            className="inline-flex h-9 items-center rounded-[10px] bg-app-fill px-3.5 text-[13px] font-medium text-app-label hover:bg-app-fill-strong"
           >
             Upload file
           </Link>
           <Link
             to={RESEARCH_PATH}
-            className="rounded-md bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+            className="inline-flex h-9 items-center rounded-[10px] bg-app-accent px-3.5 text-[13px] font-semibold text-white hover:bg-app-accent-hover"
           >
-            Research all →
+            Open research
           </Link>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {kpis.map((k) => (
-          <div key={k.label} className="rounded-lg border border-slate-200 bg-white px-4 py-3.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
-            <p className={`mt-1.5 font-mono text-[22px] font-bold ${k.color}`}>{k.value}</p>
-            <p className={`text-[11px] font-medium ${k.trendUp ? 'text-emerald-600' : 'text-slate-500'}`}>
-              {k.trend}
+          <div key={k.label} className="rounded-[12px] border border-app-separator bg-app-surface px-4 py-3.5">
+            <p className="text-xs font-medium text-app-secondary">{k.label}</p>
+            <p className="mt-1.5 text-[22px] font-semibold tracking-[-0.03em] tabular-nums text-app-label">
+              {k.value}
             </p>
-            <p className="mt-0.5 text-[10px] text-slate-400">{k.sub}</p>
+            <p className="mt-1 text-xs text-app-secondary">{k.sub || k.trend}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[1fr_1fr_220px]">
-        <DashboardCard title="Procurement Spend" action={{ label: 'View bucket', to: BUCKET_PATH }}>
-          <div className="px-4 py-3.5">
-            <div className="mb-2.5 flex items-end gap-2.5">
-              <span className="font-mono text-2xl font-bold text-slate-900">
-                {formatUsd(spendLatest)}
-              </span>
-              <span className="mb-0.5 text-xs font-medium text-emerald-600">↑ 18% vs last month</span>
-            </div>
-            <LineChart data={spendTrend} color="#2563eb" height={72} width={280} />
-            <div className="mt-1 flex justify-between">
-              {MONTH_LABELS.map((l) => (
-                <span key={l} className="text-[9px] text-slate-400">
-                  {l}
-                </span>
-              ))}
-            </div>
+        <DashboardCard title="Procurement spend" action={{ label: 'View bucket', to: BUCKET_PATH }}>
+          <div className="px-4 pb-4">
+            <p className="text-[22px] font-semibold tracking-[-0.03em] tabular-nums text-app-label">
+              {formatUsd(spendLatest)}
+            </p>
+            {spendHasHistory ? (
+              <>
+                <LineChart data={spendTrend} color="#007aff" height={72} width={280} />
+                <div className="mt-1 flex justify-between">
+                  {MONTH_LABELS.map((l) => (
+                    <span key={l} className="text-xs text-app-tertiary">
+                      {l}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-[13px] text-app-secondary">
+                Spend appears here after you add priced parts to the bucket.
+              </p>
+            )}
           </div>
         </DashboardCard>
 
-        <DashboardCard title="Research Progress" action={{ label: 'Open research', to: RESEARCH_PATH }}>
-          <div className="px-4 py-3.5">
-            <div className="mb-2.5 flex items-end gap-2.5">
-              <span className="font-mono text-2xl font-bold text-slate-900">{researchLatest}%</span>
-              <span className="mb-0.5 text-xs font-medium text-emerald-600">↑ 7% this week</span>
-            </div>
-            <LineChart data={researchTrend} color="#16a34a" height={72} width={280} />
-            <div className="mt-1 flex justify-between">
-              {MONTH_LABELS.map((l) => (
-                <span key={l} className="text-[9px] text-slate-400">
-                  {l}
-                </span>
-              ))}
-            </div>
+        <DashboardCard title="Research progress" action={{ label: 'Open research', to: RESEARCH_PATH }}>
+          <div className="px-4 pb-4">
+            <p className="text-[22px] font-semibold tracking-[-0.03em] tabular-nums text-app-label">
+              {researchLatest}%
+            </p>
+            {researchHasHistory ? (
+              <>
+                <LineChart data={researchTrend} color="#34c759" height={72} width={280} />
+                <div className="mt-1 flex justify-between">
+                  {MONTH_LABELS.map((l) => (
+                    <span key={l} className="text-xs text-app-tertiary">
+                      {l}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-[13px] text-app-secondary">
+                Progress appears after you research parts in a sheet.
+              </p>
+            )}
           </div>
         </DashboardCard>
 
         <DashboardCard title="Coverage">
-          <div className="flex flex-col items-center gap-3 px-4 py-3.5">
+          <div className="flex flex-col items-center gap-3 px-4 pb-4">
             <DonutChart
               segments={[
-                { value: partsResearched, color: '#2563eb' },
-                { value: Math.max(0, totalParts - partsResearched), color: '#e5e7eb' },
+                { value: partsResearched, color: '#007aff' },
+                { value: Math.max(0, totalParts - partsResearched), color: 'var(--app-fill-strong)' },
               ]}
               size={90}
             />
             <div className="flex w-full flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-blue-600" />
-                  <span className="text-[11px] text-slate-600">Researched</span>
+                  <span className="inline-block h-2 w-2 rounded-full bg-app-accent" />
+                  <span className="text-[13px] text-app-secondary">Researched</span>
                 </div>
-                <span className="font-mono text-[11px] font-semibold text-slate-800">{partsResearched}</span>
+                <span className="text-[13px] font-medium tabular-nums text-app-label">{partsResearched}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-slate-200" />
-                  <span className="text-[11px] text-slate-600">Pending</span>
+                  <span className="inline-block h-2 w-2 rounded-full bg-app-fill-strong" />
+                  <span className="text-[13px] text-app-secondary">Pending</span>
                 </div>
-                <span className="font-mono text-[11px] font-semibold text-slate-800">
+                <span className="text-[13px] font-medium tabular-nums text-app-label">
                   {Math.max(0, totalParts - partsResearched)}
                 </span>
               </div>
@@ -356,29 +381,24 @@ export function EnterpriseDashboard({
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
-        <DashboardCard title="Research by Category">
-          <div className="flex flex-col gap-2 px-4 py-3">
+        <DashboardCard title="Research by category">
+          <div className="flex flex-col gap-2.5 px-4 pb-4">
             {categoryRows.length === 0 ? (
-              <p className="py-4 text-center text-xs text-slate-400">No category data yet</p>
+              <p className="py-6 text-center text-[13px] text-app-secondary">No category data yet</p>
             ) : (
               categoryRows.map((row) => {
                 const pct = row.total > 0 ? Math.round((row.found / row.total) * 100) : 0
-                const barColor = pct === 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'
-                const textColor =
-                  pct === 100 ? 'text-emerald-600' : pct >= 50 ? 'text-blue-600' : 'text-amber-600'
+                const barColor = pct === 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-app-accent' : 'bg-amber-500'
                 return (
                   <div key={row.label}>
-                    <div className="mb-0.5 flex justify-between">
-                      <span className="text-xs text-slate-600">{row.label}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] text-slate-400">
-                          {row.found}/{row.total}
-                        </span>
-                        <span className={`text-[11px] font-semibold ${textColor}`}>{pct}%</span>
-                      </div>
+                    <div className="mb-1 flex justify-between gap-2">
+                      <span className="text-[13px] text-app-label">{row.label}</span>
+                      <span className="text-xs tabular-nums text-app-secondary">
+                        {row.found}/{row.total} · {pct}%
+                      </span>
                     </div>
-                    <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
-                      <div className={`h-full rounded-sm ${barColor}`} style={{ width: `${pct}%` }} />
+                    <div className="h-1 overflow-hidden rounded-full bg-app-fill">
+                      <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )
@@ -387,86 +407,82 @@ export function EnterpriseDashboard({
           </div>
         </DashboardCard>
 
-        <DashboardCard title="Top Vendors" action={{ label: 'Compare', to: RESEARCH_COMPARE_PATH }}>
+        <DashboardCard title="Top vendors" action={{ label: 'Compare', to: RESEARCH_COMPARE_PATH }}>
           {topVendors.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-slate-400">No vendor data yet</p>
+            <p className="px-4 py-8 text-center text-[13px] text-app-secondary">No vendor data yet</p>
           ) : (
             topVendors.map((v, i) => (
               <div
                 key={v.name}
-                className={`flex items-center gap-2.5 px-4 py-2.5 ${i < topVendors.length - 1 ? 'border-b border-slate-100' : ''}`}
+                className={`flex items-center gap-2.5 px-4 py-2.5 ${i < topVendors.length - 1 ? 'border-b border-app-separator' : ''}`}
               >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-100 text-[10px] font-bold text-slate-500">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-app-fill text-xs font-semibold text-app-secondary">
                   {v.name[0]?.toUpperCase() ?? '?'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-slate-800">{v.name}</div>
+                  <div className="truncate text-[13px] font-medium text-app-label">{v.name}</div>
                   <ScoreBar score={v.score} />
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="font-mono text-xs font-semibold text-slate-800">
+                  <div className="text-[13px] font-semibold tabular-nums text-app-label">
                     {formatUsd(v.spend, 2)}
                   </div>
-                  <div
-                    className={`text-[11px] ${
-                      v.trend === 'up'
-                        ? 'text-emerald-600'
-                        : v.trend === 'down'
-                          ? 'text-red-600'
-                          : 'text-slate-400'
-                    }`}
-                  >
-                    {v.trend === 'up' ? '↑' : v.trend === 'down' ? '↓' : '→'} {v.parts} parts
-                  </div>
+                  <div className="text-xs text-app-secondary">{v.parts} parts</div>
                 </div>
               </div>
             ))
           )}
         </DashboardCard>
 
-        <DashboardCard title="Recent Activity">
-          <div className="px-3 py-2">
-            {recentActivity.map((a, i) => (
-              <div
-                key={i}
-                className={`flex gap-2 py-1.5 ${i < recentActivity.length - 1 ? 'border-b border-slate-50' : ''}`}
-              >
+        <DashboardCard title="Recent activity">
+          <div className="px-3 pb-3">
+            {recentActivity.length === 0 ? (
+              <p className="px-1 py-8 text-center text-[13px] text-app-secondary">
+                Activity from research and the bucket will show up here.
+              </p>
+            ) : (
+              recentActivity.map((a, i) => (
                 <div
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${a.accentClass}`}
+                  key={i}
+                  className={`flex gap-2.5 py-2 ${i < recentActivity.length - 1 ? 'border-b border-app-separator' : ''}`}
                 >
-                  {a.icon}
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] ${a.accentClass}`}
+                  >
+                    {a.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] leading-snug text-app-label">{a.message}</div>
+                    <div className="mt-0.5 text-xs text-app-secondary">{a.time}</div>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] leading-snug text-slate-600">{a.message}</div>
-                  <div className="text-[10px] text-slate-400">{a.time}</div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </DashboardCard>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3.5">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Quick actions</p>
+      <div className="rounded-[12px] border border-app-separator bg-app-surface px-4 py-4">
+        <p className="mb-3 text-xs font-semibold tracking-[0.04em] text-app-tertiary">Quick actions</p>
         <div className="flex flex-wrap gap-2.5">
           {quickActions.map((q) => (
             <Link
               key={q.label}
               to={q.to}
-              className={`flex min-w-[160px] flex-1 items-center gap-2.5 rounded-lg border px-3.5 py-2.5 transition-colors hover:opacity-90 ${q.bg} ${q.border}`}
+              className="flex min-w-[160px] flex-1 items-center gap-2.5 rounded-[10px] bg-app-fill px-3.5 py-2.5 transition-colors hover:bg-app-fill-strong"
             >
-              <q.icon className={`h-[18px] w-[18px] shrink-0 ${q.color}`} strokeWidth={1.75} />
+              <q.icon className="h-[18px] w-[18px] shrink-0 text-app-accent" strokeWidth={1.75} />
               <div className="min-w-0 text-left">
-                <div className={`text-xs font-semibold ${q.color}`}>{q.label}</div>
-                <div className="mt-0.5 text-[11px] text-slate-500">{q.sub}</div>
+                <div className="text-[13px] font-medium text-app-label">{q.label}</div>
+                <div className="mt-0.5 text-xs text-app-secondary">{q.sub}</div>
               </div>
             </Link>
           ))}
           <Link
             to={WISHLIST_PATH}
-            className="flex min-w-[140px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-500 hover:border-slate-300 hover:text-slate-700"
+            className="flex min-w-[140px] flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-app-separator px-3 py-2.5 text-[13px] font-medium text-app-secondary hover:bg-app-fill hover:text-app-label"
           >
-            <BarChart3 className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <BarChart3 className="h-4 w-4" strokeWidth={1.75} />
             Wishlists
           </Link>
         </div>

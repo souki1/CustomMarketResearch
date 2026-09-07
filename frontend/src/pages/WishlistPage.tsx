@@ -1207,29 +1207,29 @@ export function WishlistPage() {
       className={
         pageLayout === 'lists'
           ? // Bound the board to the viewport so list columns scroll internally.
-            'flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden'
-          : 'flex min-h-full w-full flex-col'
+            'flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-app-bg'
+          : 'flex min-h-full w-full flex-col bg-app-bg'
       }
     >
-      <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
-        <button
-          type="button"
-          onClick={() => setPageLayout('lists')}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-            pageLayout === 'lists' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Lists
-        </button>
-        <button
-          type="button"
-          onClick={() => setPageLayout('workspace')}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-            pageLayout === 'workspace' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Workspace sheets
-        </button>
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-app-separator bg-app-surface/80 px-4 backdrop-blur-xl">
+        <div className="app-segmented" role="tablist" aria-label="Wishlist layout">
+          <button
+            type="button"
+            aria-pressed={pageLayout === 'lists'}
+            data-active={pageLayout === 'lists' ? 'true' : undefined}
+            onClick={() => setPageLayout('lists')}
+          >
+            Lists
+          </button>
+          <button
+            type="button"
+            aria-pressed={pageLayout === 'workspace'}
+            data-active={pageLayout === 'workspace' ? 'true' : undefined}
+            onClick={() => setPageLayout('workspace')}
+          >
+            Sheets
+          </button>
+        </div>
       </div>
 
       {pageLayout === 'lists' ? (
@@ -1239,7 +1239,7 @@ export function WishlistPage() {
       ) : (
     <div className="flex min-h-full w-full flex-col p-4">
       <div
-        className="flex flex-wrap items-end gap-1 border-b border-gray-200"
+        className="flex flex-wrap items-end gap-1 border-b border-app-separator"
         role="tablist"
         aria-label="Wishlist sheets"
       >
@@ -1253,10 +1253,10 @@ export function WishlistPage() {
               aria-selected={selected}
               id={`wishlist-tab-${tab.id}`}
               onClick={() => setActiveId(tab.id)}
-              className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2 ${
+              className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 focus-visible:ring-offset-app-bg ${
                 selected
-                  ? 'border-b-2 border-blue-600 text-blue-600 -mb-px bg-white'
-                  : 'border-b-2 border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-b-2 border-app-accent text-app-accent -mb-px bg-app-surface'
+                  : 'border-b-2 border-transparent text-app-secondary hover:text-app-label'
               }`}
             >
               {tab.name}
@@ -1266,7 +1266,7 @@ export function WishlistPage() {
         <button
           type="button"
           onClick={openPicker}
-          className="mb-0.5 ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+          className="mb-0.5 ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-app-secondary hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
         >
           <Plus className="h-4 w-4" aria-hidden />
           New tab
@@ -1279,20 +1279,20 @@ export function WishlistPage() {
         className="mt-6 w-full min-w-0 flex-1 pb-8"
       >
         {!token && (
-          <p className="text-sm text-gray-600">Sign in to load and view workspace data in each tab.</p>
+          <p className="text-sm text-app-secondary">Sign in to load and view workspace data in each tab.</p>
         )}
         {token && tabs.length === 0 && (
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-app-secondary">
             Use <span className="font-medium">New tab</span> to pick workspace files and columns. Your filtered data
             appears here.
           </p>
         )}
         {token && tabs.length > 0 && !activeTab && (
-          <p className="text-sm text-gray-600">Select a tab above to view its data.</p>
+          <p className="text-sm text-app-secondary">Select a tab above to view its data.</p>
         )}
         {tabLoading && (
-          <div className="flex items-center gap-2 text-sm text-gray-600" aria-live="polite">
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" aria-hidden />
+          <div className="flex items-center gap-2 text-sm text-app-secondary" aria-live="polite">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-app-accent" aria-hidden />
             Loading tab data…
           </div>
         )}
@@ -1322,7 +1322,7 @@ export function WishlistPage() {
                 prefs.search.trim() !== '' ||
                 (prefs.filterColumnIndex != null && prefs.filterText.trim() !== '')
               const inputCls =
-                'mt-0.5 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 shadow-sm outline-none placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+                'mt-0.5 w-full min-w-0 rounded-lg border border-app-separator bg-app-surface px-2.5 py-1.5 text-sm text-app-label shadow-sm outline-none placeholder:text-app-tertiary focus:border-app-accent focus:ring-2 focus:ring-app-accent/20'
 
               const sheetFieldIndices = section.headers.map((_, i) => i).filter((i) => i < section.csvColumnCount)
               const scrapedFieldIndices = section.headers.map((_, i) => i).filter((i) => i >= section.csvColumnCount)
@@ -1371,13 +1371,13 @@ export function WishlistPage() {
                 const checked = prefs.visibleColIndices.has(hi)
                 const labelClass =
                   variant === 'sheet'
-                    ? 'text-gray-800'
+                    ? 'text-app-label'
                     : variant === 'common'
                       ? 'text-emerald-900'
-                      : 'text-gray-700'
+                      : 'text-app-secondary'
                 return (
                   <li key={hi}>
-                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50">
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-app-fill">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -1395,12 +1395,12 @@ export function WishlistPage() {
                             return { ...prev, [sk]: { ...cur, visibleColIndices: next } }
                           })
                         }}
-                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500/40"
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-app-separator text-app-accent focus:ring-app-accent/40"
                       />
                       <span className={`min-w-0 flex-1 text-xs leading-snug ${labelClass}`}>
                         {h}
                         {variant === 'extra' && (
-                          <span className="mt-0.5 block text-[10px] font-normal text-gray-500">
+                          <span className="mt-0.5 block text-[10px] font-normal text-app-secondary">
                             Optional — off by default
                           </span>
                         )}
@@ -1413,9 +1413,9 @@ export function WishlistPage() {
               return (
                 <div key={section.fileId}>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <FileText className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-                    <h3 className="text-sm font-semibold text-gray-900">{section.name}</h3>
-                    <span className="text-xs text-gray-500">
+                    <FileText className="h-4 w-4 shrink-0 text-app-tertiary" aria-hidden />
+                    <h3 className="text-sm font-semibold text-app-label">{section.name}</h3>
+                    <span className="text-xs text-app-secondary">
                       {showBoard
                         ? matrixModel && matrixModel.vendorColumns.length > 0
                           ? matrixRowsFiltered.length === section.rows.length
@@ -1439,13 +1439,13 @@ export function WishlistPage() {
                       No columns matched this file. The header row may have changed.
                     </p>
                   ) : section.rows.length === 0 ? (
-                    <p className="text-sm text-gray-600">No data rows under the header row.</p>
+                    <p className="text-sm text-app-secondary">No data rows under the header row.</p>
                   ) : (
                     <>
-                      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+                      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-app-separator bg-app-fill/80 p-3">
                         <label className="flex  max-w-md flex-1 flex-col">
-                          <span className="flex items-center gap-1 text-xs font-medium text-gray-600">
-                            <ListFilter className="h-3.5 w-3.5 text-gray-500" aria-hidden />
+                          <span className="flex items-center gap-1 text-xs font-medium text-app-secondary">
+                            <ListFilter className="h-3.5 w-3.5 text-app-secondary" aria-hidden />
                             Search rows
                           </span>
                           <input
@@ -1463,7 +1463,7 @@ export function WishlistPage() {
                             autoComplete="off"
                           />
                         </label>
-                        <div className="flex flex-wrap rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+                        <div className="flex flex-wrap rounded-lg border border-app-separator bg-app-surface p-0.5 shadow-sm">
                           {matrixModel && matrixModel.vendorColumns.length > 0 ? (
                             <button
                               type="button"
@@ -1475,8 +1475,8 @@ export function WishlistPage() {
                               }}
                               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium ${
                                 showMatrix
-                                  ? 'bg-blue-600 text-white shadow-sm'
-                                  : 'text-gray-600 hover:bg-gray-50'
+                                  ? 'bg-app-accent text-white shadow-sm'
+                                  : 'text-app-secondary hover:bg-app-fill'
                               }`}
                             >
                               <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
@@ -1493,8 +1493,8 @@ export function WishlistPage() {
                             }}
                             className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium ${
                               tableViewMode === 'classic'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-gray-600 hover:bg-gray-50'
+                                ? 'bg-app-accent text-white shadow-sm'
+                                : 'text-app-secondary hover:bg-app-fill'
                             }`}
                           >
                             <Table2 className="h-3.5 w-3.5" aria-hidden />
@@ -1510,8 +1510,8 @@ export function WishlistPage() {
                             }}
                             className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium ${
                               showBoard
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-gray-600 hover:bg-gray-50'
+                                ? 'bg-app-accent text-white shadow-sm'
+                                : 'text-app-secondary hover:bg-app-fill'
                             }`}
                           >
                             <Kanban className="h-3.5 w-3.5" aria-hidden />
@@ -1521,7 +1521,7 @@ export function WishlistPage() {
                         {tableViewMode === 'classic' && (
                           <>
                             <label className="flex min-w-[9rem] flex-col">
-                              <span className="text-xs font-medium text-gray-600">Filter column</span>
+                              <span className="text-xs font-medium text-app-secondary">Filter column</span>
                               <select
                                 value={prefs.filterColumnIndex ?? ''}
                                 onChange={(e) => {
@@ -1551,7 +1551,7 @@ export function WishlistPage() {
                             <label
                               className={`flex min-w-[8rem] flex-1 flex-col ${prefs.filterColumnIndex == null ? 'opacity-50' : ''}`}
                             >
-                              <span className="text-xs font-medium text-gray-600">Contains</span>
+                              <span className="text-xs font-medium text-app-secondary">Contains</span>
                               <input
                                 type="text"
                                 value={prefs.filterText}
@@ -1575,14 +1575,14 @@ export function WishlistPage() {
                           <button
                             type="button"
                             onClick={() => setOpenFieldsKey((k) => (k === sk ? null : sk))}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-800 shadow-sm hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-xs font-medium text-app-label shadow-sm hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
                             aria-expanded={openFieldsKey === sk}
                             aria-controls={`wishlist-fields-${sk}`}
                           >
-                            <Columns3 className="h-4 w-4 text-gray-500" aria-hidden />
+                            <Columns3 className="h-4 w-4 text-app-secondary" aria-hidden />
                             Fields
                             <ChevronDown
-                              className={`h-3.5 w-3.5 text-gray-500 transition-transform ${openFieldsKey === sk ? 'rotate-180' : ''}`}
+                              className={`h-3.5 w-3.5 text-app-secondary transition-transform ${openFieldsKey === sk ? 'rotate-180' : ''}`}
                               aria-hidden
                             />
                           </button>
@@ -1596,14 +1596,14 @@ export function WishlistPage() {
                               />
                               <div
                                 id={`wishlist-fields-${sk}`}
-                                className="absolute right-0 z-50 mt-1 max-h-[min(70vh,28rem)] w-[min(100vw-2rem,22rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+                                className="absolute right-0 z-50 mt-1 max-h-[min(70vh,28rem)] w-[min(100vw-2rem,22rem)] overflow-y-auto rounded-lg border border-app-separator bg-app-surface py-2 shadow-lg"
                                 role="listbox"
                                 aria-label="Visible columns"
                               >
-                                <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-gray-100 px-2 pb-2">
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-app-separator px-2 pb-2">
                                   <button
                                     type="button"
-                                    className="text-xs font-medium text-blue-600 hover:underline"
+                                    className="text-xs font-medium text-app-accent hover:underline"
                                     onClick={() =>
                                       setSectionPrefs((prev) => {
                                         const cur = prev[sk] ?? defaultSectionPrefsForSection(section)
@@ -1639,7 +1639,7 @@ export function WishlistPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="text-xs font-medium text-gray-600 hover:underline"
+                                    className="text-xs font-medium text-app-secondary hover:underline"
                                     onClick={() => {
                                       setSectionPrefs((prev) => {
                                         const cur = prev[sk] ?? defaultSectionPrefsForSection(section)
@@ -1656,7 +1656,7 @@ export function WishlistPage() {
                                 <ul className="px-1 pt-1">
                                   {sheetFieldIndices.length > 0 && (
                                     <>
-                                      <li className="list-none px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                                      <li className="list-none px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-app-secondary">
                                         Sheet columns
                                       </li>
                                       {sheetFieldIndices.map((hi) => renderFieldCheckbox(hi, 'sheet'))}
@@ -1675,7 +1675,7 @@ export function WishlistPage() {
                                       <li className="list-none px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                                         Additional fields
                                       </li>
-                                      <li className="list-none px-2 pb-1 text-[10px] leading-snug text-gray-500">
+                                      <li className="list-none px-2 pb-1 text-[10px] leading-snug text-app-secondary">
                                         Turn on to add columns to the table. Long product detail keys stay here.
                                       </li>
                                       {extraScrapedIndices.map((hi) => renderFieldCheckbox(hi, 'extra'))}
@@ -1705,7 +1705,7 @@ export function WishlistPage() {
                               })
                               setActiveWishlistGroupBySection((prev) => ({ ...prev, [sk]: '' }))
                             }}
-                            className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-gray-600 hover:bg-gray-200/60"
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-app-secondary hover:bg-app-fill"
                           >
                             <X className="h-3.5 w-3.5" aria-hidden />
                             {activeWishlistGroupId ? 'Clear filters & group' : 'Clear filters'}
@@ -1770,7 +1770,7 @@ export function WishlistPage() {
                               }))
                               setActiveWishlistGroupBySection((prev) => ({ ...prev, [sk]: newG.id }))
                             }}
-                            className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-medium text-violet-950 shadow-sm hover:bg-violet-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+                            className="rounded-lg border border-violet-300 bg-app-surface px-3 py-2 text-xs font-medium text-violet-950 shadow-sm hover:bg-violet-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
                           >
                             From selection
                           </button>
@@ -1796,7 +1796,7 @@ export function WishlistPage() {
                               }))
                               setActiveWishlistGroupBySection((prev) => ({ ...prev, [sk]: newG.id }))
                             }}
-                            className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-medium text-violet-950 shadow-sm hover:bg-violet-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+                            className="rounded-lg border border-violet-300 bg-app-surface px-3 py-2 text-xs font-medium text-violet-950 shadow-sm hover:bg-violet-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
                           >
                             Save filters as group
                           </button>
@@ -1810,7 +1810,7 @@ export function WishlistPage() {
                             className={`rounded-lg border px-3 py-2 text-xs font-medium shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40 ${
                               wishlistSplitDraft?.sk === sk
                                 ? 'border-violet-600 bg-violet-600 text-white'
-                                : 'border-violet-300 bg-white text-violet-950 hover:bg-violet-50'
+                                : 'border-violet-300 bg-app-surface text-violet-950 hover:bg-violet-50'
                             }`}
                           >
                             Split by column…
@@ -1825,7 +1825,7 @@ export function WishlistPage() {
                                 }))
                                 setActiveWishlistGroupBySection((prev) => ({ ...prev, [sk]: '' }))
                               }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-app-surface px-3 py-2 text-xs font-medium text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden />
                               Delete group
@@ -1882,7 +1882,7 @@ export function WishlistPage() {
                             <button
                               type="button"
                               onClick={() => setWishlistSplitDraft(null)}
-                              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                              className="rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-xs font-medium text-app-secondary hover:bg-app-fill"
                             >
                               Cancel
                             </button>
@@ -1944,7 +1944,7 @@ export function WishlistPage() {
                           )
                           if (isEmptyBoard) {
                             return (
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-app-secondary">
                                 {matrixModel && matrixModel.vendorColumns.length > 0
                                   ? 'No parts match the search.'
                                   : 'No rows match the current filters.'}
@@ -1965,16 +1965,16 @@ export function WishlistPage() {
                                     className="w-[min(100vw-2rem,280px)] shrink-0 sm:w-[280px]"
                                   >
                                     <div className="mb-2 flex items-baseline justify-between gap-2 px-0.5">
-                                      <h4 className="text-[11px] font-bold uppercase tracking-[0.08em] text-gray-600">
+                                      <h4 className="text-[11px] font-bold uppercase tracking-[0.08em] text-app-secondary">
                                         {colDef.title}
                                       </h4>
-                                      <span className="text-xs font-semibold tabular-nums text-gray-400">
+                                      <span className="text-xs font-semibold tabular-nums text-app-tertiary">
                                         ({items.length})
                                       </span>
                                     </div>
-                                    <div className="max-h-[min(65vh,560px)] min-h-[120px] space-y-2.5 overflow-y-auto rounded-xl bg-[#f4f5f7] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
+                                    <div className="max-h-[min(65vh,560px)] min-h-[120px] space-y-2.5 overflow-y-auto rounded-xl bg-app-fill p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                                       {items.length === 0 ? (
-                                        <p className="px-2 py-6 text-center text-xs text-gray-400">
+                                        <p className="px-2 py-6 text-center text-xs text-app-tertiary">
                                           No cards
                                         </p>
                                       ) : (
@@ -1987,29 +1987,29 @@ export function WishlistPage() {
                                               onClick={() =>
                                                 setBoardDetail({ sk, dataRowIndex: item.dataRowIndex })
                                               }
-                                              className={`w-full rounded-lg border bg-white p-3 text-left shadow-sm transition-[box-shadow,transform] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                                              className={`w-full rounded-lg border bg-app-surface p-3 text-left shadow-sm transition-[box-shadow,transform] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-app-accent/40 ${
                                                 active
                                                   ? 'border-blue-300 ring-2 ring-blue-400/30'
-                                                  : 'border-gray-200/90'
+                                                  : 'border-app-separator/90'
                                               }`}
                                             >
-                                              <p className="line-clamp-3 text-sm font-medium leading-snug text-gray-900">
+                                              <p className="line-clamp-3 text-sm font-medium leading-snug text-app-label">
                                                 {item.title}
                                               </p>
-                                              <p className="mt-1 line-clamp-2 text-xs text-gray-500">
+                                              <p className="mt-1 line-clamp-2 text-xs text-app-secondary">
                                                 {item.subtitle}
                                               </p>
-                                              <div className="mt-3 flex items-center justify-between gap-1 border-t border-gray-100 pt-2.5">
+                                              <div className="mt-3 flex items-center justify-between gap-1 border-t border-app-separator pt-2.5">
                                                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                                   <span
                                                     className={`h-2.5 w-2.5 shrink-0 rounded-sm ${boardProjectSwatch(item.title)}`}
                                                     aria-hidden
                                                   />
-                                                  <span className="truncate font-mono text-[11px] font-semibold text-gray-600">
+                                                  <span className="truncate font-mono text-[11px] font-semibold text-app-secondary">
                                                     #{item.dataRowIndex + 1}
                                                   </span>
                                                 </div>
-                                                <div className="flex shrink-0 items-center gap-1 text-gray-500">
+                                                <div className="flex shrink-0 items-center gap-1 text-app-secondary">
                                                   <span
                                                     className="inline-flex items-center gap-0.5"
                                                     title="Coverage / sources"
@@ -2020,7 +2020,7 @@ export function WishlistPage() {
                                                     </span>
                                                   </span>
                                                   <span
-                                                    className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1 text-[10px] font-semibold text-gray-700"
+                                                    className="flex h-5 min-w-5 items-center justify-center rounded-full bg-app-fill px-1 text-[10px] font-semibold text-app-secondary"
                                                     title="Weight"
                                                   >
                                                     {item.points}
@@ -2043,7 +2043,7 @@ export function WishlistPage() {
                         })()
                       ) : showMatrix && matrixModel ? (
                         matrixRowsFiltered.length === 0 ? (
-                          <p className="text-sm text-gray-600">No parts match the search.</p>
+                          <p className="text-sm text-app-secondary">No parts match the search.</p>
                         ) : (
                           <div className="overflow-x-auto rounded-lg border border-sky-200 bg-sky-50/60 shadow-sm">
                             <table className="min-w-full border-collapse text-xs sm:text-sm">
@@ -2064,17 +2064,17 @@ export function WishlistPage() {
                                           return { ...prev, [sk]: cur }
                                         })
                                       }}
-                                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500/40"
+                                      className="rounded border-app-separator text-app-accent focus:ring-app-accent/40"
                                       aria-label="Select all visible parts"
                                     />
                                   </th>
-                                  <th className="sticky left-9 z-30 min-w-[11rem] max-w-[14rem] bg-sky-100/90 px-2 py-2 text-left align-bottom text-xs font-semibold text-gray-900 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.1)]">
+                                  <th className="sticky left-9 z-30 min-w-[11rem] max-w-[14rem] bg-sky-100/90 px-2 py-2 text-left align-bottom text-xs font-semibold text-app-label shadow-[4px_0_12px_-4px_rgba(15,23,42,0.1)]">
                                     Part
                                   </th>
-                                  <th className="min-w-[4rem] px-2 py-2 text-left align-bottom text-xs font-semibold text-gray-900">
+                                  <th className="min-w-[4rem] px-2 py-2 text-left align-bottom text-xs font-semibold text-app-label">
                                     Mfr
                                   </th>
-                                  <th className="min-w-[4rem] px-2 py-2 text-center align-bottom text-xs font-semibold text-blue-700">
+                                  <th className="min-w-[4rem] px-2 py-2 text-center align-bottom text-xs font-semibold text-app-accent">
                                     Coverage
                                   </th>
                                   <th className="min-w-[4rem] px-2 py-2 text-right align-bottom text-xs font-semibold text-emerald-800">
@@ -2083,7 +2083,7 @@ export function WishlistPage() {
                                   <th className="min-w-[4rem] px-2 py-2 text-right align-bottom text-xs font-semibold text-red-900">
                                     Worst $
                                   </th>
-                                  <th className="min-w-[4rem] px-2 py-2 text-right align-bottom text-xs font-semibold text-gray-800">
+                                  <th className="min-w-[4rem] px-2 py-2 text-right align-bottom text-xs font-semibold text-app-label">
                                     Spread
                                   </th>
                                   <th className="min-w-[4rem] px-2 py-2 text-right align-bottom text-xs font-semibold text-emerald-800">
@@ -2093,7 +2093,7 @@ export function WishlistPage() {
                                     <th
                                       key={vc.id}
                                       title={vc.fullLabel}
-                                      className="min-w-[7.5rem] max-w-[9rem] px-1 py-2 text-center align-bottom text-[10px] font-bold leading-tight tracking-tight text-gray-800 sm:text-xs"
+                                      className="min-w-[7.5rem] max-w-[9rem] px-1 py-2 text-center align-bottom text-[10px] font-bold leading-tight tracking-tight text-app-label sm:text-xs"
                                     >
                                       {vc.code}
                                     </th>
@@ -2125,7 +2125,7 @@ export function WishlistPage() {
                                               return { ...prev, [sk]: cur }
                                             })
                                           }}
-                                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500/40"
+                                          className="rounded border-app-separator text-app-accent focus:ring-app-accent/40"
                                           aria-label={`Select row ${mr.line1}`}
                                         />
                                       </td>
@@ -2135,7 +2135,7 @@ export function WishlistPage() {
                                         <div className="flex items-start gap-1">
                                           <button
                                             type="button"
-                                            className="mt-0.5 shrink-0 rounded p-0.5 text-gray-600 hover:bg-sky-200/60 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                                            className="mt-0.5 shrink-0 rounded p-0.5 text-app-secondary hover:bg-sky-200/60 hover:text-app-label focus:outline-none focus:ring-2 focus:ring-app-accent/40"
                                             aria-expanded={rowExpanded}
                                             aria-label={
                                               rowExpanded
@@ -2155,19 +2155,19 @@ export function WishlistPage() {
                                             />
                                           </button>
                                           <div className="min-w-0 flex-1">
-                                            <div className="font-medium text-gray-900">{mr.line1 || '—'}</div>
+                                            <div className="font-medium text-app-label">{mr.line1 || '—'}</div>
                                             {mr.line2 ? (
-                                              <div className="mt-0.5 text-[11px] text-gray-600 sm:text-xs">
+                                              <div className="mt-0.5 text-[11px] text-app-secondary sm:text-xs">
                                                 {mr.line2}
                                               </div>
                                             ) : null}
                                           </div>
                                         </div>
                                       </td>
-                                      <td className="max-w-[6rem] truncate px-2 py-1.5 align-top text-blue-600">
+                                      <td className="max-w-[6rem] truncate px-2 py-1.5 align-top text-app-accent">
                                         {mr.mfr || '—'}
                                       </td>
-                                      <td className="px-2 py-1.5 text-center text-blue-700">
+                                      <td className="px-2 py-1.5 text-center text-app-accent">
                                         {mr.coverageTotal > 0
                                           ? `${mr.coverageHave}/${mr.coverageTotal}`
                                           : '—'}
@@ -2178,7 +2178,7 @@ export function WishlistPage() {
                                       <td className="whitespace-nowrap px-2 py-1.5 text-right font-medium text-red-800">
                                         {mr.worst != null ? fmtUsd(mr.worst) : '—'}
                                       </td>
-                                      <td className="whitespace-nowrap px-2 py-1.5 text-right text-gray-800">
+                                      <td className="whitespace-nowrap px-2 py-1.5 text-right text-app-label">
                                         {mr.spread != null ? fmtUsd(mr.spread) : '—'}
                                       </td>
                                       <td className="whitespace-nowrap px-2 py-1.5 text-right font-medium text-emerald-700">
@@ -2196,12 +2196,12 @@ export function WishlistPage() {
                                         const detailOpen = matrixVendorDetailKey === dk
                                         const priceCls =
                                           p == null
-                                            ? 'text-gray-400'
+                                            ? 'text-app-tertiary'
                                             : isBest
                                               ? 'font-semibold text-emerald-700'
                                               : isWorst
                                                 ? 'font-semibold text-red-800'
-                                                : 'text-gray-900'
+                                                : 'text-app-label'
                                         const flatRows =
                                           detail && detailOpen
                                             ? Object.entries(flattenScrapedRecord(detail.data)).filter(
@@ -2213,7 +2213,7 @@ export function WishlistPage() {
                                           <td
                                             key={vc.id}
                                             className={`min-w-[7.5rem] max-w-[9rem] align-top px-1 py-1.5 ${
-                                              p == null ? 'text-gray-400' : ''
+                                              p == null ? 'text-app-tertiary' : ''
                                             }`}
                                           >
                                             {p == null ? (
@@ -2225,7 +2225,7 @@ export function WishlistPage() {
                                               >
                                                 <div className="flex flex-col gap-0.5">
                                                   <div
-                                                    className="line-clamp-2 text-left text-[10px] font-medium leading-tight text-gray-800"
+                                                    className="line-clamp-2 text-left text-[10px] font-medium leading-tight text-app-label"
                                                     title={vc.fullLabel}
                                                   >
                                                     {vc.fullLabel}
@@ -2236,7 +2236,7 @@ export function WishlistPage() {
                                                     </span>
                                                     <button
                                                       type="button"
-                                                      className="inline-flex shrink-0 rounded p-0.5 text-gray-500 hover:bg-sky-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                                                      className="inline-flex shrink-0 rounded p-0.5 text-app-secondary hover:bg-sky-100 hover:text-app-label focus:outline-none focus:ring-2 focus:ring-app-accent/40"
                                                       aria-expanded={detailOpen}
                                                       aria-label={`Details for ${vc.fullLabel}`}
                                                       onClick={(e) => {
@@ -2256,15 +2256,15 @@ export function WishlistPage() {
                                                 </div>
                                                 {detailOpen && detail ? (
                                                   <div
-                                                    className="absolute right-0 top-full z-50 mt-1 w-[min(20rem,calc(100vw-2rem))] max-h-72 overflow-y-auto rounded-md border border-sky-200 bg-white p-2 text-left text-xs shadow-lg"
+                                                    className="absolute right-0 top-full z-50 mt-1 w-[min(20rem,calc(100vw-2rem))] max-h-72 overflow-y-auto rounded-md border border-sky-200 bg-app-surface p-2 text-left text-xs shadow-lg"
                                                     role="dialog"
                                                     aria-label="Scraped vendor details"
                                                   >
-                                                    <div className="mb-1.5 border-b border-gray-100 pb-1.5 font-semibold text-gray-900">
+                                                    <div className="mb-1.5 border-b border-app-separator pb-1.5 font-semibold text-app-label">
                                                       {vc.fullLabel}
                                                     </div>
                                                     <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                                      <span className="text-gray-500">Price</span>
+                                                      <span className="text-app-secondary">Price</span>
                                                       <span className={priceCls}>{fmtUsd(p)}</span>
                                                     </div>
                                                     {src ? (
@@ -2273,32 +2273,32 @@ export function WishlistPage() {
                                                           href={src}
                                                           target="_blank"
                                                           rel="noopener noreferrer"
-                                                          className="text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                                                          className="text-app-accent underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
                                                         >
                                                           Open source page
                                                         </a>
                                                       </div>
                                                     ) : (
-                                                      <div className="mb-2 break-all text-gray-500">
+                                                      <div className="mb-2 break-all text-app-secondary">
                                                         Source: {detail.url || '—'}
                                                       </div>
                                                     )}
                                                     {flatRows.length > 0 ? (
-                                                      <dl className="space-y-1 border-t border-gray-100 pt-2">
+                                                      <dl className="space-y-1 border-t border-app-separator pt-2">
                                                         {flatRows.map(([k, v]) => (
                                                           <div
                                                             key={k}
                                                             className="grid grid-cols-[minmax(0,7rem)_1fr] gap-x-2 gap-y-0.5"
                                                           >
-                                                            <dt className="break-words text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                                                            <dt className="break-words text-[10px] font-medium uppercase tracking-wide text-app-secondary">
                                                               {k}
                                                             </dt>
-                                                            <dd className="break-words text-gray-800">{v}</dd>
+                                                            <dd className="break-words text-app-label">{v}</dd>
                                                           </div>
                                                         ))}
                                                       </dl>
                                                     ) : (
-                                                      <p className="text-gray-500">No extra fields in scrape.</p>
+                                                      <p className="text-app-secondary">No extra fields in scrape.</p>
                                                     )}
                                                   </div>
                                                 ) : null}
@@ -2309,7 +2309,7 @@ export function WishlistPage() {
                                       })}
                                     </tr>
                                     {rowExpanded ? (
-                                      <tr className="border-b border-sky-200 bg-white">
+                                      <tr className="border-b border-sky-200 bg-app-surface">
                                         <td
                                           colSpan={8 + matrixModel.vendorColumns.length}
                                           className="p-0 align-top"
@@ -2320,10 +2320,10 @@ export function WishlistPage() {
                                                 <p className="text-xs font-medium uppercase tracking-wide text-sky-800/80">
                                                   All vendors for this part
                                                 </p>
-                                                <h4 className="text-base font-semibold text-gray-900">
+                                                <h4 className="text-base font-semibold text-app-label">
                                                   {mr.line1 || '—'}
                                                   {mr.line2 ? (
-                                                    <span className="mt-1 block text-sm font-normal text-gray-600">
+                                                    <span className="mt-1 block text-sm font-normal text-app-secondary">
                                                       {mr.line2}
                                                     </span>
                                                   ) : null}
@@ -2331,7 +2331,7 @@ export function WishlistPage() {
                                               </div>
                                               <button
                                                 type="button"
-                                                className="shrink-0 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-medium text-sky-900 shadow-sm hover:bg-sky-50"
+                                                className="shrink-0 rounded-lg border border-sky-200 bg-app-surface px-3 py-1.5 text-xs font-medium text-sky-900 shadow-sm hover:bg-sky-50"
                                                 onClick={() => setMatrixExpandedRowKey(null)}
                                               >
                                                 Collapse
@@ -2357,12 +2357,12 @@ export function WishlistPage() {
                                                   Math.abs(p - w) < 1e-6
                                                 const priceCls =
                                                   p == null
-                                                    ? 'text-gray-400'
+                                                    ? 'text-app-tertiary'
                                                     : isBest
                                                       ? 'text-emerald-700'
                                                       : isWorst
                                                         ? 'text-red-800'
-                                                        : 'text-gray-900'
+                                                        : 'text-app-label'
                                                 const flatRows = detail
                                                   ? Object.entries(
                                                       flattenScrapedRecord(detail.data)
@@ -2372,9 +2372,9 @@ export function WishlistPage() {
                                                 return (
                                                   <div
                                                     key={vc.id}
-                                                    className={`flex flex-col rounded-xl border bg-white p-3 shadow-sm ${
+                                                    className={`flex flex-col rounded-xl border bg-app-surface p-3 shadow-sm ${
                                                       p == null
-                                                        ? 'border-gray-200 opacity-80'
+                                                        ? 'border-app-separator opacity-80'
                                                         : isBest
                                                           ? 'border-emerald-200 ring-1 ring-emerald-100'
                                                           : isWorst
@@ -2382,12 +2382,12 @@ export function WishlistPage() {
                                                             : 'border-sky-200'
                                                     }`}
                                                   >
-                                                    <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2">
+                                                    <div className="flex items-start justify-between gap-2 border-b border-app-separator pb-2">
                                                       <div className="min-w-0 flex-1">
-                                                        <span className="font-mono text-[10px] font-bold tracking-wide text-gray-500">
+                                                        <span className="font-mono text-[10px] font-bold tracking-wide text-app-secondary">
                                                           {vc.code}
                                                         </span>
-                                                        <div className="text-sm font-semibold leading-snug text-gray-900">
+                                                        <div className="text-sm font-semibold leading-snug text-app-label">
                                                           {vc.fullLabel}
                                                         </div>
                                                       </div>
@@ -2405,7 +2405,7 @@ export function WishlistPage() {
                                                       </div>
                                                     </div>
                                                     {p == null ? (
-                                                      <p className="mt-3 text-sm text-gray-500">
+                                                      <p className="mt-3 text-sm text-app-secondary">
                                                         No price from this vendor for this part.
                                                       </p>
                                                     ) : (
@@ -2420,23 +2420,23 @@ export function WishlistPage() {
                                                             href={src}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="mt-2 inline-flex text-sm font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                                                            className="mt-2 inline-flex text-sm font-medium text-app-accent underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
                                                           >
                                                             Open source page
                                                           </a>
                                                         ) : detail?.url ? (
-                                                          <p className="mt-2 break-all text-xs text-gray-500">
+                                                          <p className="mt-2 break-all text-xs text-app-secondary">
                                                             Source: {detail.url}
                                                           </p>
                                                         ) : null}
                                                         {flatRows.length > 0 ? (
-                                                          <dl className="mt-3 max-h-52 space-y-2 overflow-y-auto border-t border-gray-100 pt-3 text-xs">
+                                                          <dl className="mt-3 max-h-52 space-y-2 overflow-y-auto border-t border-app-separator pt-3 text-xs">
                                                             {flatRows.map(([k, v]) => (
                                                               <div key={k}>
-                                                                <dt className="font-medium text-gray-500">
+                                                                <dt className="font-medium text-app-secondary">
                                                                   {k}
                                                                 </dt>
-                                                                <dd className="mt-0.5 wrap-break-word text-gray-800">
+                                                                <dd className="mt-0.5 wrap-break-word text-app-label">
                                                                   {v}
                                                                 </dd>
                                                               </div>
@@ -2463,19 +2463,19 @@ export function WishlistPage() {
                       ) : visibleOrdered.length === 0 ? (
                         <p className="text-sm text-amber-800">Select at least one field to display.</p>
                       ) : filteredRows.length === 0 ? (
-                        <p className="text-sm text-gray-600">No rows match the current filters.</p>
+                        <p className="text-sm text-app-secondary">No rows match the current filters.</p>
                       ) : (
-                        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                        <div className="overflow-x-auto rounded-lg border border-app-separator bg-app-surface shadow-sm">
                           <table className="min-w-full border-collapse text-sm">
                             <thead>
-                              <tr className="border-b border-gray-200 bg-gray-50">
+                              <tr className="border-b border-app-separator bg-app-fill">
                                 <th
                                   scope="col"
-                                  className="sticky left-0 z-10 w-10 border-r border-gray-200 bg-gray-50 px-1.5 py-2.5"
+                                  className="sticky left-0 z-10 w-10 border-r border-app-separator bg-app-fill px-1.5 py-2.5"
                                 >
                                   <input
                                     type="checkbox"
-                                    className="rounded border-gray-300 text-violet-600 focus:ring-violet-500/40"
+                                    className="rounded border-app-separator text-violet-600 focus:ring-violet-500/40"
                                     checked={allClassicVisibleSelected}
                                     onChange={() => {
                                       setClassicRowSelection((prev) => {
@@ -2505,7 +2505,7 @@ export function WishlistPage() {
                                       className={`px-3 py-2.5 text-left align-bottom ${
                                         isScraped
                                           ? `min-w-[min(22rem,85vw)] max-w-[min(40rem,92vw)] bg-emerald-50/95 text-emerald-950 ${firstScraped ? 'border-l-4 border-emerald-400 pl-4' : ''}`
-                                          : 'max-w-[min(20rem,45vw)] whitespace-nowrap font-semibold text-gray-900'
+                                          : 'max-w-[min(20rem,45vw)] whitespace-nowrap font-semibold text-app-label'
                                       }`}
                                     >
                                       {isScraped && scrapedKey ? (
@@ -2527,11 +2527,11 @@ export function WishlistPage() {
                             </thead>
                             <tbody>
                               {viewableEntries.map(({ row, dataRowIndex }) => (
-                                  <tr key={dataRowIndex} className="border-b border-gray-100 last:border-b-0">
-                                    <td className="sticky left-0 z-10 w-10 border-r border-gray-200 bg-white px-1.5 py-2.5 align-top">
+                                  <tr key={dataRowIndex} className="border-b border-app-separator last:border-b-0">
+                                    <td className="sticky left-0 z-10 w-10 border-r border-app-separator bg-app-surface px-1.5 py-2.5 align-top">
                                       <input
                                         type="checkbox"
-                                        className="rounded border-gray-300 text-violet-600 focus:ring-violet-500/40"
+                                        className="rounded border-app-separator text-violet-600 focus:ring-violet-500/40"
                                         checked={classicSel.has(dataRowIndex)}
                                         onChange={() => {
                                           setClassicRowSelection((prev) => {
@@ -2562,7 +2562,7 @@ export function WishlistPage() {
                                           className={`px-3 py-2.5 align-top ${
                                             isScraped
                                               ? `min-w-[min(22rem,85vw)] max-w-[min(40rem,92vw)] bg-emerald-50/40 text-emerald-950 ${firstScraped ? 'border-l-4 border-emerald-300' : ''}`
-                                              : `max-w-[min(24rem,50vw)] truncate text-gray-800`
+                                              : `max-w-[min(24rem,50vw)] truncate text-app-label`
                                           }`}
                                           title={!isScraped && cell ? cell : undefined}
                                         >
@@ -2571,7 +2571,7 @@ export function WishlistPage() {
                                               className="relative"
                                               {...(scrapedDetailOpen ? { 'data-classic-scraped-detail': '' } : {})}
                                             >
-                                              <div className="max-h-56 overflow-y-auto rounded-lg border border-emerald-200/80 bg-white/95 p-3 text-sm leading-relaxed text-emerald-950 shadow-sm">
+                                              <div className="max-h-56 overflow-y-auto rounded-lg border border-emerald-200/80 bg-app-surface/95 p-3 text-sm leading-relaxed text-emerald-950 shadow-sm">
                                                 {useBullets ? (
                                                   <ul className="list-outside list-disc space-y-1.5 pl-4 marker:text-emerald-600">
                                                     {segments.map((seg, si) => (
@@ -2590,7 +2590,7 @@ export function WishlistPage() {
                                                 </span>
                                                 <button
                                                   type="button"
-                                                  className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-1 text-[11px] font-medium text-emerald-900 shadow-sm hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                                  className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-app-surface px-2 py-1 text-[11px] font-medium text-emerald-900 shadow-sm hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                                                   aria-expanded={scrapedDetailOpen}
                                                   aria-label={`Full details: ${colTitle}`}
                                                   onClick={(e) => {
@@ -2610,7 +2610,7 @@ export function WishlistPage() {
                                               </div>
                                               {scrapedDetailOpen ? (
                                                 <div
-                                                  className="absolute right-0 top-full z-50 mt-1 w-[min(32rem,calc(100vw-1.5rem))] max-h-[min(28rem,70vh)] overflow-y-auto rounded-lg border border-emerald-200 bg-white p-4 text-left text-sm text-gray-900 shadow-xl"
+                                                  className="absolute right-0 top-full z-50 mt-1 w-[min(32rem,calc(100vw-1.5rem))] max-h-[min(28rem,70vh)] overflow-y-auto rounded-lg border border-emerald-200 bg-app-surface p-4 text-left text-sm text-app-label shadow-xl"
                                                   role="dialog"
                                                   aria-label={`${colTitle} full text`}
                                                 >
@@ -2630,14 +2630,14 @@ export function WishlistPage() {
                                                       </div>
                                                     )}
                                                   </div>
-                                                  <div className="wrap-break-word whitespace-pre-wrap leading-relaxed text-gray-800">
+                                                  <div className="wrap-break-word whitespace-pre-wrap leading-relaxed text-app-label">
                                                     {cell}
                                                   </div>
                                                 </div>
                                               ) : null}
                                             </div>
                                           ) : isScraped ? (
-                                            <span className="text-gray-400">—</span>
+                                            <span className="text-app-tertiary">—</span>
                                           ) : (
                                             cell
                                           )}
@@ -2685,21 +2685,21 @@ export function WishlistPage() {
                   role="dialog"
                   aria-modal="true"
                   aria-labelledby="wishlist-board-detail-title"
-                  className="my-auto w-full max-w-3xl rounded-xl border border-gray-200 bg-white shadow-2xl"
+                  className="my-auto w-full max-w-3xl rounded-xl border border-app-separator bg-app-surface shadow-2xl"
                   onMouseDown={(e) => e.stopPropagation()}
                 >
-                  <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 sm:px-5">
-                    <FileText className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+                  <div className="flex items-center gap-2 border-b border-app-separator px-4 py-3 sm:px-5">
+                    <FileText className="h-5 w-5 shrink-0 text-app-tertiary" aria-hidden />
                     <h2
                       id="wishlist-board-detail-title"
-                      className="min-w-0 flex-1 truncate text-lg font-semibold text-gray-900"
+                      className="min-w-0 flex-1 truncate text-lg font-semibold text-app-label"
                     >
                       {mrow?.line1 || boardCardTitleFromClassic(sec, dat)}
                     </h2>
                     <button
                       type="button"
                       onClick={() => setBoardDetail(null)}
-                      className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300/50"
+                      className="rounded-lg p-2 text-app-secondary hover:bg-app-fill focus:outline-none focus:ring-2 focus:ring-gray-300/50"
                       aria-label="Close"
                     >
                       <X className="h-5 w-5" aria-hidden />
@@ -2712,7 +2712,7 @@ export function WishlistPage() {
                           <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-800/80">
                             Coverage
                           </div>
-                          <div className="mt-0.5 font-medium text-gray-900">
+                          <div className="mt-0.5 font-medium text-app-label">
                             {mrow.coverageTotal > 0
                               ? `${mrow.coverageHave}/${mrow.coverageTotal}`
                               : '—'}
@@ -2722,7 +2722,7 @@ export function WishlistPage() {
                           <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-800/80">
                             Best / worst
                           </div>
-                          <div className="mt-0.5 font-medium text-gray-900">
+                          <div className="mt-0.5 font-medium text-app-label">
                             {mrow.best != null ? fmtUsd(mrow.best) : '—'}
                             {mrow.worst != null ? ` · ${fmtUsd(mrow.worst)}` : ''}
                           </div>
@@ -2732,12 +2732,12 @@ export function WishlistPage() {
                             <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-800/80">
                               Detail
                             </div>
-                            <div className="mt-0.5 text-gray-800">{mrow.line2}</div>
+                            <div className="mt-0.5 text-app-label">{mrow.line2}</div>
                           </div>
                         ) : null}
                       </div>
                     ) : null}
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-app-secondary">
                       Row data (visible columns)
                     </p>
                     <dl className="space-y-3">
@@ -2745,16 +2745,16 @@ export function WishlistPage() {
                         const head = sec.headers[hi] ?? `Column ${hi + 1}`
                         const val = dat[hi] ?? ''
                         return (
-                          <div key={hi} className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
-                            <dt className="text-xs font-medium text-gray-500">{head}</dt>
-                            <dd className="mt-0.5 wrap-break-word text-sm text-gray-900">
+                          <div key={hi} className="border-b border-app-separator pb-3 last:border-b-0 last:pb-0">
+                            <dt className="text-xs font-medium text-app-secondary">{head}</dt>
+                            <dd className="mt-0.5 wrap-break-word text-sm text-app-label">
                               {val.trim() ? val : '—'}
                             </dd>
                           </div>
                         )
                       })}
                     </dl>
-                    <p className="mt-4 text-xs text-gray-500">
+                    <p className="mt-4 text-xs text-app-secondary">
                       Wishlist rows are read-only here. Edit the source file in your workspace to change sheet cells.
                     </p>
                   </div>
@@ -2774,14 +2774,14 @@ export function WishlistPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby={dialogTitleId}
-            className="flex max-h-[min(32rem,85vh)] w-full max-w-lg flex-col rounded-xl border border-gray-200 bg-white shadow-lg"
+            className="flex max-h-[min(32rem,85vh)] w-full max-w-lg flex-col rounded-xl border border-app-separator bg-app-surface shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="border-b border-gray-100 px-4 py-3">
-              <h2 id={dialogTitleId} className="text-sm font-semibold text-gray-900">
+            <div className="border-b border-app-separator px-4 py-3">
+              <h2 id={dialogTitleId} className="text-sm font-semibold text-app-label">
                 {pickerStep === 'files' ? 'Choose files for new tab' : 'Choose columns'}
               </h2>
-              <p className="mt-0.5 text-xs text-gray-500">
+              <p className="mt-0.5 text-xs text-app-secondary">
                 {pickerStep === 'files'
                   ? 'Select one or more workspace files. Folders are expanded in the list.'
                   : 'Pick which columns to include for each file. At least one column per file.'}
@@ -2792,16 +2792,16 @@ export function WishlistPage() {
               {pickerStep === 'files' && (
                 <>
                   {!token && (
-                    <p className="px-2 py-6 text-center text-sm text-gray-600">Sign in to load workspace files.</p>
+                    <p className="px-2 py-6 text-center text-sm text-app-secondary">Sign in to load workspace files.</p>
                   )}
                   {token && pickerLoading && (
-                    <p className="px-2 py-6 text-center text-sm text-gray-500">Loading files…</p>
+                    <p className="px-2 py-6 text-center text-sm text-app-secondary">Loading files…</p>
                   )}
                   {token && !pickerLoading && pickerError && (
                     <p className="px-2 py-4 text-center text-sm text-red-600">{pickerError}</p>
                   )}
                   {token && !pickerLoading && !pickerError && pickerFiles.length === 0 && (
-                    <p className="px-2 py-6 text-center text-sm text-gray-600">No files in your workspace yet.</p>
+                    <p className="px-2 py-6 text-center text-sm text-app-secondary">No files in your workspace yet.</p>
                   )}
                   {token && !pickerLoading && !pickerError && pickerFiles.length > 0 && (
                     <ul className="space-y-0.5">
@@ -2809,19 +2809,19 @@ export function WishlistPage() {
                         const checked = selectedIds.has(f.id)
                         return (
                           <li key={f.id}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+                            <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-app-fill">
                               <input
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => toggleFile(f.id)}
-                                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500/40"
+                                className="mt-0.5 h-4 w-4 rounded border-app-separator text-app-accent focus:ring-app-accent/40"
                               />
                               <span className="min-w-0 flex-1">
-                                <span className="flex items-center gap-1.5 text-sm text-gray-900">
-                                  <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                                <span className="flex items-center gap-1.5 text-sm text-app-label">
+                                  <FileText className="h-3.5 w-3.5 shrink-0 text-app-tertiary" aria-hidden />
                                   <span className="truncate">{f.name}</span>
                                 </span>
-                                <span className="mt-0.5 block text-xs text-gray-500">{f.pathLabel}</span>
+                                <span className="mt-0.5 block text-xs text-app-secondary">{f.pathLabel}</span>
                               </span>
                             </label>
                           </li>
@@ -2835,7 +2835,7 @@ export function WishlistPage() {
               {pickerStep === 'fields' && (
                 <>
                   {fieldsLoading && (
-                    <p className="px-2 py-6 text-center text-sm text-gray-500">Loading columns…</p>
+                    <p className="px-2 py-6 text-center text-sm text-app-secondary">Loading columns…</p>
                   )}
                   {!fieldsLoading && fieldsError && (
                     <p className="px-2 py-4 text-center text-sm text-red-600">{fieldsError}</p>
@@ -2857,21 +2857,21 @@ export function WishlistPage() {
                           )
                         }
                         return (
-                          <div key={f.id} className="rounded-lg border border-gray-100 bg-gray-50/50 px-2 py-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
-                              <p className="text-xs font-semibold text-gray-800">{f.name}</p>
+                          <div key={f.id} className="rounded-lg border border-app-separator bg-app-fill/50 px-2 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-app-separator pb-2">
+                              <p className="text-xs font-semibold text-app-label">{f.name}</p>
                               <div className="flex gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => selectAllFieldsForFile(f.id)}
-                                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-200/80"
+                                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
                                 >
                                   All
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => clearFieldsForFile(f.id)}
-                                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-200/80"
+                                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-app-secondary hover:bg-app-fill"
                                 >
                                   None
                                 </button>
@@ -2882,14 +2882,14 @@ export function WishlistPage() {
                                 const checked = selectedIdx.has(colIdx)
                                 return (
                                   <li key={`${f.id}-${colIdx}`}>
-                                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/80">
+                                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-app-surface/80">
                                       <input
                                         type="checkbox"
                                         checked={checked}
                                         onChange={() => toggleFieldIndex(f.id, colIdx)}
-                                        className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500/40"
+                                        className="h-3.5 w-3.5 rounded border-app-separator text-app-accent focus:ring-app-accent/40"
                                       />
-                                      <span className="min-w-0 flex-1 truncate text-xs text-gray-800">{label}</span>
+                                      <span className="min-w-0 flex-1 truncate text-xs text-app-label">{label}</span>
                                     </label>
                                   </li>
                                 )
@@ -2904,7 +2904,7 @@ export function WishlistPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-app-separator px-4 py-3">
               {pickerStep === 'files' && (
                 <>
                   <div className="flex flex-wrap gap-2">
@@ -2912,7 +2912,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={selectAllVisible}
                       disabled={!token || pickerLoading || pickerFiles.length === 0}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
                     >
                       Select all
                     </button>
@@ -2920,7 +2920,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={clearSelection}
                       disabled={selectedIds.size === 0}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
                     >
                       Clear
                     </button>
@@ -2929,7 +2929,7 @@ export function WishlistPage() {
                     <button
                       type="button"
                       onClick={closePicker}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/40"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/40"
                     >
                       Cancel
                     </button>
@@ -2937,7 +2937,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={() => void goToFieldsStep()}
                       disabled={selectedIds.size === 0}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:opacity-40"
+                      className="rounded-lg bg-app-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:opacity-40"
                     >
                       Next ({selectedIds.size})
                     </button>
@@ -2951,7 +2951,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={backToFilesStep}
                       disabled={fieldsLoading}
-                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
                       Back
@@ -2960,7 +2960,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={selectAllFieldsAllFiles}
                       disabled={fieldsLoading || fileHeadersById.size === 0}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
                     >
                       Select all columns
                     </button>
@@ -2968,7 +2968,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={clearAllFieldsAllFiles}
                       disabled={fieldsLoading || fileHeadersById.size === 0}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-40"
                     >
                       Clear columns
                     </button>
@@ -2977,7 +2977,7 @@ export function WishlistPage() {
                     <button
                       type="button"
                       onClick={closePicker}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/40"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/40"
                     >
                       Cancel
                     </button>
@@ -2985,7 +2985,7 @@ export function WishlistPage() {
                       type="button"
                       onClick={confirmNewTab}
                       disabled={fieldsLoading || !fieldsStepValid()}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:opacity-40"
+                      className="rounded-lg bg-app-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:opacity-40"
                     >
                       Add tab
                     </button>

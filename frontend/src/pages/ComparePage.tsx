@@ -2004,15 +2004,15 @@ export function ComparePage() {
   }, [allPartsDecisionRows, decisionPicks, items, navigate, routeResearchPartRefs, showBucketToast])
 
   return (
-    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-slate-50 text-slate-900`}>
+    <div className={`flex ${COMPARE_PAGE_H} w-full min-w-0 bg-app-bg text-app-label`}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {routeRfqFlow && (
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-app-separator bg-app-surface px-4 py-3 sm:px-6">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-app-tertiary">
                   Sourcing flow
                 </p>
-                <h1 className="text-base font-semibold tracking-tight text-slate-900">
+                <h1 className="text-base font-semibold tracking-tight text-app-label">
                   Compare, decide, then create RFQ
                 </h1>
               </div>
@@ -2023,7 +2023,7 @@ export function ComparePage() {
                   return (
                     <li key={step.id} className="flex items-center gap-1">
                       {idx > 0 && (
-                        <span className="px-1 text-slate-300" aria-hidden>
+                        <span className="px-1 text-app-tertiary" aria-hidden>
                           →
                         </span>
                       )}
@@ -2035,7 +2035,7 @@ export function ComparePage() {
                             ? 'bg-slate-900 text-white'
                             : done
                               ? 'bg-emerald-50 text-emerald-800'
-                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              : 'bg-app-fill text-app-secondary hover:bg-app-fill'
                         }`}
                       >
                         <span className="font-mono">{step.n}</span>
@@ -2048,7 +2048,7 @@ export function ComparePage() {
             </div>
           )}
           <div
-            className={`min-h-0 w-full flex-1 bg-slate-50 ${
+            className={`min-h-0 w-full flex-1 bg-app-fill ${
               routeRfqFlow ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain px-4 sm:px-6'
             }`}
           >
@@ -2136,9 +2136,9 @@ export function ComparePage() {
             />
 
         {items.length === 0 && selectedFilesData.length === 0 && (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
-            <p className="text-sm font-semibold text-slate-800">No comparison loaded</p>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="mt-4 rounded-xl border border-dashed border-app-separator bg-app-surface px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-app-label">No comparison loaded</p>
+            <p className="mt-1 text-xs text-app-secondary">
               Use Change file to load a parts list, or send parts from Research.
             </p>
           </div>
@@ -2148,16 +2148,16 @@ export function ComparePage() {
         {(routeRfqFlow || decisionRows.length === 0) &&
           (compareMode === 'same-part' || compareMode === 'different-same-vendor') && (
           <div className={items.length > 0 ? 'mt-6' : 'mt-5'}>
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2 rounded-lg border border-app-separator bg-app-fill/60 px-3 py-2">
               <div>
-                <p className="mt-0.5 text-base font-semibold text-slate-900">
+                <p className="mt-0.5 text-base font-semibold text-app-label">
                   {compareMode === 'different-same-vendor' ? 'Shared vendor fields' : 'Structured fields'}
                   {compareMode !== 'different-same-vendor' && selectedRowForScraped ? (
-                    <span className="font-normal text-slate-600"> — {selectedRowForScraped.partLabel}</span>
+                    <span className="font-normal text-app-secondary"> — {selectedRowForScraped.partLabel}</span>
                   ) : null}
                 </p>
                 {compareMode === 'different-same-vendor' && (
-                  <p className="mt-0.5 text-[11px] text-slate-500">
+                  <p className="mt-0.5 text-[11px] text-app-secondary">
                     Parts: {comparedPartLabels.join(', ')}
                     {effectiveVendorFilteredParts.length > 1
                       ? ` · ${commonVendorDomains.length} vendor${commonVendorDomains.length === 1 ? '' : 's'} appear on ≥2 parts (shared)`
@@ -2167,7 +2167,7 @@ export function ComparePage() {
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {items.length > 0 && (
-                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <label className="flex items-center gap-1.5 text-xs text-app-secondary">
                     <span className="font-medium">Part</span>
                     <select
                       value={
@@ -2176,7 +2176,7 @@ export function ComparePage() {
                           : (selectedPartItemId ?? '')
                       }
                       onChange={(e) => handleStructuredPartViewChange(e.target.value)}
-                      className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                      className="rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-xs font-medium text-app-label shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     >
                       {compareMode === 'different-same-vendor' && effectiveVendorFilteredParts.length > 1 && (
                         <option value="all">All selected parts</option>
@@ -2197,12 +2197,12 @@ export function ComparePage() {
                       : [...new Set(scrapedTableRows.map((d) => extractDomain(d.url)).filter(Boolean))].sort()
                   if (domains.length === 0) return null
                   return (
-                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <label className="flex items-center gap-1.5 text-xs text-app-secondary">
                       <span className="font-medium">Vendor</span>
                       <select
                         value={scrapedVendorFilter}
                         onChange={(e) => setScrapedVendorFilter(e.target.value)}
-                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                        className="rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-xs font-medium text-app-label shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                       >
                         <option value="all">All vendors</option>
                         {domains.map((d) => (
@@ -2220,7 +2220,7 @@ export function ComparePage() {
                       ref={fieldPickerBtnRef}
                       type="button"
                       onClick={() => setFieldPickerOpen((v) => !v)}
-                      className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                      className="cursor-pointer rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-[11px] font-medium text-app-secondary shadow-sm transition-colors hover:bg-app-fill"
                     >
                       Fields {scrapedSelectedFields.length > 0 ? `(${scrapedSelectedFields.length})` : '(All)'}
                     </button>
@@ -2233,7 +2233,7 @@ export function ComparePage() {
                           top: (fieldPickerBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                           left: fieldPickerBtnRef.current?.getBoundingClientRect().left ?? 0,
                         }}
-                      className="w-60 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-slate-950/5"
+                      className="w-60 rounded-lg border border-app-separator bg-app-surface p-2 shadow-lg ring-1 ring-black/5"
                       >
                         <input
                           type="search"
@@ -2241,20 +2241,20 @@ export function ComparePage() {
                           onChange={(e) => setScrapedFieldPickerSearch(e.target.value)}
                           placeholder="Search fields…"
                           autoFocus
-                          className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                          className="mb-2 w-full rounded-md border border-app-separator px-2.5 py-1.5 text-xs text-app-secondary focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                         />
-                        <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                        <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-app-secondary">
                           <button
                             type="button"
                             onClick={() => setScrapedSelectedFields(scrapedFieldKeys)}
-                            className="hover:text-slate-700"
+                            className="hover:text-app-secondary"
                           >
                             Select all
                           </button>
                           <button
                             type="button"
                             onClick={() => setScrapedSelectedFields([])}
-                            className="hover:text-slate-700"
+                            className="hover:text-app-secondary"
                           >
                             Clear
                           </button>
@@ -2269,7 +2269,7 @@ export function ComparePage() {
                             .map((k) => {
                               const checked = scrapedSelectedFields.includes(k)
                               return (
-                                <label key={k} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-slate-50">
+                                <label key={k} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-app-fill">
                                   <input
                                     type="checkbox"
                                     checked={checked}
@@ -2278,9 +2278,9 @@ export function ComparePage() {
                                         e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)
                                       )
                                     }
-                                    className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                    className="rounded border-app-separator text-app-label focus:ring-slate-400"
                                   />
-                                  <span className="truncate text-slate-700" title={k}>
+                                  <span className="truncate text-app-secondary" title={k}>
                                     {k}
                                   </span>
                                 </label>
@@ -2295,14 +2295,14 @@ export function ComparePage() {
                       value={scrapedValueSearch}
                       onChange={(e) => setScrapedValueSearch(e.target.value)}
                       placeholder="Filter values…"
-                      className="w-36 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+                      className="w-36 rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-[11px] font-medium text-app-secondary shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
                     />
-                    <label className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 shadow-sm">
+                    <label className="inline-flex items-center gap-1 rounded-md border border-app-separator bg-app-surface px-2 py-1 text-[11px] text-app-secondary shadow-sm">
                       <input
                         type="checkbox"
                         checked={scrapedNonEmptyOnly}
                         onChange={(e) => setScrapedNonEmptyOnly(e.target.checked)}
-                        className="rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                        className="rounded border-app-separator text-app-label focus:ring-slate-400"
                       />
                       Non-empty only
                     </label>
@@ -2315,15 +2315,15 @@ export function ComparePage() {
               !(compareMode === 'different-same-vendor' && commonVendorsLoading) && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-slate-500">Coverage view</span>
-                    <div className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+                    <span className="text-xs font-medium text-app-secondary">Coverage view</span>
+                    <div className="inline-flex overflow-hidden rounded-md border border-app-separator bg-app-surface shadow-sm">
                       <button
                         type="button"
                         onClick={() => setVendorCoverageView('map')}
                         className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                           vendorCoverageView === 'map'
                             ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-50'
+                            : 'text-app-secondary hover:bg-app-fill'
                         }`}
                       >
                         Mind map
@@ -2331,10 +2331,10 @@ export function ComparePage() {
                       <button
                         type="button"
                         onClick={() => setVendorCoverageView('overview')}
-                        className={`border-l border-slate-300 px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        className={`border-l border-app-separator px-2.5 py-1 text-[11px] font-medium transition-colors ${
                           vendorCoverageView === 'overview'
                             ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-50'
+                            : 'text-app-secondary hover:bg-app-fill'
                         }`}
                       >
                         Table & bars
@@ -2379,11 +2379,11 @@ export function ComparePage() {
                 </div>
               )}
             {!selectedRowForScraped && scrapedTableRows.length === 0 && !commonVendorsLoading ? (
-              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-xs text-slate-600 ring-1 ring-slate-950/5">
+              <p className="rounded-xl border border-app-separator bg-app-fill/80 px-4 py-6 text-center text-xs text-app-secondary ring-1 ring-black/5">
                 Select a part row in the workspace list to load scraped vendor fields.
               </p>
             ) : scrapedDataLoading || (compareMode === 'different-same-vendor' && commonVendorsLoading) ? (
-              <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-7 text-xs text-slate-600 ring-1 ring-slate-950/5">
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-app-separator bg-app-fill/80 px-4 py-7 text-xs text-app-secondary ring-1 ring-black/5">
                 <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="16 47" />
                 </svg>
@@ -2477,7 +2477,7 @@ export function ComparePage() {
                             <img
                               src={imgSrc}
                               alt={`${key.replace(/_/g, ' ')} ${i + 1}`}
-                              className="max-h-24 rounded-lg border border-slate-200 object-contain"
+                              className="max-h-24 rounded-lg border border-app-separator object-contain"
                               loading="lazy"
                               onError={(e) => {
                                 const el = e.currentTarget
@@ -2506,15 +2506,15 @@ export function ComparePage() {
                 return (
                   <div className="space-y-2">
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-[11px] font-medium text-slate-500">Table view</span>
-                      <div className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+                      <span className="text-[11px] font-medium text-app-secondary">Table view</span>
+                      <div className="inline-flex overflow-hidden rounded-md border border-app-separator bg-app-surface shadow-sm">
                         <button
                           type="button"
                           onClick={() => setScrapedViewMode('row')}
                           className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                             scrapedViewMode === 'row'
                               ? 'bg-slate-900 text-white'
-                              : 'text-slate-700 hover:bg-slate-50'
+                              : 'text-app-secondary hover:bg-app-fill'
                           }`}
                         >
                           Row view
@@ -2522,28 +2522,28 @@ export function ComparePage() {
                         <button
                           type="button"
                           onClick={() => setScrapedViewMode('column')}
-                          className={`border-l border-slate-300 px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          className={`border-l border-app-separator px-2.5 py-1 text-[11px] font-medium transition-colors ${
                             scrapedViewMode === 'column'
                               ? 'bg-slate-900 text-white'
-                              : 'text-slate-700 hover:bg-slate-50'
+                              : 'text-app-secondary hover:bg-app-fill'
                           }`}
                         >
                           Column view
                         </button>
                       </div>
                     </div>
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-950/5 max-h-[58vh] flex flex-col">
+                  <div className="overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-sm ring-1 ring-black/5 max-h-[58vh] flex flex-col">
                     <div className="overflow-x-auto overflow-y-auto flex-1">
                       {visibleFieldKeys.length === 0 ? (
-                        <div className="px-5 py-8 text-center text-sm text-slate-500">
+                        <div className="px-5 py-8 text-center text-sm text-app-secondary">
                           No fields match the current filters.
                         </div>
                       ) : scrapedViewMode === 'row' ? (
                         <table className="min-w-full border-separate border-spacing-0 text-xs">
                           <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                            <tr className="border-b border-app-separator bg-app-fill/95">
                               <th
-                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                className="sticky left-0 z-30 relative border-b border-r border-app-separator bg-app-fill px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-app-secondary shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
                                 style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
                               >
                                 Field
@@ -2562,12 +2562,12 @@ export function ComparePage() {
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
                                   onDragOver={handleScrapedDragOver}
                                   onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
-                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-3 py-2.5 text-left"
+                                  className="relative cursor-move select-none border-b border-l border-app-separator px-3 py-2.5 text-left"
                                   style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
                                   title="Drag to reorder sources"
                                 >
                                   <div className="flex min-w-0 items-start gap-2">
-                                    <span className="mt-0.5 shrink-0 text-slate-400 select-none" aria-hidden>
+                                    <span className="mt-0.5 shrink-0 text-app-tertiary select-none" aria-hidden>
                                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                                         <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8-12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
                                       </svg>
@@ -2576,27 +2576,27 @@ export function ComparePage() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           type="checkbox"
-                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                          className="h-3.5 w-3.5 rounded border-app-separator text-app-label focus:ring-slate-400"
                                           checked={selectedBucketSourceUrls.has(item.sourceKey)}
                                           onChange={(e) =>
                                             toggleBucketSourceSelection(item.sourceKey, e.target.checked)
                                           }
                                           aria-label={`Select Source ${displayIdx + 1} for Bucket`}
                                         />
-                                        <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        <p className="truncate text-xs font-semibold uppercase tracking-wide text-app-secondary">
                                           Source {displayIdx + 1}
                                         </p>
                                       </div>
-                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                        <span className="font-medium text-slate-500">Part:</span>{' '}
+                                      <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                        <span className="font-medium text-app-secondary">Part:</span>{' '}
                                         <span className="font-medium">{item.partLabel}</span>
                                       </p>
-                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                        <span className="font-medium text-slate-500">Vendor:</span>{' '}
+                                      <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                        <span className="font-medium text-app-secondary">Vendor:</span>{' '}
                                         <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
                                       </p>
-                                      <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                        <span className="font-medium text-slate-500">URL:</span>{' '}
+                                      <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                        <span className="font-medium text-app-secondary">URL:</span>{' '}
                                         <a
                                           href={item.url}
                                           target="_blank"
@@ -2633,12 +2633,12 @@ export function ComparePage() {
                                 key={key}
                                 onDragOver={handleScrapedDragOver}
                                 onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
-                                className="group transition-colors hover:bg-slate-50/60"
+                                className="group transition-colors hover:bg-app-fill/60"
                               >
                                 <td
                                   draggable
                                   onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
-                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-app-separator bg-app-surface px-3 py-2 text-xs font-medium text-app-secondary shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-app-fill"
                                   style={{ width: scrapedRowFieldColWidth, minWidth: scrapedRowFieldColWidth }}
                                   title="Drag to reorder fields"
                                 >
@@ -2647,7 +2647,7 @@ export function ComparePage() {
                                 {displayScrapedRows.map((item) => (
                                   <td
                                     key={`${item.sourceKey}-${key}`}
-                                    className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
+                                    className="border-l border-app-separator px-3 py-2 text-xs text-app-label align-top"
                                     style={{ width: sourceWidth(item.sourceKey), minWidth: sourceWidth(item.sourceKey) }}
                                   >
                                     {renderScrapedCell(item, key)}
@@ -2660,9 +2660,9 @@ export function ComparePage() {
                       ) : (
                         <table className="min-w-full border-separate border-spacing-0 text-xs">
                           <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50/95">
+                            <tr className="border-b border-app-separator bg-app-fill/95">
                               <th
-                                className="sticky left-0 z-30 relative border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
+                                className="sticky left-0 z-30 relative border-b border-r border-app-separator bg-app-fill px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-app-secondary shadow-[4px_0_12px_-4px_rgba(15,23,42,0.08)]"
                                 style={{
                                   width: scrapedColumnViewSourceColWidth,
                                   minWidth: scrapedColumnViewSourceColWidth,
@@ -2689,7 +2689,7 @@ export function ComparePage() {
                                   onDragStart={(e) => handleScrapedFieldDragStart(e, displayFieldIdx)}
                                   onDragOver={handleScrapedDragOver}
                                   onDrop={(e) => handleScrapedFieldDrop(e, displayFieldIdx)}
-                                  className="relative cursor-move select-none border-b border-l border-slate-100 px-3 py-2.5 text-left text-[11px] font-semibold tracking-wide text-slate-500"
+                                  className="relative cursor-move select-none border-b border-l border-app-separator px-3 py-2.5 text-left text-[11px] font-semibold tracking-wide text-app-secondary"
                                   style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   title="Drag to reorder fields"
                                 >
@@ -2711,12 +2711,12 @@ export function ComparePage() {
                                 key={item.sourceKey}
                                 onDragOver={handleScrapedDragOver}
                                 onDrop={(e) => handleScrapedSourceDrop(e, displayIdx)}
-                                className="group transition-colors hover:bg-slate-50/60"
+                                className="group transition-colors hover:bg-app-fill/60"
                               >
                                 <td
                                   draggable
                                   onDragStart={(e) => handleScrapedSourceDragStart(e, displayIdx)}
-                                  className="sticky left-0 z-10 cursor-move select-none border-r border-slate-100 bg-white px-3 py-2 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-slate-50"
+                                  className="sticky left-0 z-10 cursor-move select-none border-r border-app-separator bg-app-surface px-3 py-2 shadow-[4px_0_12px_-4px_rgba(15,23,42,0.06)] group-hover:bg-app-fill"
                                   style={{
                                     width: scrapedColumnViewSourceColWidth,
                                     minWidth: scrapedColumnViewSourceColWidth,
@@ -2726,27 +2726,27 @@ export function ComparePage() {
                                   <div className="flex items-center gap-2">
                                     <input
                                       type="checkbox"
-                                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                      className="h-3.5 w-3.5 rounded border-app-separator text-app-label focus:ring-slate-400"
                                       checked={selectedBucketSourceUrls.has(item.sourceKey)}
                                       onChange={(e) =>
                                         toggleBucketSourceSelection(item.sourceKey, e.target.checked)
                                       }
                                       aria-label={`Select Source ${displayIdx + 1} for Bucket`}
                                     />
-                                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-app-secondary">
                                       Source {displayIdx + 1}
                                     </p>
                                   </div>
-                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                    <span className="font-medium text-slate-500">Part:</span>{' '}
+                                  <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                    <span className="font-medium text-app-secondary">Part:</span>{' '}
                                     <span className="font-medium">{item.partLabel}</span>
                                   </p>
-                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                    <span className="font-medium text-slate-500">Vendor:</span>{' '}
+                                  <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                    <span className="font-medium text-app-secondary">Vendor:</span>{' '}
                                     <span className="font-medium">{getVendorNameFromSourceData(item.data ?? {}, item.url)}</span>
                                   </p>
-                                  <p className="mt-0.5 truncate text-[11px] text-slate-700">
-                                    <span className="font-medium text-slate-500">URL:</span>{' '}
+                                  <p className="mt-0.5 truncate text-[11px] text-app-secondary">
+                                    <span className="font-medium text-app-secondary">URL:</span>{' '}
                                     <a
                                       href={item.url}
                                       target="_blank"
@@ -2766,7 +2766,7 @@ export function ComparePage() {
                                 {visibleFieldKeys.map((key) => (
                                   <td
                                     key={`${item.sourceKey}-${key}`}
-                                    className="border-l border-slate-100 px-3 py-2 text-xs text-slate-800 align-top"
+                                    className="border-l border-app-separator px-3 py-2 text-xs text-app-label align-top"
                                     style={{ width: fieldWidth(key), minWidth: fieldWidth(key) }}
                                   >
                                     {renderScrapedCell(item, key)}
@@ -2779,8 +2779,8 @@ export function ComparePage() {
                       )}
                     </div>
                     {scrapedTableRows.length > 0 && (
-                      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/95 px-4 py-3">
-                        <p className="text-[11px] text-slate-500">
+                      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-app-separator bg-app-fill/95 px-4 py-3">
+                        <p className="text-[11px] text-app-secondary">
                           {bucketSourceUrlsInSession.size > 0
                             ? `${bucketSourceUrlsInSession.size} source${
                                 bucketSourceUrlsInSession.size === 1 ? '' : 's'
@@ -2840,7 +2840,7 @@ export function ComparePage() {
                               showBucketToast('Selected sources are already in Bucket')
                             }
                           }}
-                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800"
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-app-fill-strong"
                         >
                           Add selected sources to Bucket
                         </button>
@@ -2852,7 +2852,7 @@ export function ComparePage() {
               })()}
               </>
             ) : (
-              <p className="rounded-xl border border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-600 ring-1 ring-slate-950/5">
+              <p className="rounded-xl border border-app-separator bg-app-fill/80 px-5 py-8 text-center text-sm text-app-secondary ring-1 ring-black/5">
                 No scraped data for this part. Run Research on the Research page to collect vendor data.
               </p>
             )}
@@ -2865,7 +2865,7 @@ export function ComparePage() {
                     <div className="h-full min-h-0 w-1/3 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
                       <div className="mx-auto max-w-6xl">
                         {commonVendorsLoading && allPartsDecisionRows.length === 0 ? (
-                          <p className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">
+                          <p className="rounded-xl border border-app-separator bg-app-surface px-5 py-10 text-center text-sm text-app-secondary">
                             Loading vendor pricing, lead times, and sources…
                           </p>
                         ) : (
@@ -2892,21 +2892,21 @@ export function ComparePage() {
                         return (
                           <div className="mx-auto max-w-3xl space-y-4">
                             <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-app-tertiary">
                                 Step 3 · RFQ
                               </p>
-                              <h3 className="mt-0.5 text-lg font-semibold tracking-tight text-slate-900">
+                              <h3 className="mt-0.5 text-lg font-semibold tracking-tight text-app-label">
                                 Create approved RFQ
                               </h3>
-                              <p className="mt-1 text-sm text-slate-500">
+                              <p className="mt-1 text-sm text-app-secondary">
                                 Confirm the award below. Creating the RFQ saves an approved PDF in Reports.
                               </p>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                            <div className="rounded-xl border border-app-separator bg-app-surface px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-app-tertiary">
                                 Compared parts
                               </p>
-                              <p className="mt-1 text-sm font-medium text-slate-800">
+                              <p className="mt-1 text-sm font-medium text-app-label">
                                 {partTitles.filter(Boolean).join(' vs ') || '—'}
                               </p>
                             </div>
@@ -2914,7 +2914,7 @@ export function ComparePage() {
                               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
                                 Awarded vendor
                               </p>
-                              <p className="mt-1 font-mono text-base font-semibold text-slate-900">
+                              <p className="mt-1 font-mono text-base font-semibold text-app-label">
                                 {vendorLine?.vendor ?? vendorLine?.winnerLabel ?? '—'}
                               </p>
                             </div>
@@ -2922,16 +2922,16 @@ export function ComparePage() {
                               {summary.map((line, idx) => (
                                 <li
                                   key={line.lens}
-                                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                                  className="rounded-xl border border-app-separator bg-app-surface px-4 py-3 shadow-sm"
                                 >
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-app-tertiary">
                                     Decision {idx + 1} · {line.title}
                                   </p>
-                                  <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+                                  <p className="mt-1 font-mono text-sm font-semibold text-app-label">
                                     {line.winnerLabel}
                                     <span className="ml-2 text-emerald-700">{line.metric}</span>
                                   </p>
-                                  <p className="mt-1 text-xs leading-relaxed text-slate-600">{line.why}</p>
+                                  <p className="mt-1 text-xs leading-relaxed text-app-secondary">{line.why}</p>
                                 </li>
                               ))}
                             </ol>
@@ -2950,8 +2950,8 @@ export function ComparePage() {
             </div>
           </div>
           {routeRfqFlow && (
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-              <p className="text-xs text-slate-500">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-app-separator bg-app-surface px-4 py-3 sm:px-6">
+              <p className="text-xs text-app-secondary">
                 {(() => {
                   switch (wizardStep) {
                     case 'compare':
@@ -2971,7 +2971,7 @@ export function ComparePage() {
                 <button
                   type="button"
                   onClick={goWizardBack}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-4 py-2 text-sm font-medium text-app-secondary shadow-sm hover:bg-app-fill"
                 >
                   <ChevronLeft className="h-4 w-4" aria-hidden />
                   Back

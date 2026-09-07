@@ -5,8 +5,8 @@ export function SettingsBillingPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-lg font-semibold text-gray-900">Billing</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-lg font-semibold text-app-label">Billing</h1>
+        <p className="mt-1 text-sm text-app-secondary">
           Manage your subscription plan and invoices.
         </p>
       </header>
@@ -14,22 +14,22 @@ export function SettingsBillingPage() {
       {/* Card 1: Plan information */}
       <Card className={SETTINGS_CARD_CLASS}>
         <div className="flex items-start justify-between gap-4">
-          <h2 className="text-sm font-semibold text-gray-900">Plan information</h2>
-          <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-2">
+          <h2 className="text-sm font-semibold text-app-label">Plan information</h2>
+          <button type="button" className="rounded-lg bg-app-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus:ring-2 focus:ring-app-accent/20 focus:ring-offset-app-bg">
             Upgrade plan
           </button>
         </div>
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
-          <div className="rounded-lg bg-blue-50 px-4 py-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Current plan</div>
+          <div className="rounded-lg bg-app-accent-soft px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-app-accent">Current plan</div>
             <div className="mt-1 text-base font-semibold text-blue-900">Growth — B2B</div>
-            <p className="mt-1 text-xs text-blue-800">Up to 1,000 searches per month.</p>
+            <p className="mt-1 text-xs text-app-accent">Up to 1,000 searches per month.</p>
           </div>
-          <div className="rounded-lg bg-gray-50 px-4 py-3">
-            <div className="text-xs text-gray-600">Usage this month</div>
-            <div className="mt-1 font-medium text-gray-900">320 / 1,000 searches</div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
-              <div className="h-full w-1/3 rounded-full bg-blue-500" />
+          <div className="rounded-lg bg-app-fill px-4 py-3">
+            <div className="text-xs text-app-secondary">Usage this month</div>
+            <div className="mt-1 font-medium text-app-label">320 / 1,000 searches</div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-app-fill-strong">
+              <div className="h-full w-1/3 rounded-full bg-app-accent" />
             </div>
           </div>
         </div>
@@ -38,10 +38,10 @@ export function SettingsBillingPage() {
       {/* Card 2: Invoice history */}
 
       <Card className={`${SETTINGS_CARD_CLASS} mt-6`}>
-        <h2 className="text-sm font-semibold text-gray-900">Invoice history</h2>
-        <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+        <h2 className="text-sm font-semibold text-app-label">Invoice history</h2>
+        <div className="mt-4 overflow-hidden rounded-lg border border-app-separator">
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+            <thead className="bg-app-fill text-left text-xs font-medium uppercase tracking-wide text-app-secondary">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Invoice</th>
@@ -49,7 +49,7 @@ export function SettingsBillingPage() {
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white text-gray-700">
+            <tbody className="divide-y divide-gray-100 bg-app-surface text-app-secondary">
               <tr>
                 <td className="px-4 py-3">Feb 1, 2026</td>
                 <td className="px-4 py-3">INV-2026-001</td>

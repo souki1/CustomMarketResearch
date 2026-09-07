@@ -468,6 +468,37 @@ export type ResearchMoreSourceResult = {
   change_log?: ResearchChangeLogEntry[]
 }
 
+function datasheetDownloadFilename(name: string): string {
+  const stem = name.replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 80)
+  const base = stem || 'datasheet'
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`
+}
+
+export async function downloadResearchDatasheetPdf(
+  researchUrlId: number,
+  filename: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/datasheet/research-urls/${encodeURIComponent(String(researchUrlId))}/datasheet.pdf`,
+    { headers: bearerAuthHeader() }
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = typeof err.detail === 'string' ? err.detail : 'Datasheet download failed'
+    throw new Error(msg)
+  }
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = datasheetDownloadFilename(filename)
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 /** Re-scrape one existing source URL with a prompt; merges updated/new fields into that source only. */
 export async function researchMoreSource(
   token: string,

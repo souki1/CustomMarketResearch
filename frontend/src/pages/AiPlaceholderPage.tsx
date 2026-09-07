@@ -8,7 +8,6 @@ import {
   Loader2,
   MessageSquare,
   MessageSquarePlus,
-  Mic,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,25 +39,25 @@ const MODES: {
   {
     value: 'chat',
     label: 'Chat',
-    hint: 'Back-and-forth assistant for research, procurement, and explanations. Conversations are stored in MongoDB.',
+    hint: 'Back-and-forth assistant for research, procurement, and explanations.',
     icon: MessageSquare,
   },
   {
     value: 'summarize',
     label: 'Summarize',
-    hint: 'Turn long text into concise bullets or short paragraphs. Each run is saved as its own session in MongoDB.',
+    hint: 'Turn long text into concise bullets or short paragraphs.',
     icon: ListCollapse,
   },
   {
     value: 'rewrite',
     label: 'Rewrite',
-    hint: 'Clearer, more professional wording while keeping your meaning. Saved per run in MongoDB.',
+    hint: 'Clearer, more professional wording while keeping your meaning.',
     icon: Pencil,
   },
   {
     value: 'brainstorm',
     label: 'Brainstorm',
-    hint: 'Ideas, angles, and next steps for a topic or problem. Saved per run in MongoDB.',
+    hint: 'Ideas, angles, and next steps for a topic or problem.',
     icon: Lightbulb,
   },
 ]
@@ -79,7 +78,7 @@ function formatSessionTime(iso: string): string {
 }
 
 const msgActionBtn =
-  'rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-35'
+  'rounded-lg p-1.5 text-app-tertiary transition-colors hover:bg-app-fill hover:text-app-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-35'
 
 function AssistantMessageToolbar({
   content,
@@ -139,7 +138,7 @@ function AssistantMessageToolbar({
         aria-label="Thumbs up"
         aria-pressed={vote === 'up'}
       >
-        <ThumbsUp className={`h-4 w-4 ${vote === 'up' ? 'text-gray-900' : ''}`} aria-hidden />
+        <ThumbsUp className={`h-4 w-4 ${vote === 'up' ? 'text-app-label' : ''}`} aria-hidden />
       </button>
       <button
         type="button"
@@ -149,7 +148,7 @@ function AssistantMessageToolbar({
         aria-label="Thumbs down"
         aria-pressed={vote === 'down'}
       >
-        <ThumbsDown className={`h-4 w-4 ${vote === 'down' ? 'text-gray-900' : ''}`} aria-hidden />
+        <ThumbsDown className={`h-4 w-4 ${vote === 'down' ? 'text-app-label' : ''}`} aria-hidden />
       </button>
       <button type="button" className={msgActionBtn} onClick={() => void share()} title="Share" aria-label="Share">
         <Share2 className="h-4 w-4" aria-hidden />
@@ -168,7 +167,7 @@ function AssistantMessageToolbar({
         <MoreHorizontal className="h-4 w-4" aria-hidden />
       </button>
       {copiedIndex === messageIndex && (
-        <span className="ml-1 text-xs text-gray-500" role="status">
+        <span className="ml-1 text-xs text-app-secondary" role="status">
           Copied
         </span>
       )}
@@ -177,13 +176,13 @@ function AssistantMessageToolbar({
 }
 
 const pillShell =
-  'flex min-h-[52px] items-end gap-2 rounded-[1.75rem] border border-gray-200 bg-white px-2 py-2 shadow-sm'
+  'flex min-h-[52px] items-end gap-2 rounded-[1.75rem] border border-app-separator bg-app-surface px-2 py-2 shadow-sm'
 
 const pillTextarea =
-  'max-h-40 min-h-[36px] w-full flex-1 resize-none border-0 bg-transparent py-2 text-[15px] leading-snug text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 disabled:opacity-40'
+  'max-h-40 min-h-[36px] w-full flex-1 resize-none border-0 bg-transparent py-2 text-[15px] leading-snug text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-0 disabled:opacity-40'
 
 const iconBtn =
-  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-30'
+  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-30'
 
 const AI_HISTORY_OPEN_KEY = 'ir-ai-history-open'
 
@@ -193,8 +192,8 @@ const AI_PAGE_SHELL = 'box-border flex h-[calc(100vh-3.5rem)] w-full max-w-full 
 const aiCollapsedSessionBtn = (active: boolean) =>
   `flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight transition-all sm:h-9 sm:w-9 ${
     active
-      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
-      : 'text-slate-500 hover:bg-white/80 hover:text-slate-800 hover:shadow-sm'
+      ? 'bg-app-surface text-app-label shadow-sm ring-1 ring-slate-200'
+      : 'text-app-secondary hover:bg-app-surface/80 hover:text-app-label hover:shadow-sm'
   }`
 
 export function AiPlaceholderPage() {
@@ -377,18 +376,18 @@ export function AiPlaceholderPage() {
   }, [chatMessages])
 
   return (
-    <div className={`${AI_PAGE_SHELL} bg-white text-gray-900`}>
+    <div className={`${AI_PAGE_SHELL} bg-app-bg text-app-label`}>
       {/* Same shell as Compare / Reports: full-width row, secondary sidebar, flex-1 main (no max-w-7xl wrapper) */}
       <div className="flex h-full min-h-0 w-full min-w-0">
         {tab === 'chat' && !historyOpen && (
           <div
-            className="flex h-full w-10 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 sm:w-11"
+            className="flex h-full w-10 shrink-0 flex-col border-r border-app-separator bg-app-fill/90 sm:w-11"
             aria-label="Chat history (collapsed)"
           >
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}
-              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-slate-200/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
+              className="flex h-10 w-full shrink-0 items-center justify-center border-b border-app-separator text-app-secondary transition-colors hover:bg-app-surface hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50"
               title="Expand history"
               aria-label="Show chat history"
               aria-expanded={false}
@@ -424,7 +423,7 @@ export function AiPlaceholderPage() {
               type="button"
               onClick={() => startNewChat()}
               disabled={!token || loading}
-              className="flex h-10 w-full shrink-0 items-center justify-center border-t border-slate-200/80 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50 disabled:opacity-40"
+              className="flex h-10 w-full shrink-0 items-center justify-center border-t border-app-separator text-app-tertiary transition-colors hover:bg-app-surface hover:text-app-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50 disabled:opacity-40"
               title="New chat"
               aria-label="New chat"
             >
@@ -435,18 +434,18 @@ export function AiPlaceholderPage() {
 
         {tab === 'chat' && historyOpen && (
           <aside
-            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 md:w-56 lg:w-60"
+            className="flex h-full min-h-0 w-52 shrink-0 flex-col border-r border-app-separator bg-app-fill/90 md:w-56 lg:w-60"
             aria-label="Chat history"
           >
-            <div className="flex items-center gap-1 border-b border-slate-200 px-2 py-2 sm:px-3 sm:py-2.5">
+            <div className="flex items-center gap-1 border-b border-app-separator px-2 py-2 sm:px-3 sm:py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <History className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                <h2 className="truncate text-sm font-semibold text-slate-900">History</h2>
+                <History className="h-4 w-4 shrink-0 text-app-secondary" aria-hidden />
+                <h2 className="truncate text-sm font-semibold text-app-label">History</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setHistoryOpen(false)}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-app-secondary transition-colors hover:bg-app-surface hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                 title="Collapse history"
                 aria-label="Hide chat history"
                 aria-expanded={true}
@@ -464,7 +463,7 @@ export function AiPlaceholderPage() {
                 className={`flex w-full items-center gap-1.5 rounded-xl px-2 py-2 text-left text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:opacity-40 sm:gap-2 sm:px-3 sm:py-2.5 sm:text-sm ${
                   isNewChat
                     ? 'bg-violet-100 text-violet-900 ring-1 ring-violet-200'
-                    : 'text-slate-700 hover:bg-white hover:shadow-sm'
+                    : 'text-app-secondary hover:bg-app-surface hover:shadow-sm'
                 }`}
               >
                 <MessageSquarePlus className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
@@ -473,16 +472,16 @@ export function AiPlaceholderPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-3 pt-1 sm:px-2">
               {!token && (
-                <p className="px-2 py-2 text-xs text-slate-500">Sign in to see past chats.</p>
+                <p className="px-2 py-2 text-xs text-app-secondary">Sign in to see past chats.</p>
               )}
               {token && loadingSessions && chatSessions.length === 0 && (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-app-secondary">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   Loading…
                 </div>
               )}
               {token && !loadingSessions && chatSessions.length === 0 && (
-                <p className="px-2 py-2 text-xs text-slate-500">No past conversations yet.</p>
+                <p className="px-2 py-2 text-xs text-app-secondary">No past conversations yet.</p>
               )}
               <ul className="space-y-1" role="list">
                 {token &&
@@ -498,8 +497,8 @@ export function AiPlaceholderPage() {
                           onClick={() => void onSessionSelect(s.session_id)}
                           className={`flex w-full flex-col gap-0.5 rounded-xl px-2 py-2 text-left text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:opacity-50 sm:px-3 sm:py-2.5 sm:text-sm ${
                             active
-                              ? 'bg-white font-medium text-slate-900 shadow-sm ring-1 ring-slate-200'
-                              : 'text-slate-700 hover:bg-white/80 hover:shadow-sm'
+                              ? 'bg-app-surface font-medium text-app-label shadow-sm ring-1 ring-slate-200'
+                              : 'text-app-secondary hover:bg-app-surface/80 hover:shadow-sm'
                           }`}
                         >
                           {fromResearch && (
@@ -508,7 +507,7 @@ export function AiPlaceholderPage() {
                             </span>
                           )}
                           <span className="line-clamp-2 wrap-break-word">{preview}</span>
-                          <span className="text-xs font-normal text-slate-500">
+                          <span className="text-xs font-normal text-app-secondary">
                             {formatSessionTime(s.last_at)} · {s.turn_count} turn
                             {s.turn_count === 1 ? '' : 's'}
                           </span>
@@ -536,7 +535,7 @@ export function AiPlaceholderPage() {
                 </div>
 
                 {!hasChatThread && (
-                  <h1 className="text-center text-3xl font-medium tracking-tight text-gray-900 sm:text-4xl">
+                  <h1 className="text-center text-3xl font-medium tracking-tight text-app-label sm:text-4xl">
                     Where should we begin?
                   </h1>
                 )}
@@ -577,7 +576,7 @@ export function AiPlaceholderPage() {
                         key={`${i}-${msg.role}-${msg.content.slice(0, 24)}`}
                         className="flex justify-end"
                       >
-                        <div className="max-w-[min(85%,20rem)] rounded-2xl bg-gray-100 px-3 py-2 text-[15px] leading-relaxed text-gray-900">
+                        <div className="max-w-[min(85%,20rem)] rounded-2xl bg-app-fill px-3 py-2 text-[15px] leading-relaxed text-app-label">
                           <span className="block whitespace-pre-wrap wrap-break-word">{msg.content}</span>
                         </div>
                       </div>
@@ -587,7 +586,7 @@ export function AiPlaceholderPage() {
                         className="flex justify-start"
                       >
                         <div className="w-full min-w-0 max-w-2xl">
-                          <div className="text-[15px] leading-relaxed text-gray-900">
+                          <div className="text-[15px] leading-relaxed text-app-label">
                             <span className="block whitespace-pre-wrap wrap-break-word">{msg.content}</span>
                           </div>
                           <AssistantMessageToolbar
@@ -614,7 +613,7 @@ export function AiPlaceholderPage() {
                   )}
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <div className="flex items-center gap-2 text-sm text-app-secondary">
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                         Thinking…
                       </div>
@@ -626,7 +625,7 @@ export function AiPlaceholderPage() {
               <div
                 className={
                   hasChatThread && tab === 'chat'
-                    ? 'mt-auto shrink-0 space-y-3 border-t border-gray-100 bg-white pt-3'
+                    ? 'mt-auto shrink-0 space-y-3 border-t border-app-separator bg-app-surface pt-3'
                     : 'shrink-0'
                 }
               >
@@ -647,7 +646,7 @@ export function AiPlaceholderPage() {
                         <Tabs.Trigger
                           key={m.value}
                           value={m.value}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 data-[state=active]:border-violet-300 data-[state=active]:bg-violet-50 data-[state=active]:text-violet-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary transition-colors hover:border-app-separator hover:bg-app-fill hover:text-app-label data-[state=active]:border-violet-300 data-[state=active]:bg-violet-50 data-[state=active]:text-violet-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                         >
                           <Icon className="h-3.5 w-3.5 opacity-80" aria-hidden />
                           {m.label}
@@ -683,24 +682,15 @@ export function AiPlaceholderPage() {
                     />
                     <button
                       type="button"
-                      className={iconBtn}
-                      disabled
-                      title="Voice input is not available"
-                      aria-label="Voice input (not available)"
-                    >
-                      <Mic className="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => void runChat()}
                       disabled={!token || loading || !chatInput.trim()}
-                      className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-900 shadow-md transition-transform hover:scale-105 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
+                      className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-app-separator bg-app-surface text-app-label shadow-md transition-transform hover:scale-105 hover:bg-app-fill disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-app-bg"
                       aria-label="Send"
                     >
                       {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
                     </button>
                   </div>
-                  <p className="text-center text-[11px] leading-relaxed text-gray-400">
+                  <p className="text-center text-[13px] leading-relaxed text-app-secondary">
                     AI can make mistakes. Check important information.
                   </p>
                 </>
@@ -731,22 +721,13 @@ export function AiPlaceholderPage() {
                           }
                         }}
                         disabled={!token || loading}
-                        aria-label="Message"
-                      />
-                      <button
-                        type="button"
-                        className={iconBtn}
-                        disabled
-                        title="Voice input is not available"
-                        aria-label="Voice input (not available)"
-                      >
-                        <Mic className="h-5 w-5" />
-                      </button>
-                      <button
+                      aria-label="Message"
+                    />
+                    <button
                         type="button"
                         onClick={() => void runChat()}
                         disabled={!token || loading || !chatInput.trim()}
-                        className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white shadow-md transition-transform hover:scale-105 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
+                        className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white shadow-md transition-transform hover:scale-105 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-app-bg"
                         aria-label="Send"
                       >
                         {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
@@ -768,7 +749,7 @@ export function AiPlaceholderPage() {
                           type="button"
                           onClick={() => void runSingleMode()}
                           disabled={!token || loading || !singleInput.trim()}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-white shadow-md transition-transform hover:scale-105 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
+                          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-white shadow-md transition-transform hover:scale-105 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-app-bg"
                           aria-label="Run with Groq"
                         >
                           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
@@ -793,7 +774,7 @@ export function AiPlaceholderPage() {
                         <Tabs.Trigger
                           key={m.value}
                           value={m.value}
-                          className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 data-[state=active]:border-violet-300 data-[state=active]:bg-violet-50 data-[state=active]:text-violet-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                          className="inline-flex items-center gap-2 rounded-full border border-app-separator bg-app-surface px-4 py-2.5 text-sm font-medium text-app-secondary transition-colors hover:border-app-separator hover:bg-app-fill hover:text-app-label data-[state=active]:border-violet-300 data-[state=active]:bg-violet-50 data-[state=active]:text-violet-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                         >
                           <Icon className="h-4 w-4 opacity-80" aria-hidden />
                           {m.label}
@@ -802,7 +783,7 @@ export function AiPlaceholderPage() {
                     })}
                   </Tabs.List>
 
-                  <p className="mt-4 text-center text-xs text-gray-500">{tabHint}</p>
+                  <p className="mt-4 text-center text-xs text-app-secondary">{tabHint}</p>
                 </>
               )}
             </div>
@@ -814,9 +795,9 @@ export function AiPlaceholderPage() {
           {(['summarize', 'rewrite', 'brainstorm'] as const).map((mode) => (
             <Tabs.Content key={mode} value={mode} className="mt-6 outline-none">
               {singleOutput && (
-                <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5">
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-gray-500">Result</h3>
-                  <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-gray-900">
+                <div className="rounded-3xl border border-app-separator bg-app-fill p-5">
+                  <h3 className="text-xs font-medium uppercase tracking-wider text-app-secondary">Result</h3>
+                  <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-app-label">
                     {singleOutput}
                   </div>
                 </div>
@@ -826,12 +807,11 @@ export function AiPlaceholderPage() {
         </Tabs.Root>
 
             <p
-              className={`mt-auto text-center text-[11px] leading-relaxed text-gray-500 ${
+              className={`mt-auto text-center text-xs leading-relaxed text-app-secondary ${
                 hasChatThread && tab === 'chat' ? 'pt-6' : 'pt-12'
               }`}
             >
-              Powered by Groq; conversations stored in MongoDB (
-              <code className="text-gray-600">ai_interactions</code>).
+              Chats are saved to your workspace. AI-generated answers can contain errors.
             </p>
           </div>
         </div>

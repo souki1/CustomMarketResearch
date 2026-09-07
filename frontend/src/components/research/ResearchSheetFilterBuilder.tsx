@@ -183,7 +183,7 @@ export function ResearchSheetFilterBuilder({
     const multi = operatorUsesMultiPills(row.operator)
     const needs = operatorNeedsValue(row.operator)
     if (!needs) {
-      return <span className="text-[11px] text-slate-400">—</span>
+      return <span className="text-[11px] text-app-tertiary">—</span>
     }
     if (multi) {
       return (
@@ -218,7 +218,7 @@ export function ResearchSheetFilterBuilder({
                     : { kind, topId, rowId }
                 )
               }
-              className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center gap-0.5 rounded-md border border-app-separator bg-app-surface px-1.5 py-0.5 text-[11px] text-app-secondary hover:bg-app-fill"
             >
               Add…
               <ChevronDown className="h-3 w-3 opacity-60" />
@@ -226,15 +226,15 @@ export function ResearchSheetFilterBuilder({
             {valuePickerFor?.rowId === rowId &&
               valuePickerFor.topId === topId &&
               valuePickerFor.kind === kind && (
-                <div className="absolute left-0 top-[calc(100%+4px)] z-10 max-h-40 w-48 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-md">
+                <div className="absolute left-0 top-[calc(100%+4px)] z-10 max-h-40 w-48 overflow-y-auto rounded-lg border border-app-separator bg-app-surface py-1 shadow-md">
                   {pickerOptions.length === 0 ? (
-                    <p className="px-2 py-1.5 text-[11px] text-slate-400">No values in column</p>
+                    <p className="px-2 py-1.5 text-[11px] text-app-tertiary">No values in column</p>
                   ) : (
                     pickerOptions.map((v) => (
                       <button
                         key={v}
                         type="button"
-                        className="block w-full truncate px-2 py-1 text-left text-[11px] hover:bg-slate-50"
+                        className="block w-full truncate px-2 py-1 text-left text-[11px] hover:bg-app-fill"
                         onClick={() => {
                           if (row.multiValues.includes(v)) {
                             setValuePickerFor(null)
@@ -266,7 +266,7 @@ export function ResearchSheetFilterBuilder({
           else updateGroupRow(topId, rowId, { value: v })
         }}
         placeholder="Enter a value"
-        className="min-w-[6rem] flex-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
+        className="min-w-[6rem] flex-1 rounded-md border border-app-separator px-2 py-1 text-[11px] text-app-label placeholder:text-app-tertiary focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/20"
       />
     )
   }
@@ -282,11 +282,11 @@ export function ResearchSheetFilterBuilder({
   ) => (
     <div
       key={rowId}
-      className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 py-2 last:border-b-0"
+      className="flex flex-wrap items-center gap-1.5 border-b border-app-separator py-2 last:border-b-0"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => dragIndex != null && onDropReorder(e, dragIndex)}
     >
-      <div className="w-14 shrink-0 text-[11px] font-medium text-slate-500">{leading}</div>
+      <div className="w-14 shrink-0 text-[11px] font-medium text-app-secondary">{leading}</div>
       <select
         value={row.fieldCol ?? ''}
         onChange={(e) => {
@@ -295,7 +295,7 @@ export function ResearchSheetFilterBuilder({
           if (kind === 'line') updateLineRow(topId, { fieldCol: col })
           else updateGroupRow(topId, rowId, { fieldCol: col })
         }}
-        className="max-w-[9rem] shrink-0 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-800"
+        className="max-w-[9rem] shrink-0 rounded-md border border-app-separator bg-app-surface px-1.5 py-1 text-[11px] text-app-label"
       >
         <option value="">Select field</option>
         {headers.map((h, i) => (
@@ -317,7 +317,7 @@ export function ResearchSheetFilterBuilder({
           if (kind === 'line') updateLineRow(topId, patch)
           else updateGroupRow(topId, rowId, patch)
         }}
-        className="max-w-[8.5rem] shrink-0 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-800"
+        className="max-w-[8.5rem] shrink-0 rounded-md border border-app-separator bg-app-surface px-1.5 py-1 text-[11px] text-app-label"
       >
         {FILTER_OPERATORS.map((o) => (
           <option key={o.value} value={o.value}>
@@ -330,7 +330,7 @@ export function ResearchSheetFilterBuilder({
         <button
           type="button"
           onClick={onRemove}
-          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="rounded p-1 text-app-tertiary hover:bg-app-fill-strong hover:text-app-secondary"
           aria-label="Remove condition"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -339,7 +339,7 @@ export function ResearchSheetFilterBuilder({
           <div
             draggable
             onDragStart={(e) => onDragStart(e, dragIndex)}
-            className="cursor-grab rounded p-1 text-slate-400 hover:bg-slate-100 active:cursor-grabbing"
+            className="cursor-grab rounded p-1 text-app-tertiary hover:bg-app-fill-strong active:cursor-grabbing"
             aria-label="Reorder"
             title="Drag to reorder"
           >
@@ -352,9 +352,9 @@ export function ResearchSheetFilterBuilder({
 
   return (
     <div className="flex max-h-[min(70vh,520px)] flex-col">
-      <div className="border-b border-slate-100 pb-2">
-        <h3 className="text-sm font-semibold text-slate-900">Filter</h3>
-        <p className="mt-0.5 text-[11px] text-slate-500">In this view, show records</p>
+      <div className="border-b border-app-separator pb-2">
+        <h3 className="text-sm font-semibold text-app-label">Filter</h3>
+        <p className="mt-0.5 text-[11px] text-app-secondary">In this view, show records</p>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {items.map((it, index) => {
@@ -371,7 +371,7 @@ export function ResearchSheetFilterBuilder({
                       items.map((x) => (x.id === it.id && x.type === 'line' ? { ...x, join } : x))
                     )
                   }}
-                  className="w-full rounded border border-transparent bg-transparent py-0.5 text-[11px] font-medium text-slate-700 hover:border-slate-200"
+                  className="w-full rounded border border-transparent bg-transparent py-0.5 text-[11px] font-medium text-app-secondary hover:border-app-separator"
                 >
                   <option value="and">and</option>
                   <option value="or">or</option>
@@ -390,12 +390,12 @@ export function ResearchSheetFilterBuilder({
           return (
             <div
               key={it.id}
-              className="my-2 rounded-lg border border-slate-200 bg-slate-50/80 p-2"
+              className="my-2 rounded-lg border border-app-separator bg-app-fill/80 p-2"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => onDropReorder(e, index)}
             >
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="flex flex-wrap items-center gap-1 text-[11px] font-semibold text-slate-600">
+                <span className="flex flex-wrap items-center gap-1 text-[11px] font-semibold text-app-secondary">
                   {index > 0 ? (
                     <select
                       value={it.join}
@@ -407,21 +407,21 @@ export function ResearchSheetFilterBuilder({
                           )
                         )
                       }}
-                      className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] font-medium text-slate-800"
+                      className="rounded border border-app-separator bg-app-surface px-1 py-0.5 text-[11px] font-medium text-app-label"
                     >
                       <option value="and">and</option>
                       <option value="or">or</option>
                     </select>
                   ) : (
-                    <span className="text-slate-500">Where</span>
+                    <span className="text-app-secondary">Where</span>
                   )}
-                  <span className="font-normal text-slate-500">any of the following match</span>
+                  <span className="font-normal text-app-secondary">any of the following match</span>
                 </span>
                 <div className="flex items-center gap-0.5">
                   <button
                     type="button"
                     onClick={() => removeTopItem(it.id)}
-                    className="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-600"
+                    className="rounded p-1 text-app-tertiary hover:bg-app-surface hover:text-app-secondary"
                     aria-label="Remove group"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -429,7 +429,7 @@ export function ResearchSheetFilterBuilder({
                   <div
                     draggable
                     onDragStart={(e) => onDragStart(e, index)}
-                    className="cursor-grab rounded p-1 text-slate-400 hover:bg-white active:cursor-grabbing"
+                    className="cursor-grab rounded p-1 text-app-tertiary hover:bg-app-surface active:cursor-grabbing"
                     aria-label="Reorder group"
                   >
                     <GripVertical className="h-3.5 w-3.5" />
@@ -450,7 +450,7 @@ export function ResearchSheetFilterBuilder({
               <button
                 type="button"
                 onClick={() => addGroupCondition(it.id)}
-                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-app-accent hover:text-app-accent"
               >
                 <Plus className="h-3 w-3" />
                 Add condition in group
@@ -459,11 +459,11 @@ export function ResearchSheetFilterBuilder({
           )
         })}
       </div>
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-app-separator pt-2">
         <button
           type="button"
           onClick={addCondition}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-app-accent hover:bg-app-accent-soft"
         >
           <Plus className="h-3 w-3" />
           Add condition
@@ -471,14 +471,14 @@ export function ResearchSheetFilterBuilder({
         <button
           type="button"
           onClick={addConditionGroup}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-app-accent hover:bg-app-accent-soft"
         >
           <Plus className="h-3 w-3" />
           Add condition group
         </button>
         <button
           type="button"
-          className="ml-auto rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="ml-auto rounded-full p-1 text-app-tertiary hover:bg-app-fill-strong hover:text-app-secondary"
           title="Filters apply to rows in this sheet. Values are matched as text."
           aria-label="Help"
         >

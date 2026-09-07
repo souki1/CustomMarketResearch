@@ -1,214 +1,167 @@
-import { Heart, Package, ShoppingCart } from 'lucide-react'
+import {
+  Files,
+  GitCompare,
+  Heart,
+  LayoutDashboard,
+  LayoutGrid,
+  LineChart,
+  Package,
+  Search,
+  Settings,
+  Sparkles,
+} from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import {
-  BUCKET_PATH,
   FILES_PATH,
   PARTS_CATALOG_PATH,
   RESEARCH_COMPARE_PATH,
   WISHLIST_PATH,
 } from '@/lib/paths'
-import { useBucket } from '@/contexts/BucketContext'
 
-function DashboardIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-    </svg>
-  )
+const ICON = 18
+const STROKE = 1.75
+
+type NavItem = {
+  to: string
+  label: string
+  icon: typeof LayoutDashboard
+  match: (path: string) => boolean
 }
-function FilesIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-    </svg>
-  )
+
+type NavGroup = {
+  id: string
+  label: string
+  items: NavItem[]
 }
-function ResearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-  )
-}
-function CompareIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-    </svg>
-  )
-}
-function ReportsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6m4 6V9m4 10V5M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-function AiIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 20v-2m7.07-9H21M3 12h2m14.07 6.07l-1.41-1.41M6.34 6.34L4.93 4.93m14.14 0l-1.41 1.41M6.34 17.66l-1.41 1.41" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 14.5a4 4 0 01-5.66 0 4 4 0 010-5.66 4 4 0 015.66 0 4 4 0 010 5.66z" />
-    </svg>
-  )
-}
-function PortfolioIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-6m6 6v-6" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18v13a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7l2-4h6l2 4" />
-    </svg>
-  )
-}
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  )
-}
+
+const GROUPS: NavGroup[] = [
+  {
+    id: 'work',
+    label: 'Work',
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/' },
+      { to: FILES_PATH, label: 'Files', icon: Files, match: (p) => p === FILES_PATH },
+      { to: '/research', label: 'Research', icon: Search, match: (p) => p === '/research' },
+      {
+        to: PARTS_CATALOG_PATH,
+        label: 'Parts Catalog',
+        icon: Package,
+        match: (p) => p === PARTS_CATALOG_PATH,
+      },
+    ],
+  },
+  {
+    id: 'decide',
+    label: 'Decide',
+    items: [
+      {
+        to: RESEARCH_COMPARE_PATH,
+        label: 'Compare',
+        icon: GitCompare,
+        match: (p) => p === RESEARCH_COMPARE_PATH,
+      },
+      { to: '/reports', label: 'Reports', icon: LineChart, match: (p) => p === '/reports' },
+      { to: '/portfolio', label: 'Portfolio', icon: LayoutGrid, match: (p) => p === '/portfolio' },
+      { to: WISHLIST_PATH, label: 'Wishlist', icon: Heart, match: (p) => p === WISHLIST_PATH },
+    ],
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    items: [
+      { to: '/ai', label: 'AI', icon: Sparkles, match: (p) => p === '/ai' },
+      { to: '/settings', label: 'Settings', icon: Settings, match: (p) => p.startsWith('/settings') },
+    ],
+  },
+]
 
 type SidebarProps = {
   open: boolean
   collapsed?: boolean
 }
 
-const linkClass = (active: boolean) =>
-  `flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`
-
-const collapsedLinkClass = (active: boolean) =>
-  `flex items-center justify-center rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-100'}`
+function linkClass(active: boolean, collapsed: boolean) {
+  const base = collapsed
+    ? 'flex h-9 w-9 items-center justify-center rounded-[8px] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50'
+    : 'flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-medium tracking-[-0.01em] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-accent/50'
+  if (active) {
+    return `${base} bg-app-fill-strong text-app-label`
+  }
+  return `${base} text-app-secondary hover:bg-app-fill hover:text-app-label`
+}
 
 export function Sidebar({ open, collapsed = false }: SidebarProps) {
-  const iconClass = 'h-5 w-5 shrink-0 text-gray-500'
   const location = useLocation()
-  const { items: bucketItems } = useBucket()
-  const isDashboard = location.pathname === '/'
-  const isFiles = location.pathname === FILES_PATH
-  const isResearch = location.pathname === '/research'
-  const isPartsCatalog = location.pathname === PARTS_CATALOG_PATH
-  const isCompare = location.pathname === RESEARCH_COMPARE_PATH
-  const isReports = location.pathname === '/reports'
-  const isBucket = location.pathname === BUCKET_PATH
-  const isAi = location.pathname === '/ai'
-  const isPortfolio = location.pathname === '/portfolio'
-  const isWishlist = location.pathname === WISHLIST_PATH
-  const isSettings = location.pathname.startsWith('/settings')
 
   if (collapsed) {
     return (
-      <aside
-        className="h-full min-h-0 w-14 shrink-0 border-r border-gray-200 bg-white"
-        aria-label="Collapsed sidebar"
-      >
-        <div className="flex h-full min-h-0 flex-col py-4">
-          <nav className="flex flex-col items-center gap-1 px-2">
-            <Link to="/" className={collapsedLinkClass(isDashboard)} title="Dashboard">
-              <DashboardIcon className={iconClass} />
-            </Link>
-            <Link to={FILES_PATH} className={collapsedLinkClass(isFiles)} title="Files">
-              <FilesIcon className={iconClass} />
-            </Link>
-            <Link to="/research" className={collapsedLinkClass(isResearch)} title="Research">
-              <ResearchIcon className={iconClass} />
-            </Link>
-            <Link
-              to={PARTS_CATALOG_PATH}
-              className={collapsedLinkClass(isPartsCatalog)}
-              title="Parts Catalog"
-            >
-              <Package className={iconClass} />
-            </Link>
-            <Link to={RESEARCH_COMPARE_PATH} className={collapsedLinkClass(isCompare)} title="Compare">
-              <CompareIcon className={iconClass} />
-            </Link>
-            <Link to="/reports" className={collapsedLinkClass(isReports)} title="Reports">
-              <ReportsIcon className={iconClass} />
-            </Link>
-            <Link to={BUCKET_PATH} className={collapsedLinkClass(isBucket)} title="Bucket">
-              <ShoppingCart className={iconClass} />
-            </Link>
-            <Link to="/ai" className={collapsedLinkClass(isAi)} title="AI">
-              <AiIcon className={iconClass} />
-            </Link>
-            <Link to="/portfolio" className={collapsedLinkClass(isPortfolio)} title="Portfolio">
-              <PortfolioIcon className={iconClass} />
-            </Link>
-            <Link to={WISHLIST_PATH} className={collapsedLinkClass(isWishlist)} title="Wishlist">
-              <Heart className={iconClass} />
-            </Link>
-            <Link to="/settings" className={collapsedLinkClass(isSettings)} title="Settings">
-              <SettingsIcon className={iconClass} />
-            </Link>
-          </nav>
-        </div>
+      <aside className="h-full min-h-0 w-14 shrink-0 border-r border-app-separator bg-app-sidebar" aria-label="Sidebar">
+        <nav className="flex h-full min-h-0 flex-col items-center gap-4 overflow-y-auto px-2 py-3">
+          {GROUPS.map((group) => (
+            <div key={group.id} className="flex flex-col items-center gap-1" role="group" aria-label={group.label}>
+              {group.items.map((item) => {
+                const Icon = item.icon
+                const active = item.match(location.pathname)
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={linkClass(active, true)}
+                    aria-label={item.label}
+                    aria-current={active ? 'page' : undefined}
+                    title={item.label}
+                  >
+                    <Icon size={ICON} strokeWidth={STROKE} aria-hidden />
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
       </aside>
     )
   }
 
   return (
     <aside
-      className={`h-full min-h-0 w-56 shrink-0 border-r border-gray-200 bg-white transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`h-full min-h-0 w-56 shrink-0 border-r border-app-separator bg-app-sidebar transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full'}`}
       aria-label="Sidebar"
       aria-hidden={!open}
     >
-      <div className="flex h-full min-h-0 flex-col py-4">
-        <nav className="flex flex-col gap-1 px-2">
-          <Link to="/" className={linkClass(isDashboard)} title="Dashboard">
-            <DashboardIcon className={iconClass} />
-            <span>Dashboard</span>
-          </Link>
-          <Link to={FILES_PATH} className={linkClass(isFiles)} title="Files">
-            <FilesIcon className={iconClass} />
-            <span>Files</span>
-          </Link>
-          <Link to="/research" className={linkClass(isResearch)} title="Research">
-            <ResearchIcon className={iconClass} />
-            <span>Research</span>
-          </Link>
-          <Link to={PARTS_CATALOG_PATH} className={linkClass(isPartsCatalog)} title="Parts Catalog">
-            <Package className={iconClass} />
-            <span>Parts Catalog</span>
-          </Link>
-          <Link to={RESEARCH_COMPARE_PATH} className={linkClass(isCompare)} title="Compare">
-            <CompareIcon className={iconClass} />
-            <span>Compare</span>
-          </Link>
-          <Link to="/reports" className={linkClass(isReports)} title="Reports">
-            <ReportsIcon className={iconClass} />
-            <span>Reports</span>
-          </Link>
-          <Link to={BUCKET_PATH} className={linkClass(isBucket)} title="Bucket">
-            <ShoppingCart className={iconClass} />
-            <span className="flex flex-1 items-center gap-2">
-              Bucket
-              {bucketItems.length > 0 && (
-                <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-500">
-                  {bucketItems.length}
-                </span>
-              )}
-            </span>
-          </Link>
-          <Link to="/ai" className={linkClass(isAi)} title="AI">
-            <AiIcon className={iconClass} />
-            <span>AI</span>
-          </Link>
-          <Link to="/portfolio" className={linkClass(isPortfolio)} title="Portfolio">
-            <PortfolioIcon className={iconClass} />
-            <span>Portfolio</span>
-          </Link>
-          <Link to={WISHLIST_PATH} className={linkClass(isWishlist)} title="Wishlist">
-            <Heart className={iconClass} />
-            <span>Wishlist</span>
-          </Link>
-          <Link to="/settings" className={linkClass(isSettings)} title="Settings">
-            <SettingsIcon className={iconClass} />
-            <span>Settings</span>
-          </Link>
-        </nav>
-      </div>
+      <nav className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-3 py-3">
+        {GROUPS.map((group) => (
+          <div key={group.id} role="group" aria-labelledby={`nav-${group.id}`}>
+            <p
+              id={`nav-${group.id}`}
+              className="mb-1 px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary"
+            >
+              {group.label}
+            </p>
+            <div className="flex flex-col gap-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon
+                const active = item.match(location.pathname)
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={linkClass(active, false)}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <Icon
+                      size={ICON}
+                      strokeWidth={STROKE}
+                      className={active ? 'text-app-accent' : 'text-app-tertiary'}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate">{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
     </aside>
   )
 }

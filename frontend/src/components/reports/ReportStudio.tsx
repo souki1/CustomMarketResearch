@@ -64,7 +64,7 @@ function ToolStripButton({
     <button
       type="button"
       className={`flex min-w-[50px] shrink-0 flex-col items-center justify-center gap-1 rounded-md px-1.5 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'bg-violet-100 text-violet-700' : 'text-slate-600 hover:bg-slate-100'
+        active ? 'bg-violet-100 text-violet-700' : 'text-app-secondary hover:bg-app-fill-strong'
       }`}
       onClick={onClick}
       disabled={disabled}
@@ -481,19 +481,19 @@ export function ReportStudio({
   }, [pagesMenuOpen])
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#e8eaed]">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-3 sm:px-4">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-app-bg">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-app-separator bg-app-surface px-3 sm:px-4">
         <button type="button" className={`${BTN_GHOST} gap-2 px-3`} onClick={onClose}>
           <ArrowLeft className="h-4 w-4" />
           <span className="hidden sm:inline">All reports</span>
         </button>
-        <div className="h-6 w-px bg-slate-200" aria-hidden />
+        <div className="h-6 w-px bg-app-fill-strong" aria-hidden />
         <input
           type="text"
-          className={`min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-sm font-semibold text-gray-900 placeholder:text-gray-400 transition-colors ${
+          className={`min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-sm font-semibold text-app-label placeholder:text-app-tertiary transition-colors ${
             readOnly
               ? 'cursor-default bg-transparent'
-              : 'bg-transparent hover:border-slate-200 hover:bg-slate-50 focus:border-violet-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/30'
+              : 'bg-transparent hover:border-app-separator hover:bg-app-fill focus:border-violet-300 focus:bg-app-surface focus:outline-none focus:ring-2 focus:ring-violet-400/30'
           }`}
           value={docTitle}
           onChange={(e) => onDocTitleChange(e.target.value)}
@@ -522,10 +522,10 @@ export function ReportStudio({
               <span className="hidden sm:inline text-xs">Download</span>
             </button>
             {downloadMenuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-app-separator bg-app-surface p-1 shadow-sm">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-app-secondary hover:bg-app-fill"
                   onClick={() => {
                     setDownloadMenuOpen(false)
                     void handleExport('docx')
@@ -536,7 +536,7 @@ export function ReportStudio({
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-app-secondary hover:bg-app-fill"
                   onClick={() => {
                     setDownloadMenuOpen(false)
                     void handleExport('pdf')
@@ -569,7 +569,7 @@ export function ReportStudio({
 
       {/* pdfFiller-style fill & edit tool strip */}
       {!readOnly && (
-        <div className="flex h-[52px] shrink-0 items-center gap-0.5 overflow-x-auto border-b border-slate-200/80 bg-white px-2">
+        <div className="flex h-[52px] shrink-0 items-center gap-0.5 overflow-x-auto border-b border-app-separator bg-app-surface px-2">
           {isPdfMode && pendingFillTool && (
             <p className="mr-2 shrink-0 text-xs font-medium text-violet-700">
               {FILL_TOOLS.find((t) => t.id === pendingFillTool)?.label ?? 'Field'} active — click the page to place
@@ -585,12 +585,12 @@ export function ReportStudio({
               title="Jump to page"
             />
             {pagesMenuOpen && (
-              <div className="absolute left-0 top-full z-30 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-md">
+              <div className="absolute left-0 top-full z-30 mt-1 max-h-64 w-36 overflow-y-auto rounded-lg border border-app-separator bg-app-surface p-1 shadow-md">
                 {pages.map((_, i) => (
                   <button
                     key={i}
                     type="button"
-                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-xs text-app-secondary hover:bg-app-fill"
                     onClick={() => scrollToPage(i)}
                   >
                     Page {i + 1}
@@ -601,7 +601,7 @@ export function ReportStudio({
           </div>
           <ToolStripButton icon={Undo2} label="Undo" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" />
           <ToolStripButton icon={Redo2} label="Redo" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" />
-          <div className="mx-1 h-7 w-px shrink-0 bg-slate-200" aria-hidden />
+          <div className="mx-1 h-7 w-px shrink-0 bg-app-fill-strong" aria-hidden />
           <ToolStripButton
             icon={MousePointer2}
             label="Select"
@@ -639,7 +639,7 @@ export function ReportStudio({
               onClick={() => handleFillTool(id)}
             />
           ))}
-          <div className="mx-1 h-7 w-px shrink-0 bg-slate-200" aria-hidden />
+          <div className="mx-1 h-7 w-px shrink-0 bg-app-fill-strong" aria-hidden />
           <ToolStripButton
             icon={Stamp}
             label="Watermark"
@@ -651,7 +651,7 @@ export function ReportStudio({
       )}
 
       {readOnly && (
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-600">
+        <div className="border-b border-app-separator bg-app-fill px-4 py-2 text-xs font-medium text-app-secondary">
           Read-only preview mode
         </div>
       )}
@@ -684,7 +684,7 @@ export function ReportStudio({
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                   <input
                     type="text"
-                    className="min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                    className="min-w-0 flex-1 rounded-lg border border-violet-200 bg-app-surface px-3 py-2 text-sm text-app-label placeholder:text-app-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
                     value={aiPrompt}
                     onChange={(e) => onAiPromptChange?.(e.target.value)}
                     placeholder="Describe the report you want (topic, audience, sections...)"
@@ -723,7 +723,7 @@ export function ReportStudio({
                   }}
                 >
                   <div
-                    className={`relative bg-white ${PAGE_SHADOW} rounded-sm ${
+                    className={`relative bg-app-paper text-[#1d1d1f] ${PAGE_SHADOW} rounded-sm ${
                       isPdfMode && pendingFillTool ? 'cursor-crosshair' : ''
                     }`}
                     style={{
@@ -751,7 +751,7 @@ export function ReportStudio({
                       <iframe
                         src={pdfPageSrc(pageIdx)}
                         title={`${docTitle} — page ${pageIdx + 1}`}
-                        className={`absolute inset-0 z-0 h-full w-full border-0 bg-white ${
+                        className={`absolute inset-0 z-0 h-full w-full border-0 bg-app-paper ${
                           pdfViewerInteractive ? '' : 'pointer-events-none'
                         }`}
                       />
@@ -759,7 +759,7 @@ export function ReportStudio({
                     {watermark && (
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
                         <span
-                          className="select-none whitespace-nowrap text-7xl font-extrabold uppercase tracking-widest text-slate-900/5"
+                          className="select-none whitespace-nowrap text-7xl font-extrabold uppercase tracking-widest text-app-label/5"
                           style={{ transform: 'rotate(-35deg)' }}
                         >
                           {watermark}
@@ -805,7 +805,7 @@ export function ReportStudio({
                                     ? 'outline-violet-300'
                                     : 'outline-slate-200 hover:outline-slate-300'
                                 }`
-                          } ${dragOverId === b.id && draggingId !== b.id ? 'ring-2 ring-violet-200/80 ring-offset-2 ring-offset-white' : ''} ${
+                          } ${dragOverId === b.id && draggingId !== b.id ? 'ring-2 ring-violet-200/80 ring-offset-app-bg ring-offset-white' : ''} ${
                             draggingId === b.id ? 'opacity-60' : ''
                           }`}
                           onPointerDown={(e) => onPdfBlockPointerDown(e, b)}
@@ -840,7 +840,7 @@ export function ReportStudio({
                           {/* Floating toolbar — absolutely positioned so it never changes
                               the block's measured height (which would re-paginate). */}
                           {!readOnly && selectedId === b.id && (
-                            <div className="absolute bottom-full left-0 z-30 mb-1.5 flex max-w-[672px] flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-md">
+                            <div className="absolute bottom-full left-0 z-30 mb-1.5 flex max-w-[672px] flex-wrap items-center gap-1 rounded-lg border border-app-separator bg-app-surface p-1 shadow-md">
                               <button
                                 type="button"
                                 draggable={draggableEnabled}
@@ -891,7 +891,7 @@ export function ReportStudio({
                                 <Trash2 className="h-4 w-4" />
                               </button>
                               {selectedBlock && selectedBlock.id === b.id && (
-                                <div className="border-l border-slate-200 pl-1">
+                                <div className="border-l border-app-separator pl-1">
                                   <ReportBlockFormatBar
                                     block={selectedBlock}
                                     onChange={(next) => onUpdateBlock(b.id, next)}
@@ -925,7 +925,7 @@ export function ReportStudio({
                         )
                       })}
                     </div>
-                    <div className="pointer-events-none absolute inset-x-0 bottom-7 text-center text-[11px] tracking-wide text-slate-400">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-7 text-center text-[11px] tracking-wide text-app-tertiary">
                       {docTitle.trim() ? `${docTitle.trim()} — ` : ''}Page {pageIdx + 1} of {pages.length}
                     </div>
                   </div>
@@ -935,14 +935,14 @@ export function ReportStudio({
           </div>
 
           {/* Zoom + page count, floating like a PDF viewer */}
-          <div className="absolute bottom-4 right-6 z-20 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-md">
-            <span className="px-1.5 text-[11px] font-medium text-slate-500">
+          <div className="absolute bottom-4 right-6 z-20 flex items-center gap-1 rounded-full border border-app-separator bg-app-surface px-2 py-1 shadow-md">
+            <span className="px-1.5 text-[11px] font-medium text-app-secondary">
               {pages.length} page{pages.length !== 1 ? 's' : ''}
             </span>
-            <div className="h-4 w-px bg-slate-200" aria-hidden />
+            <div className="h-4 w-px bg-app-fill-strong" aria-hidden />
             <button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-app-secondary hover:bg-app-fill-strong disabled:opacity-40"
               title="Zoom out"
               disabled={zoom <= ZOOM_LEVELS[0]}
               onClick={() => zoomBy(-1)}
@@ -951,7 +951,7 @@ export function ReportStudio({
             </button>
             <button
               type="button"
-              className="min-w-[44px] rounded-md px-1 text-center text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+              className="min-w-[44px] rounded-md px-1 text-center text-[11px] font-semibold text-app-secondary hover:bg-app-fill-strong"
               title="Reset zoom"
               onClick={() => setZoom(1)}
             >
@@ -959,7 +959,7 @@ export function ReportStudio({
             </button>
             <button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-app-secondary hover:bg-app-fill-strong disabled:opacity-40"
               title="Zoom in"
               disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
               onClick={() => zoomBy(1)}

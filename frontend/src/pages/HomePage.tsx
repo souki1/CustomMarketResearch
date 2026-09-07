@@ -1,5 +1,6 @@
 import type { ChangeEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { ArrowUp, Folder, Image as ImageIcon, LayoutTemplate, Search, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import {
@@ -37,44 +38,27 @@ async function excelFileToCsvFile(file: File): Promise<File> {
 
 
 
-const icon3DClass = 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl'
-
 const FEATURE_CARDS = [
   {
     id: 'import-image',
-    title: 'Upload Image',
-    description: 'Upload images from your device or drag and drop.',
-    icon: (
-      <div className={`${icon3DClass} bg-linear-to-br from-emerald-50 to-emerald-100/90`}>
-        <svg className="h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      </div>
-    ),
+    title: 'Upload image',
+    description: 'Add photos from your device, or drop them here.',
+    iconWrap: 'bg-app-ok-soft text-app-ok',
+    Icon: ImageIcon,
   },
   {
     id: 'import-data',
     title: 'Import data',
-    description: 'Import your existing list from CRM or CSV.',
-    icon: (
-      <div className={`${icon3DClass} bg-linear-to-br from-violet-50 to-violet-100/90`}>
-        <svg className="h-8 w-8 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-        </svg>
-      </div>
-    ),
+    description: 'Bring in an existing list from CSV or Excel.',
+    iconWrap: 'bg-app-accent-soft text-app-accent',
+    Icon: Upload,
   },
   {
     id: 'start-template',
     title: 'Start from template',
-    description: 'Choose from pre-built workflows to get started.',
-    icon: (
-      <div className={`${icon3DClass} bg-linear-to-br from-blue-50 to-blue-100/90`}>
-        <svg className="h-8 w-8 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
-        </svg>
-      </div>
-    ),
+    description: 'Choose a pre-built workflow to get started.',
+    iconWrap: 'bg-app-warn-soft text-app-warn',
+    Icon: LayoutTemplate,
   },
 ] as const
 
@@ -646,35 +630,31 @@ export function HomePage() {
   }
 
   return (
-    <div className="min-h-full bg-white">
-      <div className="flex flex-col pl-6 pr-6 py-6">
-        <h1 className="text-base font-bold tracking-tight text-gray-900 sm:text-lg">
-          Hey {displayName}, ready to get started?
-        </h1>
+    <div className="min-h-full bg-app-bg">
+      <div className="flex flex-col px-6 py-7 sm:px-8">
+        <p className="text-[13px] text-app-secondary">{displayName}</p>
+        <h1 className="mt-0.5 text-[28px] font-semibold tracking-[-0.03em] text-app-label">Files</h1>
 
-        <div className="mt-2 flex w-full max-w-xl items-center rounded-xl border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-sm">
-            <span role="img" aria-label="search">🔍</span>
-          </div>
+        <div className="mt-4 flex h-9 w-full max-w-xl items-center rounded-[10px] bg-app-fill px-3">
+          <Search className="h-4 w-4 shrink-0 text-app-tertiary" strokeWidth={1.75} aria-hidden />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search files, run research, or ask AI anything…"
-            className="min-w-0 flex-1 border-none bg-transparent px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+            placeholder="Search files"
+            className="min-w-0 flex-1 border-none bg-transparent px-2 py-1.5 text-[13px] text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-0"
+            aria-label="Search files"
           />
           <button
             type="button"
-            className="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md bg-blue-500 text-white transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-            aria-label="Submit"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] bg-app-accent text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+            aria-label="Search"
           >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
+            <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} />
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-5">
+        <div className="mt-5 flex flex-wrap gap-3">
           {FEATURE_CARDS.map((card) =>
             card.id === 'import-image' ? (
               <div
@@ -692,22 +672,24 @@ export function HomePage() {
                   }
                 }}
                 onDrop={handleImageDrop}
-                className="w-80"
+                className="w-full max-w-80"
               >
                 <Card
                   as="button"
                   type="button"
                   onClick={handleUploadImageClick}
-                  className={`flex w-full flex-row items-center gap-4 transition-colors ${
-                    imageDropActive ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50' : ''
+                  className={`flex w-full flex-row items-center gap-3.5 px-4 py-3.5 ${
+                    imageDropActive ? 'ring-2 ring-app-ok ring-offset-2 ring-offset-app-bg bg-app-ok-soft' : ''
                   }`}
                 >
-                  {card.icon}
-                  <div className="min-w-10 flex-1">
-                    <p className="text-sm font-semibold text-gray-900">{card.title}</p>
-                    <p className="mt-1 text-xs leading-snug text-gray-500">
+                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] ${card.iconWrap}`}>
+                    <card.Icon className="h-5 w-5" strokeWidth={1.75} />
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="text-[13px] font-semibold tracking-[-0.01em] text-app-label">{card.title}</p>
+                    <p className="mt-0.5 text-[12px] leading-snug text-app-secondary">
                       {card.description}
-                      {imageDropActive ? ' — Drop images here' : ''}
+                      {imageDropActive ? ' Drop images here.' : ''}
                     </p>
                   </div>
                 </Card>
@@ -717,33 +699,35 @@ export function HomePage() {
                 key={card.id}
                 as="button"
                 type="button"
-                className="flex w-80 flex-row items-center gap-4"
+                className="flex w-full max-w-80 flex-row items-center gap-3.5 px-4 py-3.5"
               >
-                {card.icon}
-                <div className="min-w-10 flex-1">
-                  <p className="text-sm font-semibold text-gray-900">{card.title}</p>
-                  <p className="mt-1 text-xs leading-snug text-gray-500">{card.description}</p>
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] ${card.iconWrap}`}>
+                  <card.Icon className="h-5 w-5" strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="text-[13px] font-semibold tracking-[-0.01em] text-app-label">{card.title}</p>
+                  <p className="mt-0.5 text-[12px] leading-snug text-app-secondary">{card.description}</p>
                 </div>
               </Card>
             )
           )}
         </div>
 
-        <div className="mt-6 flex gap-6 border-b border-gray-200">
-          {(['all', 'recents', 'favourites'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setFileTab(tab)}
-              className={`pb-2.5 text-sm font-medium transition-colors focus:outline-none focus:ring-0 ${
-                fileTab === tab
-                  ? 'border-b-2 border-blue-600 text-blue-600 -mb-px'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {tab === 'all' ? 'All files' : tab === 'recents' ? 'Recents' : 'Favorites'}
-            </button>
-          ))}
+        <div className="mt-7">
+          <div className="app-segmented" role="tablist" aria-label="File views">
+            {(['all', 'recents', 'favourites'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-pressed={fileTab === tab}
+                data-active={fileTab === tab ? 'true' : undefined}
+                onClick={() => setFileTab(tab)}
+              >
+                {tab === 'all' ? 'All' : tab === 'recents' ? 'Recents' : 'Favorites'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -752,7 +736,7 @@ export function HomePage() {
           </div>
         )}
         {loading && !error && (
-          <div className="mt-2 text-sm text-gray-500">
+          <div className="mt-2 text-sm text-app-secondary">
             Loading files…
           </div>
         )}
@@ -806,10 +790,18 @@ export function HomePage() {
         )}
 
         {fileTab === 'recents' && (
-          <div className="mt-6 text-sm text-gray-500">Recents — no items yet.</div>
+          <div className="app-empty">
+            <Folder className="h-10 w-10 text-app-tertiary" strokeWidth={1.5} aria-hidden />
+            <p className="app-empty-title">No recent files</p>
+            <p className="app-empty-body">Files you open will show up here.</p>
+          </div>
         )}
         {fileTab === 'favourites' && (
-          <div className="mt-6 text-sm text-gray-500">Favorites — no items yet.</div>
+          <div className="app-empty">
+            <Folder className="h-10 w-10 text-app-tertiary" strokeWidth={1.5} aria-hidden />
+            <p className="app-empty-title">No favorites</p>
+            <p className="app-empty-body">Star a file to keep it here.</p>
+          </div>
         )}
       </div>
 
@@ -857,13 +849,13 @@ export function HomePage() {
 
       {moveDialogOpen && moveSourceRow && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Move “{moveSourceRow.name}”</h2>
-            <p className="mt-1 text-xs text-gray-500">Choose a folder to move this file into.</p>
+          <div className="w-full max-w-md rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-app-label">Move “{moveSourceRow.name}”</h2>
+            <p className="mt-1 text-xs text-app-secondary">Choose a folder to move this file into.</p>
             <div className="mt-3">
-              <label className="mb-1 block text-xs font-medium text-gray-700">Destination folder</label>
+              <label className="mb-1 block text-xs font-medium text-app-secondary">Destination folder</label>
               <select
-                className="h-9 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                className="h-9 w-full rounded-lg border border-app-separator bg-app-surface px-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-accent/20 focus:border-app-accent"
                 value={moveTargetFolderId ?? ''}
                 onChange={(e) => setMoveTargetFolderId(e.target.value || null)}
               >
@@ -882,14 +874,14 @@ export function HomePage() {
                   setMoveDialogOpen(false)
                   setMoveSourceRow(null)
                 }}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300/40"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill focus:outline-none focus:ring-2 focus:ring-gray-300/40"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmMove}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                className="rounded-lg bg-app-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-app-accent-hover focus:outline-none focus:ring-2 focus:ring-app-accent/40"
               >
                 Move
               </button>

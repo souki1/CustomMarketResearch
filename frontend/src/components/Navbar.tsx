@@ -1,119 +1,30 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { AUTH_CHANGED_EVENT, getCurrentUserName, getCurrentUserEmail, getCurrentUserPhotoUrl, clearAuth } from '@/lib/auth'
+import {
+  Bell,
+  ChevronDown,
+  CircleHelp,
+  CreditCard,
+  LayoutPanelLeft,
+  LogOut,
+  PanelLeft,
+  Search,
+  Settings,
+  ShoppingCart,
+  Sparkles,
+  UserRound,
+} from 'lucide-react'
+import {
+  AUTH_CHANGED_EVENT,
+  getCurrentUserName,
+  getCurrentUserEmail,
+  getCurrentUserPhotoUrl,
+  clearAuth,
+} from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
 import { BUCKET_PATH } from '@/lib/paths'
 import { useBucket } from '@/contexts/BucketContext'
-
-function NavbarIcon() {
-  return (
-    <svg className="w-6 h-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-    </svg>
-  )
-}
-
-function StarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-    </svg>
-  )
-}
-
-function CreditsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-    </svg>
-  )
-}
-
-function HelpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function BellIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-    </svg>
-  )
-}
-
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  )
-}
-
-function SignOutIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-  )
-}
-
-function UserIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  )
-}
-
-function WorkspaceIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-    </svg>
-  )
-}
-
-function BillingIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-    </svg>
-  )
-}
-
-function BucketIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-  )
-}
-
-function SidebarPanelIcon({ className, open }: { className?: string; open: boolean }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      {/* Left panel (sidebar): filled when open, outline when closed */}
-      <rect x="2" y="4" width="8" height="16" rx="1.5" className={open ? 'fill-gray-300 stroke-gray-400' : ''} />
-      {/* Right area (content) */}
-      <rect x="13" y="4" width="9" height="16" rx="1.5" />
-    </svg>
-  )
-}
 
 type NavbarProps = {
   sidebarOpen?: boolean
@@ -121,63 +32,19 @@ type NavbarProps = {
   onOpenCommandPalette?: () => void
 }
 
-function NotificationIconSuccess({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-    </svg>
-  )
+type NotificationItem = {
+  id: string
+  text: string
+  time: string
+  unread: boolean
 }
-function NotificationIconFolder({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-    </svg>
-  )
-}
-function NotificationIconWarning({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  )
-}
-function NotificationIconSystem({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  )
-}
-
-type NotificationIconType = 'success' | 'folder' | 'warning' | 'system'
-
-function NotificationTypeIcon({ type, className }: { type: NotificationIconType; className?: string }) {
-  const size = 'h-3.5 w-3.5 shrink-0'
-  const c = className ?? `${size}`
-  switch (type) {
-    case 'success':
-      return <NotificationIconSuccess className={`${c} text-emerald-500`} />
-    case 'folder':
-      return <NotificationIconFolder className={`${c} text-blue-500`} />
-    case 'warning':
-      return <NotificationIconWarning className={`${c} text-amber-500`} />
-    case 'system':
-      return <NotificationIconSystem className={`${c} text-gray-500`} />
-    default:
-      return null
-  }
-}
-
-const SAMPLE_NOTIFICATIONS: { id: string; text: string; time: string; unread: boolean; icon: NotificationIconType }[] = [
-  { id: '1', text: 'File uploaded successfully', time: '2 min ago', unread: true, icon: 'success' },
-  { id: '2', text: 'Import completed', time: '1 hour ago', unread: true, icon: 'folder' },
-  { id: '3', text: 'Price alert triggered', time: '3 hours ago', unread: true, icon: 'warning' },
-  { id: '4', text: 'System update', time: 'Yesterday', unread: false, icon: 'system' },
-]
 
 const TIP_SEEN_KEY = 'cmr_command_palette_tip_seen'
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const modKey = isMac ? '⌘' : 'Ctrl'
+
+const iconBtn =
+  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40'
 
 export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalette }: NavbarProps) {
   const navigate = useNavigate()
@@ -201,17 +68,16 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
       return false
     }
   })
-  const [notifications, setNotifications] = useState(SAMPLE_NOTIFICATIONS)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsAnimated, setNotificationsAnimated] = useState(false)
   const [menuAnimated, setMenuAnimated] = useState(false)
   const dropdownBtnRef = useRef<HTMLButtonElement>(null)
   const dropdownMenuRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
   const helpRef = useRef<HTMLDivElement>(null)
-  const searchBarRef = useRef<HTMLDivElement>(null)
 
-  const workspaceLabel = `${displayName}'s Workspace`
   const unreadCount = notifications.filter((n) => n.unread).length
+  const initials = displayName.trim().charAt(0).toUpperCase() || 'U'
 
   useEffect(() => {
     const syncFromStorage = () => {
@@ -229,7 +95,6 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
       window.removeEventListener('storage', syncFromStorage)
     }
   }, [])
-
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -253,19 +118,6 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [dropdownOpen, notificationsOpen, helpOpen])
-
-  useEffect(() => {
-    if (!showCommandTip) return
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(TIP_SEEN_KEY, '1')
-      } catch {
-        // ignore
-      }
-      setShowCommandTip(false)
-    }, 6000)
-    return () => clearTimeout(t)
-  }, [showCommandTip])
 
   function dismissCommandTip() {
     try {
@@ -314,14 +166,6 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     setMenuAnimated(false)
   }, [dropdownOpen])
 
-  function markAllNotificationsRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
-  }
-
-  function clearAllNotifications() {
-    setNotifications([])
-  }
-
   function handleSignOut() {
     clearAuth()
     setDropdownOpen(false)
@@ -332,60 +176,197 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     setDropdownOpen(false)
     navigate(to)
   }
+
+  const notificationLabel =
+    unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
+
   return (
-    <>
-    <nav className="sticky top-0 z-10 border-b border-gray-200 bg-white" aria-label="Main navigation">
-      <div className="w-full max-w-8xl mx-auto px-3 sm:px-4">
-        <div className="flex items-center justify-between h-11 gap-2">
-          <div className="flex items-center gap-1">
-            {onSidebarToggle && (
-              <button
-                type="button"
-                onClick={onSidebarToggle}
-                className="flex items-center justify-center p-1.5 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
-                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-                title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-              >
-                <SidebarPanelIcon className="w-5 h-5" open={sidebarOpen} />
-              </button>
-            )}
+    <nav
+      className="sticky top-0 z-20 border-b border-app-separator bg-app-surface/80 backdrop-blur-xl"
+      aria-label="Main navigation"
+    >
+      <div className="flex h-14 w-full items-center gap-2 px-3 sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {onSidebarToggle && (
             <button
               type="button"
-              className="flex items-center justify-center p-1.5 -ml-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors cursor-pointer"
-              aria-label="Home"
+              onClick={onSidebarToggle}
+              className={iconBtn}
+              aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+              title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             >
-              <NavbarIcon />
+              {sidebarOpen ? (
+                <PanelLeft size={18} strokeWidth={1.75} aria-hidden />
+              ) : (
+                <LayoutPanelLeft size={18} strokeWidth={1.75} aria-hidden />
+              )}
+            </button>
+          )}
+          <Link
+            to="/"
+            className={iconBtn}
+            aria-label="Home"
+            title="Home"
+          >
+            <Sparkles size={18} strokeWidth={1.75} className="text-app-accent" aria-hidden />
+          </Link>
+
+          {onOpenCommandPalette && (
+            <div
+              className={`relative min-w-0 max-w-md flex-1 ${showSearchOnNarrow ? 'block' : 'hidden sm:block'}`}
+            >
+              <button
+                type="button"
+                onClick={handleOpenCommandPalette}
+                className="flex h-9 w-full items-center gap-2 rounded-[10px] bg-app-fill px-3 text-left text-[13px] text-app-tertiary transition-colors hover:bg-app-fill-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+                aria-label="Search (Ctrl+K)"
+              >
+                <Search size={15} strokeWidth={1.75} className="shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">Search files, folders, and pages</span>
+                <kbd className="hidden shrink-0 rounded-md bg-app-surface px-1.5 py-0.5 text-xs font-medium text-app-secondary ring-1 ring-app-separator sm:inline">
+                  {isMac ? '⌘K' : 'Ctrl+K'}
+                </kbd>
+              </button>
+              {showCommandTip && (
+                <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-app-separator bg-app-elevated px-3 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+                  <p className="text-[13px] font-semibold text-app-label">Search from anywhere</p>
+                  <p className="mt-0.5 text-xs text-app-secondary">
+                    Press Ctrl+K to jump to files, research, and settings.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={dismissCommandTip}
+                    className="mt-2 text-[13px] font-medium text-app-accent hover:text-app-accent-hover"
+                  >
+                    Got it
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Link
+            to="/settings/billing"
+            className="hidden h-8 items-center rounded-full bg-app-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50 sm:inline-flex"
+          >
+            Upgrade
+          </Link>
+
+          <Link
+            to={BUCKET_PATH}
+            className={`${iconBtn} relative`}
+            aria-label={
+              bucketItems.length > 0 ? `Bucket, ${bucketItems.length} items` : 'Bucket'
+            }
+            title="Bucket"
+          >
+            <ShoppingCart size={18} strokeWidth={1.75} aria-hidden />
+            {bucketItems.length > 0 && (
+              <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-app-accent px-1 text-[11px] font-semibold leading-none text-white">
+                {bucketItems.length > 9 ? '9+' : bucketItems.length}
+              </span>
+            )}
+          </Link>
+
+          <div className="relative" ref={helpRef}>
+            <button
+              type="button"
+              onClick={() => setHelpOpen((o) => !o)}
+              className={iconBtn}
+              aria-label="Help"
+              aria-expanded={helpOpen}
+              aria-haspopup="true"
+            >
+              <CircleHelp size={18} strokeWidth={1.75} aria-hidden />
+            </button>
+            {helpOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-app-separator bg-app-elevated py-2 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+                <div className="px-4 py-2">
+                  <h3 className="text-xs font-semibold tracking-[0.04em] text-app-tertiary">
+                    Keyboard shortcuts
+                  </h3>
+                </div>
+                <div className="space-y-1.5 px-4 pb-2 text-[13px]">
+                  <ShortcutRow label="Search" keys={`${modKey} + K`} />
+                  <ShortcutRow label="Settings" keys={`${modKey} + ,`} />
+                  <ShortcutRow label="Help" keys={`${modKey} + /`} />
+                  <ShortcutRow label="Close" keys="Esc" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={notificationsRef}>
+            <button
+              type="button"
+              onClick={() => setNotificationsOpen((o) => !o)}
+              className={`${iconBtn} relative`}
+              aria-label={notificationLabel}
+              aria-expanded={notificationsOpen}
+              aria-haspopup="true"
+            >
+              <Bell size={18} strokeWidth={1.75} aria-hidden />
+              {unreadCount > 0 && (
+                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-app-accent" aria-hidden />
+              )}
             </button>
 
-            {onOpenCommandPalette && (
+            {notificationsOpen && (
               <div
-                className={`relative flex-1 min-w-0 max-w-md mx-4 ${showSearchOnNarrow ? 'block' : 'hidden sm:block'}`}
-                ref={searchBarRef}
+                className={`absolute right-0 top-full z-50 mt-1.5 w-80 origin-top-right rounded-xl border border-app-separator bg-app-elevated shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-[opacity,transform] duration-200 ease-out ${notificationsAnimated ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
+                role="dialog"
+                aria-label="Notifications"
               >
-                <button
-                  type="button"
-                  onClick={handleOpenCommandPalette}
-                  className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-1.5 text-left text-sm text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-1"
-                  aria-label="Search (Ctrl+K)"
-                >
-                  <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate">Search files, folders, templates...</span>
-                  <kbd className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-gray-500 bg-[#F3F4F6] border border-gray-200/80">
-                    Ctrl + K
-                  </kbd>
-                </button>
-                {showCommandTip && (
-                  <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
-                    <p className="text-xs font-medium text-gray-900">Tip 💡</p>
-                    <p className="mt-0.5 text-xs text-gray-600">Press Ctrl + K to quickly search anything.</p>
+                <div className="px-4 py-3">
+                  <h3 className="text-[13px] font-semibold text-app-label">Notifications</h3>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-10 text-center">
+                      <Bell size={22} strokeWidth={1.5} className="mx-auto text-app-tertiary" aria-hidden />
+                      <p className="mt-2 text-[13px] font-medium text-app-label">No notifications</p>
+                      <p className="mt-0.5 text-xs text-app-secondary">
+                        Updates about research and orders will show up here.
+                      </p>
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-app-fill focus:bg-app-fill focus:outline-none"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[13px] ${n.unread ? 'font-semibold text-app-label' : 'text-app-label'}`}>
+                            {n.unread && (
+                              <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-app-accent align-middle" aria-hidden />
+                            )}
+                            {n.text}
+                          </p>
+                          <p className="mt-0.5 text-xs text-app-secondary">{n.time}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {notifications.length > 0 && (
+                  <div className="flex items-center justify-between gap-2 border-t border-app-separator px-3 py-2">
                     <button
                       type="button"
-                      onClick={dismissCommandTip}
-                      className="mt-2 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                      onClick={() => setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))}
+                      className="text-xs font-medium text-app-accent hover:underline disabled:opacity-50"
+                      disabled={!notifications.some((n) => n.unread)}
                     >
-                      Got it
+                      Mark all as read
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotifications([])}
+                      className="text-xs font-medium text-app-secondary hover:text-app-label"
+                    >
+                      Clear all
                     </button>
                   </div>
                 )}
@@ -393,204 +374,41 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
             )}
           </div>
 
-          <div className="flex items-center gap-0 ml-auto">
+          <div className="relative ml-1 pl-2">
+            <span className="absolute left-0 top-1/2 h-5 w-px -translate-y-1/2 bg-app-separator" aria-hidden />
             <button
+              ref={dropdownBtnRef}
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 text-white text-xs font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors cursor-pointer"
+              onClick={() => setDropdownOpen((o) => !o)}
+              className="flex h-9 items-center gap-2 rounded-[10px] py-1 pl-1 pr-2 text-app-label hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+              aria-expanded={dropdownOpen}
+              aria-haspopup="true"
+              aria-label="Workspace and account menu"
             >
-              <StarIcon className="w-3.5 h-3.5 text-white" />
-              Upgrade
-            </button>
-
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
-
-            <button
-              type="button"
-              onClick={() => navigate(BUCKET_PATH)}
-              className="inline-flex items-center gap-1.5 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
-              aria-label="Bucket"
-              title="Bucket"
-            >
-              <BucketIcon className="w-3.5 h-3.5" />
-              <span className="text-xs font-medium hidden sm:inline">
-                Bucket{bucketItems.length > 0 ? ` (${bucketItems.length})` : ''}
-              </span>
-              {bucketItems.length > 0 && (
-                <span className="sm:hidden flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-100 text-blue-700 px-1 text-[10px] font-semibold">
-                  {bucketItems.length > 9 ? '9+' : bucketItems.length}
-                </span>
-              )}
-            </button>
-
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
-
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
-              aria-label="Credits"
-            >
-              <CreditsIcon className="w-3.5 h-3.5" />
-              <span className="text-xs font-medium hidden sm:inline">Credits</span>
-            </button>
-
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
-
-            <div className="relative" ref={helpRef}>
-              <button
-                type="button"
-                onClick={() => setHelpOpen((o) => !o)}
-                className="flex items-center justify-center w-8 h-8 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
-                aria-label="Help"
-                aria-expanded={helpOpen}
-                aria-haspopup="true"
-              >
-                <HelpIcon className="w-4 h-4" />
-              </button>
-              {helpOpen && (
-                <div className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-gray-200 bg-white py-2 shadow-sm z-50">
-                  <div className="px-4 py-2 border-b border-gray-100">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Keyboard shortcuts</h3>
-                  </div>
-                  <div className="px-4 py-2 space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-700">Open command search</span>
-                      <kbd className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">Ctrl + K</kbd>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-700">Open help</span>
-                      <kbd className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">Ctrl + /</kbd>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-700">Close modal</span>
-                      <kbd className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">Esc</kbd>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
-
-            <div className="relative" ref={notificationsRef}>
-              <button
-                type="button"
-                onClick={() => setNotificationsOpen((o) => !o)}
-                className="relative flex items-center justify-center w-8 h-8 p-1 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors cursor-pointer"
-                aria-label="Notifications"
-                aria-expanded={notificationsOpen}
-                aria-haspopup="true"
-              >
-                <BellIcon className="w-4 h-4" />
-                {unreadCount > 0 && (
-                  <span
-                    className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white"
-                    aria-hidden
-                  >
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-accent text-xs font-semibold text-white">
+                {profilePhotoFullUrl ? (
+                  <img src={profilePhotoFullUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  initials
                 )}
-              </button>
+              </div>
+              <div className="hidden min-w-0 text-left sm:block">
+                <p className="truncate text-[13px] font-semibold leading-tight text-app-label">{displayName}</p>
+                <p className="truncate text-xs leading-tight text-app-secondary" title={userEmail ?? undefined}>
+                  {userEmail ?? `${displayName}'s Workspace`}
+                </p>
+              </div>
+              <ChevronDown size={14} strokeWidth={2} className="hidden text-app-tertiary sm:block" aria-hidden />
+            </button>
 
-              {notificationsOpen && (
-                <div
-                  className={`absolute right-0 top-full mt-1 w-80 rounded-xl border border-gray-200 bg-white shadow-sm z-50 origin-top-right transition-[opacity,transform] duration-200 ease-out ${notificationsAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
-                  role="dialog"
-                  aria-label="Notifications"
-                >
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
-                  </div>
-                  <div className="max-h-72 overflow-y-auto py-1">
-                    {notifications.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-sm text-gray-500">
-                        No notifications
-                      </div>
-                    ) : (
-                      notifications.map((n) => (
-                        <button
-                          key={n.id}
-                          type="button"
-                          className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer hover:bg-gray-50 focus:outline-none focus:bg-gray-50 ${n.unread ? 'bg-gray-50' : ''}`}
-                        >
-                          <NotificationTypeIcon type={n.icon} className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-sm ${n.unread ? 'font-semibold text-gray-900' : 'text-gray-900'}`}>
-                              {n.unread && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500 align-middle" aria-hidden />}
-                              {n.text}
-                            </p>
-                            <p className="mt-0.5 text-xs text-gray-500">{n.time}</p>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  <div className="border-t border-gray-100 px-3 py-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <button
-                      type="button"
-                      onClick={markAllNotificationsRead}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:underline disabled:opacity-50"
-                      disabled={notifications.length === 0 || !notifications.some((n) => n.unread)}
-                    >
-                      Mark all as read
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearAllNotifications}
-                      className="text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus:underline disabled:opacity-50"
-                      disabled={notifications.length === 0}
-                    >
-                      Clear all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotificationsOpen(false)}
-                      className="text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus:underline"
-                    >
-                      View all notifications
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <span className="h-4 w-px shrink-0 mx-2 bg-[#E5E7EB]" aria-hidden />
-
-            <div className="relative pl-1 ml-3">
-              <button
-                ref={dropdownBtnRef}
-                type="button"
-                onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-2 p-1 pr-2 text-gray-700 hover:bg-gray-100 focus:outline-none cursor-pointer"
-                aria-expanded={dropdownOpen}
-                aria-haspopup="true"
-                aria-label="Workspace and account menu"
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-700 text-white text-xs font-semibold">
-                  {profilePhotoFullUrl ? (
-                    <img
-                      src={profilePhotoFullUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    displayName.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div className="hidden sm:block text-left min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{displayName}</p>
-                  <p className="text-xs text-[#6B7280] leading-tight truncate" title={userEmail ?? undefined}>
-                    {userEmail ?? workspaceLabel}
-                  </p>
-                </div>
-              </button>
-
-              {dropdownOpen && createPortal(
+            {dropdownOpen &&
+              createPortal(
                 <div
                   ref={dropdownMenuRef}
                   style={{
                     position: 'fixed',
                     zIndex: 9999,
-                    top: (dropdownBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                    top: (dropdownBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 6,
                     left: Math.max(
                       8,
                       Math.min(
@@ -599,63 +417,74 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
                       )
                     ),
                   }}
-                  className={`w-[260px] rounded-xl border border-gray-200 bg-white py-1.5 shadow-sm origin-top-right transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                  className={`w-[260px] origin-top-right rounded-xl border border-app-separator bg-app-elevated py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-[opacity,transform] duration-200 ease-out ${menuAnimated ? 'scale-100 opacity-100' : 'scale-95 opacity-0'}`}
                   role="menu"
                 >
-                  <Link
-                    to="/settings/profile"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                    role="menuitem"
-                  >
-                    <UserIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                    My Profile
-                  </Link>
-                  <button
-                    type="button"
+                  <MenuItem
+                    icon={UserRound}
+                    label="Profile"
+                    onClick={() => closeAndNavigate('/settings/profile')}
+                  />
+                  <MenuItem
+                    icon={LayoutPanelLeft}
+                    label="Workspace"
                     onClick={() => closeAndNavigate('/')}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                    role="menuitem"
-                  >
-                    <WorkspaceIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                    Workspace
-                  </button>
-                  <Link
-                    to="/settings/billing"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                    role="menuitem"
-                  >
-                    <BillingIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                    Billing
-                  </Link>
-                  <Link
-                    to="/settings/profile"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                    role="menuitem"
-                  >
-                    <SettingsIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                    Settings
-                  </Link>
-                  <div className="my-2 border-t border-gray-200" aria-hidden />
-                  <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-100 focus:outline-none focus:bg-gray-100"
-                    role="menuitem"
-                  >
-                    <SignOutIcon className="w-4 h-4 text-gray-500 shrink-0" />
-                    Logout
-                  </button>
+                  />
+                  <MenuItem
+                    icon={CreditCard}
+                    label="Billing"
+                    onClick={() => closeAndNavigate('/settings/billing')}
+                  />
+                  <MenuItem
+                    icon={Settings}
+                    label="Settings"
+                    onClick={() => closeAndNavigate('/settings/profile')}
+                    shortcut={isMac ? '⌘,' : 'Ctrl+,'}
+                  />
+                  <div className="my-1.5 border-t border-app-separator" aria-hidden />
+                  <MenuItem icon={LogOut} label="Log out" onClick={handleSignOut} />
                 </div>,
                 document.body
               )}
-            </div>
           </div>
         </div>
       </div>
     </nav>
-    </>
+  )
+}
+
+function ShortcutRow({ label, keys }: { label: string; keys: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-app-secondary">{label}</span>
+      <kbd className="shrink-0 rounded-md bg-app-fill px-1.5 py-0.5 text-xs font-medium text-app-label">
+        {keys}
+      </kbd>
+    </div>
+  )
+}
+
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  shortcut,
+}: {
+  icon: typeof UserRound
+  label: string
+  onClick: () => void
+  shortcut?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-app-label transition-colors hover:bg-app-fill focus:bg-app-fill focus:outline-none"
+      role="menuitem"
+    >
+      <Icon size={16} strokeWidth={1.75} className="shrink-0 text-app-secondary" aria-hidden />
+      <span className="min-w-0 flex-1">{label}</span>
+      {shortcut ? <span className="text-xs text-app-tertiary">{shortcut}</span> : null}
+    </button>
   )
 }

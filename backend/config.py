@@ -80,7 +80,7 @@ class Settings(BaseSettings):
 
     # Firecrawl web scraping API (get key at https://firecrawl.dev/)
     firecrawl_api_key: str = Field(default="", validation_alias="FIRECRAWL_API_KEY")
-    # Overlapping extract POSTs. Lower this if logs show 429 Too Many Requests.
+    # Overlapping Firecrawl scrape POSTs. Lower this if logs show 429 Too Many Requests.
     firecrawl_max_concurrency: int = Field(
         default=4, ge=1, le=8, validation_alias="FIRECRAWL_MAX_CONCURRENCY"
     )

@@ -89,7 +89,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         id: 'dashboard',
         label: 'Go to Dashboard',
         keywords: ['home', 'dashboard', 'main'],
-        icon: <HomeIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <HomeIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         shortcut: 'G H',
         action: () => navigate('/'),
       },
@@ -97,21 +97,21 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         id: 'files',
         label: 'Go to Files',
         keywords: ['search', 'files', 'find', 'file', 'upload'],
-        icon: <FileIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <FileIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate('/files'),
       },
       {
         id: 'search-folders',
         label: 'Search folders',
         keywords: ['search', 'folders', 'find', 'folder'],
-        icon: <FolderIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <FolderIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate('/files'),
       },
       {
         id: 'new-research',
         label: 'Create new research',
         keywords: ['create', 'new', 'research', 'start'],
-        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         shortcut: 'N',
         action: () => navigate('/research'),
       },
@@ -119,21 +119,21 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         id: 'parts-catalog',
         label: 'Go to Parts Catalog',
         keywords: ['parts', 'catalog', 'inventory', 'browser', 'vendors'],
-        icon: <FileIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <FileIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate(PARTS_CATALOG_PATH),
       },
       {
         id: 'compare',
         label: 'Go to Compare',
         keywords: ['compare', 'comparison', 'parts', 'vendors'],
-        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate(RESEARCH_COMPARE_PATH),
       },
       {
         id: 'settings',
         label: 'Open settings',
         keywords: ['settings', 'preferences', 'config', 'profile'],
-        icon: <SettingsIcon className="h-4 w-4 shrink-0 text-gray-500" />,
+        icon: <SettingsIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         shortcut: 'S',
         action: () => navigate('/settings'),
       },
@@ -236,18 +236,18 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         onClick={closePalette}
       />
       <div
-        className="relative w-full max-w-xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-[opacity,transform] duration-200 ease-out"
+        className="relative w-full max-w-xl overflow-hidden rounded-[16px] border border-app-separator bg-app-elevated shadow-[0_16px_50px_rgba(0,0,0,0.18)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
-          <SearchIcon className="h-5 w-5 shrink-0 text-gray-400" />
+        <div className="flex items-center gap-3 border-b border-app-separator px-4 py-3">
+          <SearchIcon className="h-5 w-5 shrink-0 text-app-tertiary" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search anything..."
-            className="min-w-0 flex-1 border-0 bg-transparent py-1 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+            placeholder="Search pages and actions"
+            className="min-w-0 flex-1 border-0 bg-transparent py-1 text-[15px] text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-0"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -256,18 +256,18 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
             aria-controls="command-list"
             aria-activedescendant={filtered[selectedIndex] ? `command-${filtered[selectedIndex].id}` : undefined}
           />
-          <kbd className="hidden rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 sm:inline-block">
-            ESC
+          <kbd className="hidden rounded-md bg-app-fill px-2 py-0.5 text-xs font-medium text-app-secondary sm:inline-block">
+            Esc
           </kbd>
         </div>
         <div
           id="command-list"
           ref={listRef}
-          className="max-h-[min(60vh,320px)] overflow-y-auto py-2"
+          className="max-h-[min(60vh,320px)] overflow-y-auto py-1.5"
           role="listbox"
         >
           {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">No commands found.</div>
+            <div className="px-4 py-8 text-center text-[13px] text-app-secondary">No commands found.</div>
           ) : (
             filtered.map((cmd, i) => (
               <button
@@ -278,14 +278,14 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
                 role="option"
                 aria-selected={i === selectedIndex}
                 onClick={() => runCommand(cmd)}
-                className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                  i === selectedIndex ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors ${
+                  i === selectedIndex ? 'bg-app-accent-soft text-app-label' : 'text-app-secondary hover:bg-app-fill'
                 }`}
               >
                 {cmd.icon}
-                <span className="min-w-0 flex-1 font-medium">{cmd.label}</span>
+                <span className="min-w-0 flex-1 font-medium text-app-label">{cmd.label}</span>
                 {cmd.shortcut && (
-                  <kbd className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                  <kbd className="shrink-0 rounded-md bg-app-fill px-1.5 py-0.5 text-xs font-medium text-app-secondary">
                     {cmd.shortcut}
                   </kbd>
                 )}
@@ -293,8 +293,8 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
             ))
           )}
         </div>
-        <div className="border-t border-gray-100 px-4 py-2 flex items-center justify-between text-[11px] text-gray-400">
-          <span>Press ↑ ↓ to navigate</span>
+        <div className="flex items-center justify-between border-t border-app-separator px-4 py-2 text-xs text-app-tertiary">
+          <span>↑ ↓ to navigate</span>
           <span>Enter to select</span>
           <span>Esc to close</span>
         </div>

@@ -50,14 +50,14 @@ export function CompareVendorOverview({
   const scale = Math.max(maxVendorCount, 1)
 
   return (
-    <div className="mb-8 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/80 to-white p-4 shadow-sm ring-1 ring-slate-950/[0.04] sm:p-5">
+    <div className="mb-8 rounded-xl border border-app-separator bg-gradient-to-b from-slate-50/80 to-white p-4 shadow-sm ring-1 ring-slate-950/[0.04] sm:p-5">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
           <LayoutGrid className="h-4 w-4" aria-hidden />
         </span>
         <div>
-          <h4 className="text-sm font-semibold text-slate-900">Vendor coverage</h4>
-          <p className="text-xs text-slate-500">
+          <h4 className="text-sm font-semibold text-app-label">Vendor coverage</h4>
+          <p className="text-xs text-app-secondary">
             Sources per part, overlap, and price ranges from scraped fields (Price, cost, MSRP, etc.).
           </p>
         </div>
@@ -74,28 +74,28 @@ export function CompareVendorOverview({
           return (
             <div key={row.id} className="min-w-0">
               <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-                <span className="truncate text-sm font-medium text-slate-800" title={row.label}>
+                <span className="truncate text-sm font-medium text-app-label" title={row.label}>
                   {row.label}
                 </span>
-                <span className="shrink-0 text-xs tabular-nums text-slate-600">
-                  <span className="font-semibold text-slate-900">{row.vendorCount}</span> vendor
+                <span className="shrink-0 text-xs tabular-nums text-app-secondary">
+                  <span className="font-semibold text-app-label">{row.vendorCount}</span> vendor
                   {row.vendorCount === 1 ? '' : 's'}
                   {row.minPrice != null && row.maxPrice != null && (
-                    <span className="ml-2 text-slate-500">
+                    <span className="ml-2 text-app-secondary">
                       · {formatUsd(row.minPrice)}
                       {row.minPrice !== row.maxPrice ? ` – ${formatUsd(row.maxPrice)}` : ''}
                       {row.avgPrice != null && row.minPrice !== row.maxPrice && (
-                        <span className="text-slate-400"> (avg {formatUsd(row.avgPrice)})</span>
+                        <span className="text-app-tertiary"> (avg {formatUsd(row.avgPrice)})</span>
                       )}
                     </span>
                   )}
                 </span>
               </div>
-              <p className="mb-1 text-[11px] text-slate-500">
+              <p className="mb-1 text-[11px] text-app-secondary">
                 {row.sourceCount} source{row.sourceCount === 1 ? '' : 's'}
               </p>
               <div className="flex h-8 w-full items-center gap-3">
-                <div className="h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/90">
+                <div className="h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-app-fill-strong">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-600 transition-[width] duration-500 ease-out"
                     style={{ width: `${pct}%` }}
@@ -109,19 +109,19 @@ export function CompareVendorOverview({
       </div>
 
       {commonVendorRows && commonVendorRows.length > 0 && partRows.length > 1 && (
-        <div className="mt-6 border-t border-slate-200 pt-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <div className="mt-6 border-t border-app-separator pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-app-secondary">
             Shared vendors (≥2 parts) — price by part
           </p>
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-x-auto rounded-lg border border-app-separator bg-app-surface">
             <table className="w-full min-w-[320px] border-collapse text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/90">
-                  <th className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700">Vendor</th>
+                <tr className="border-b border-app-separator bg-app-fill/90">
+                  <th className="whitespace-nowrap px-3 py-2 font-semibold text-app-secondary">Vendor</th>
                   {partRows.map((p) => (
                     <th
                       key={p.id}
-                      className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700"
+                      className="whitespace-nowrap px-3 py-2 font-semibold text-app-secondary"
                       title={p.label}
                     >
                       <span className="line-clamp-2 max-w-[10rem]">{p.label}</span>
@@ -132,15 +132,15 @@ export function CompareVendorOverview({
               <tbody>
                 {commonVendorRows.map((r) => {
                   return (
-                    <tr key={r.domain} className="border-b border-slate-100 last:border-0">
-                      <td className="max-w-[14rem] truncate px-3 py-2 font-medium text-slate-800" title={r.domain}>
+                    <tr key={r.domain} className="border-b border-app-separator last:border-0">
+                      <td className="max-w-[14rem] truncate px-3 py-2 font-medium text-app-label" title={r.domain}>
                         {r.domain}
                       </td>
                       {partRows.map((p) => {
                         const priceText = r.priceByPartId[p.id] ?? '—'
                         const cellUrl = toSafeHttpUrl(r.urlByPartId[p.id] ?? null)
                         return (
-                          <td key={p.id} className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">
+                          <td key={p.id} className="whitespace-nowrap px-3 py-2 tabular-nums text-app-secondary">
                             {cellUrl ? (
                               <a
                                 href={cellUrl}

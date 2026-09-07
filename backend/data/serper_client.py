@@ -91,17 +91,36 @@ def extract_organic_results_from_serper_response(data: dict) -> list[dict]:
     """
     Extract full organic results from Serper response.
     Each item has: title, link, snippet, position.
+    Includes sitelinks so spec/PDF pages nested under a result are not dropped.
     """
     results: list[dict] = []
-    organic = data.get("organic") or []
-    for item in organic:
+    seen: set[str] = set()
+
+    def add(item: object) -> None:
+        if not isinstance(item, dict):
+            return
         link = item.get("link")
         if not link or not isinstance(link, str):
-            continue
-        results.append({
-            "title": item.get("title") or "",
-            "link": link,
-            "snippet": item.get("snippet") or "",
-            "position": item.get("position"),
-        })
+            return
+        key = link.strip()
+        if not key or key.lower() in seen:
+            return
+        seen.add(key.lower())
+        results.append(
+            {
+                "title": item.get("title") or "",
+                "link": link,
+                "snippet": item.get("snippet") or "",
+                "position": item.get("position"),
+            }
+        )
+        sitelinks = item.get("sitelinks") or []
+        if isinstance(sitelinks, list):
+            for nested in sitelinks:
+                add(nested)
+
+    organic = data.get("organic") or []
+    if isinstance(organic, list):
+        for item in organic:
+            add(item)
     return results

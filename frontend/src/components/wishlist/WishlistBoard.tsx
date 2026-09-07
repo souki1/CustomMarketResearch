@@ -105,15 +105,15 @@ function loadStatuses(): Record<string, WishlistStatus> {
 
 function ScoreBar({ score }: { score: number | null }) {
   if (score == null) {
-    return <span className="font-mono text-[11px] text-slate-400">—</span>
+    return <span className="font-mono text-[11px] text-app-tertiary">—</span>
   }
   const barColor = score >= 70 ? '#1D9E75' : score >= 40 ? '#378ADD' : '#c8c6be'
   return (
     <div className="flex items-center gap-1.5">
-      <div className="h-1 w-11 overflow-hidden rounded bg-slate-100">
+      <div className="h-1 w-11 overflow-hidden rounded bg-app-fill">
         <div className="h-full rounded" style={{ width: `${score}%`, backgroundColor: barColor }} />
       </div>
-      <span className="font-mono text-[11px] text-slate-500">{score}</span>
+      <span className="font-mono text-[11px] text-app-secondary">{score}</span>
     </div>
   )
 }
@@ -144,7 +144,7 @@ function ItemThumb({
         event.stopPropagation()
         onPreview()
       }}
-      className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-[#e0ddd4] bg-white transition-transform hover:scale-105"
+      className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-app-separator bg-app-surface transition-transform hover:scale-105"
       title="Click to enlarge"
       aria-label={`View image of ${alt}`}
     >
@@ -209,13 +209,13 @@ function ItemCard({
             {item.imageUrl && (
               <ItemThumb src={item.imageUrl} alt={item.part} onPreview={() => onPreviewImage(item)} />
             )}
-            <span className="font-mono text-xs font-medium text-[#0C447C]">{item.part}</span>
+            <span className="font-mono text-xs font-medium text-app-accent">{item.part}</span>
             <Tag label={statusMeta.label} bg={statusMeta.bg} col={statusMeta.col} />
             <Tag label={tier.label} bg={tier.bg} col={tier.col} />
             {item.shipsToday && <Tag label="⚡ Ships today" bg="#EAF3DE" col="#27500A" />}
           </div>
-          <div className="mb-1 text-[13px] font-medium text-[#1a1a18]">{item.vendor}</div>
-          <div className="mb-1.5 text-xs text-[#73726c]">
+          <div className="mb-1 text-[13px] font-medium text-app-label">{item.vendor}</div>
+          <div className="mb-1.5 text-xs text-app-secondary">
             {item.delivery}
             {item.contact !== '—' && <span className="ml-2.5 font-mono">{item.contact}</span>}
           </div>
@@ -261,14 +261,14 @@ function ItemCard({
           <button
             type="button"
             onClick={() => onAddTo(item.id)}
-            className="rounded border border-[#378ADD] bg-[#E6F1FB] px-2 py-0.5 text-[10px] font-medium text-[#0C447C]"
+            className="rounded border border-app-accent bg-app-accent-soft px-2 py-0.5 text-[10px] font-medium text-app-accent"
           >
             + Add to list
           </button>
           <button
             type="button"
             onClick={() => onRemove(item.id)}
-            className="rounded border border-[#c8c6be] bg-[#f7f5f0] px-2 py-0.5 text-[10px] text-[#73726c]"
+            className="rounded border border-app-separator bg-app-fill px-2 py-0.5 text-[10px] text-app-secondary"
           >
             Remove
           </button>
@@ -331,7 +331,7 @@ function SidebarItem({
             if (event.key === 'Escape') onCancelEdit()
           }}
           onClick={(event) => event.stopPropagation()}
-          className="flex-1 border-b border-slate-300 bg-transparent px-0.5 text-[13px] text-slate-800 outline-none"
+          className="flex-1 border-b border-app-separator bg-transparent px-0.5 text-[13px] text-app-label outline-none"
         />
       ) : (
         <span
@@ -349,7 +349,7 @@ function SidebarItem({
       </span>
       {hovered && editingId !== list.id && (
         <div className="flex gap-0.5" onClick={(event) => event.stopPropagation()}>
-          <button type="button" onClick={onStartEdit} className="px-0.5 text-xs text-slate-400 hover:text-slate-700">
+          <button type="button" onClick={onStartEdit} className="px-0.5 text-xs text-app-tertiary hover:text-app-secondary">
             ✏️
           </button>
           <button type="button" onClick={onDelete} className="px-0.5 text-xs text-rose-600 hover:text-rose-700">
@@ -639,9 +639,9 @@ export function WishlistBoard() {
   const addToPart = addToItem != null ? catalogItems.find((item) => item.id === addToItem) : null
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 text-slate-900 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col gap-0.5 overflow-hidden border-r border-slate-200 bg-slate-50/90 p-3">
-        <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">My Wishlists</div>
+    <div className="grid h-full min-h-0 grid-cols-1 text-app-label lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col gap-0.5 overflow-hidden border-r border-app-separator bg-app-fill/90 p-3">
+        <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.06em] text-app-secondary">My Wishlists</div>
 
         <button
           type="button"
@@ -650,15 +650,15 @@ export function WishlistBoard() {
             setSelected(new Set())
           }}
           className={`mb-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors ${
-            activeId === 'all' ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white'
+            activeId === 'all' ? 'bg-app-surface text-app-label shadow-sm ring-1 ring-slate-200' : 'text-app-secondary hover:bg-app-surface'
           }`}
         >
           <span className="text-sm">🗂</span>
           <span className={`flex-1 text-[13px] ${activeId === 'all' ? 'font-semibold' : ''}`}>All items</span>
-          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{catalogItems.length}</span>
+          <span className="rounded-full bg-app-fill px-1.5 py-0.5 text-[11px] text-app-secondary">{catalogItems.length}</span>
         </button>
 
-        <div className="mb-2 h-px bg-slate-200" />
+        <div className="mb-2 h-px bg-app-fill-strong" />
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {lists.map((list) => (
@@ -684,7 +684,7 @@ export function WishlistBoard() {
           ))}
         </div>
 
-        <div className="mt-2 border-t border-slate-200 pt-2.5">
+        <div className="mt-2 border-t border-app-separator pt-2.5">
           {creating ? (
             <div className="flex flex-col gap-1.5">
               <input
@@ -696,7 +696,7 @@ export function WishlistBoard() {
                   if (event.key === 'Enter') createList()
                   if (event.key === 'Escape') setCreating(false)
                 }}
-                className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none ring-violet-400/40 focus:ring-2"
+                className="rounded border border-app-separator bg-app-surface px-2 py-1.5 text-xs text-app-label outline-none ring-violet-400/40 focus:ring-2"
               />
               <div className="flex flex-wrap gap-1">
                 {EMOJIS.map((emoji) => (
@@ -734,7 +734,7 @@ export function WishlistBoard() {
                 <button
                   type="button"
                   onClick={() => setCreating(false)}
-                  className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600"
+                  className="rounded border border-app-separator bg-app-surface px-2.5 py-1.5 text-xs text-app-secondary"
                 >
                   Cancel
                 </button>
@@ -744,7 +744,7 @@ export function WishlistBoard() {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="w-full rounded-md border border-dashed border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs text-slate-600 hover:border-slate-400 hover:text-slate-800"
+              className="w-full rounded-md border border-dashed border-app-separator bg-app-surface px-2.5 py-1.5 text-left text-xs text-app-secondary hover:border-slate-400 hover:text-app-label"
             >
               + New wishlist
             </button>
@@ -752,13 +752,13 @@ export function WishlistBoard() {
         </div>
       </aside>
 
-      <div className="flex min-h-0 flex-col bg-slate-50/40">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e0ddd4] bg-white px-4 py-2.5">
+      <div className="flex min-h-0 flex-col bg-app-fill/40">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-app-separator bg-app-surface px-4 py-2.5">
           <div className="flex items-center gap-2.5">
             {activeList && <span className="text-xl">{activeList.emoji}</span>}
             <div>
               <div className="text-base font-medium">{activeId === 'all' ? 'All items' : activeList?.name}</div>
-              <div className="text-xs text-[#73726c]">
+              <div className="text-xs text-app-secondary">
                 {visibleItems.length} item{visibleItems.length === 1 ? '' : 's'} · PartSource.ai
               </div>
             </div>
@@ -768,28 +768,28 @@ export function WishlistBoard() {
               <button
                 type="button"
                 onClick={() => setShowPartPicker(true)}
-                className="rounded border border-[#378ADD] bg-[#E6F1FB] px-2.5 py-1 text-xs font-medium text-[#0C447C]"
+                className="rounded border border-app-accent bg-app-accent-soft px-2.5 py-1 text-xs font-medium text-app-accent"
               >
                 + Add parts
               </button>
             )}
             <button
               type="button"
-              className="rounded border border-[#c8c6be] bg-[#f7f5f0] px-2.5 py-1 text-xs text-[#73726c]"
+              className="rounded border border-app-separator bg-app-fill px-2.5 py-1 text-xs text-app-secondary"
             >
               Export ↗
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-px border-b border-[#e0ddd4] bg-[#e0ddd4] md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px border-b border-app-separator bg-[#e0ddd4] md:grid-cols-4">
           {[
             ['Items', String(visibleItems.length), '#1a1a18'],
             ['Best price', bestPrice != null ? `$${bestPrice.toFixed(2)}` : '—', '#1D9E75'],
             ['Est. total', `$${totalValue.toFixed(2)}`, '#1a1a18'],
             ['Ships today', String(visibleItems.filter((item) => item.shipsToday).length), '#1D9E75'],
           ].map(([label, value, color]) => (
-            <div key={label} className="bg-white px-3.5 py-2">
+            <div key={label} className="bg-app-surface px-3.5 py-2">
               <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[#a3a19a]">{label}</div>
               <div className="font-mono text-lg font-medium" style={{ color }}>
                 {value}
@@ -798,17 +798,17 @@ export function WishlistBoard() {
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-[#e0ddd4] bg-white px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-app-separator bg-app-surface px-4 py-2">
           <input
             placeholder="Search part or vendor…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-44 rounded border border-[#e0ddd4] bg-[#f7f5f0] px-2.5 py-1 text-xs"
+            className="w-44 rounded border border-app-separator bg-app-fill px-2.5 py-1 text-xs"
           />
           <select
             value={sort}
             onChange={(event) => setSort(event.target.value as (typeof SORTS)[number])}
-            className="rounded border border-[#e0ddd4] bg-[#f7f5f0] px-2 py-1 text-xs"
+            className="rounded border border-app-separator bg-app-fill px-2 py-1 text-xs"
           >
             {SORTS.map((option) => (
               <option key={option}>{option}</option>
@@ -841,16 +841,16 @@ export function WishlistBoard() {
         </div>
 
         {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#378ADD] bg-[#E6F1FB] px-4 py-2">
-            <span className="text-xs font-medium text-[#0C447C]">{selected.size} selected</span>
+          <div className="flex flex-wrap items-center gap-2 border-b border-app-accent bg-app-accent-soft px-4 py-2">
+            <span className="text-xs font-medium text-app-accent">{selected.size} selected</span>
             <button
               type="button"
               onClick={() => setShowBulkCreateList(true)}
-              className="rounded border border-[#378ADD] bg-white px-2.5 py-0.5 text-[11px] font-medium text-[#0C447C] shadow-sm"
+              className="rounded border border-app-accent bg-app-surface px-2.5 py-0.5 text-[11px] font-medium text-app-accent shadow-sm"
             >
               + Create list
             </button>
-            <span className="text-xs text-[#0C447C]">· Set status:</span>
+            <span className="text-xs text-app-accent">· Set status:</span>
             {(Object.keys(STATUS_META) as WishlistStatus[]).map((key) => (
               <button
                 key={key}
@@ -870,7 +870,7 @@ export function WishlistBoard() {
               <button
                 type="button"
                 onClick={bulkRemove}
-                className="rounded border border-[#c8c6be] bg-[#FAECE7] px-2 py-0.5 text-[11px] font-medium text-[#712B13]"
+                className="rounded border border-app-separator bg-[#FAECE7] px-2 py-0.5 text-[11px] font-medium text-[#712B13]"
               >
                 Remove from list
               </button>
@@ -878,7 +878,7 @@ export function WishlistBoard() {
             <button
               type="button"
               onClick={() => setSelected(new Set())}
-              className="ml-auto text-xs text-[#0C447C] underline"
+              className="ml-auto text-xs text-app-accent underline"
             >
               Clear
             </button>
@@ -893,13 +893,13 @@ export function WishlistBoard() {
               onChange={toggleAll}
               className="h-3.5 w-3.5 accent-[#378ADD]"
             />
-            <span className="text-xs text-[#73726c]">
+            <span className="text-xs text-app-secondary">
               Select all · {visibleItems.length} item{visibleItems.length === 1 ? '' : 's'}
             </span>
           </div>
 
           {catalogLoading ? (
-            <div className="py-12 text-center text-slate-500">
+            <div className="py-12 text-center text-app-secondary">
               <div className="text-sm font-medium">Loading vendor offers from research…</div>
             </div>
           ) : catalogError ? (
@@ -907,20 +907,20 @@ export function WishlistBoard() {
               <div className="text-sm font-medium">{catalogError}</div>
             </div>
           ) : catalogItems.length === 0 ? (
-            <div className="py-12 text-center text-slate-500">
+            <div className="py-12 text-center text-app-secondary">
               <div className="mb-2 text-3xl">📭</div>
               <div className="text-sm font-medium">No vendor offers yet</div>
-              <p className="mt-2 text-xs text-slate-400">Run research on datasheet rows to populate this wishlist.</p>
+              <p className="mt-2 text-xs text-app-tertiary">Run research on datasheet rows to populate this wishlist.</p>
             </div>
           ) : visibleItems.length === 0 ? (
-            <div className="py-12 text-center text-[#73726c]">
+            <div className="py-12 text-center text-app-secondary">
               <div className="mb-2 text-3xl">📭</div>
               <div className="text-sm font-medium">{activeId === 'all' ? 'No items match your filters' : 'This list is empty'}</div>
               {activeId !== 'all' && (
                 <button
                   type="button"
                   onClick={() => setShowPartPicker(true)}
-                  className="mt-3 rounded-md bg-[#378ADD] px-4 py-1.5 text-sm font-medium text-white"
+                  className="mt-3 rounded-md bg-app-accent px-4 py-1.5 text-sm font-medium text-white"
                 >
                   + Add parts to this list
                 </button>
@@ -957,11 +957,11 @@ export function WishlistBoard() {
           onClick={() => setShowBulkCreateList(false)}
         >
           <div
-            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+            className="w-full max-w-sm rounded-xl bg-app-surface p-5 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-1 text-[15px] font-medium">Create wishlist from selection</div>
-            <div className="mb-3 text-xs text-slate-500">
+            <div className="mb-3 text-xs text-app-secondary">
               {selected.size} item{selected.size === 1 ? '' : 's'} will be added to the new list.
             </div>
             <input
@@ -973,7 +973,7 @@ export function WishlistBoard() {
                 if (event.key === 'Enter') createListFromSelected()
                 if (event.key === 'Escape') setShowBulkCreateList(false)
               }}
-              className="mb-3 w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none ring-violet-400/40 focus:ring-2"
+              className="mb-3 w-full rounded border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label outline-none ring-violet-400/40 focus:ring-2"
             />
             <div className="mb-3 flex flex-wrap gap-1">
               {EMOJIS.map((emoji) => (
@@ -1012,7 +1012,7 @@ export function WishlistBoard() {
               <button
                 type="button"
                 onClick={() => setShowBulkCreateList(false)}
-                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600"
+                className="rounded-md border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-secondary"
               >
                 Cancel
               </button>
@@ -1027,11 +1027,11 @@ export function WishlistBoard() {
           onClick={() => setShowAddModal(false)}
         >
           <div
-            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+            className="w-full max-w-sm rounded-xl bg-app-surface p-5 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-1 text-[15px] font-medium">Add to a wishlist</div>
-            <div className="mb-3 font-mono text-xs text-[#73726c]">
+            <div className="mb-3 font-mono text-xs text-app-secondary">
               {addToPart.part} · {addToPart.vendor}
             </div>
             <div className="flex flex-col gap-1.5">
@@ -1062,7 +1062,7 @@ export function WishlistBoard() {
             <button
               type="button"
               onClick={() => setShowAddModal(false)}
-              className="mt-3 w-full rounded-md border border-[#c8c6be] bg-[#f7f5f0] px-3 py-2 text-sm text-[#73726c]"
+              className="mt-3 w-full rounded-md border border-app-separator bg-app-fill px-3 py-2 text-sm text-app-secondary"
             >
               Done
             </button>
@@ -1076,12 +1076,12 @@ export function WishlistBoard() {
           onClick={() => setShowPartPicker(false)}
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-white p-5 shadow-xl"
+            className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-app-surface p-5 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 text-[15px] font-medium">Add parts to "{activeList.name}"</div>
 
-            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-[#e0ddd4] bg-[#f7f5f0] px-2.5 py-1.5">
+            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-app-separator bg-app-fill px-2.5 py-1.5">
               <Search className="h-3.5 w-3.5 shrink-0 text-[#a3a19a]" strokeWidth={2} />
               <input
                 ref={pickerSearchRef}
@@ -1091,13 +1091,13 @@ export function WishlistBoard() {
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') setShowPartPicker(false)
                 }}
-                className="min-w-0 flex-1 bg-transparent text-xs text-[#1a1a18] outline-none placeholder:text-[#a3a19a]"
+                className="min-w-0 flex-1 bg-transparent text-xs text-app-label outline-none placeholder:text-[#a3a19a]"
               />
               {pickerSearch && (
                 <button
                   type="button"
                   onClick={() => setPickerSearch('')}
-                  className="shrink-0 text-xs text-[#a3a19a] hover:text-[#73726c]"
+                  className="shrink-0 text-xs text-[#a3a19a] hover:text-app-secondary"
                   aria-label="Clear search"
                 >
                   ×
@@ -1165,7 +1165,7 @@ export function WishlistBoard() {
 
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
               {pickerItems.length === 0 && (
-                <div className="py-8 text-center text-xs text-[#73726c]">
+                <div className="py-8 text-center text-xs text-app-secondary">
                   No parts match your search or filters.
                 </div>
               )}
@@ -1187,8 +1187,8 @@ export function WishlistBoard() {
                     }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono text-xs font-medium text-[#0C447C]">{item.part}</div>
-                      <div className="text-xs text-[#73726c]">{item.vendor}</div>
+                      <div className="font-mono text-xs font-medium text-app-accent">{item.part}</div>
+                      <div className="text-xs text-app-secondary">{item.vendor}</div>
                     </div>
                     <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ backgroundColor: tier.bg, color: tier.col }}>
                       {tier.label}
@@ -1206,7 +1206,7 @@ export function WishlistBoard() {
             <button
               type="button"
               onClick={() => setShowPartPicker(false)}
-              className="mt-3 w-full rounded-md bg-[#378ADD] px-3 py-2 text-sm font-medium text-white"
+              className="mt-3 w-full rounded-md bg-app-accent px-3 py-2 text-sm font-medium text-white"
             >
               Done
             </button>
@@ -1222,24 +1222,24 @@ export function WishlistBoard() {
           aria-label={`Image of ${imagePreview.part}`}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-app-surface shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[#e0ddd4] px-4 py-2.5">
+            <div className="flex items-center justify-between border-b border-app-separator px-4 py-2.5">
               <div className="min-w-0">
-                <div className="truncate font-mono text-sm font-medium text-[#0C447C]">{imagePreview.part}</div>
-                <div className="truncate text-xs text-[#73726c]">{imagePreview.vendor}</div>
+                <div className="truncate font-mono text-sm font-medium text-app-accent">{imagePreview.part}</div>
+                <div className="truncate text-xs text-app-secondary">{imagePreview.vendor}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setImagePreview(null)}
-                className="ml-3 shrink-0 rounded-md border border-[#c8c6be] bg-[#f7f5f0] px-2.5 py-1 text-sm text-[#73726c] hover:text-[#1a1a18]"
+                className="ml-3 shrink-0 rounded-md border border-app-separator bg-app-fill px-2.5 py-1 text-sm text-app-secondary hover:text-app-label"
                 aria-label="Close image preview"
               >
                 ×
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center bg-[#f7f5f0] p-4">
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-app-fill p-4">
               <img
                 src={imagePreview.imageUrl}
                 alt={imagePreview.part}
@@ -1248,12 +1248,12 @@ export function WishlistBoard() {
               />
             </div>
             {imagePreview.url && (
-              <div className="border-t border-[#e0ddd4] px-4 py-2 text-right">
+              <div className="border-t border-app-separator px-4 py-2 text-right">
                 <a
                   href={imagePreview.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-medium text-[#0C447C] underline"
+                  className="text-xs font-medium text-app-accent underline"
                 >
                   View vendor page ↗
                 </a>

@@ -131,10 +131,54 @@ def _extracted_payload(status_data: dict) -> dict | None:
     return None
 
 
+# Always requested, even when the user prompt omits them. additionalProperties
+# keeps extra fields from a custom prompt.
+DEFAULT_EXTRACT_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "product_image": {
+            "type": "string",
+            "description": "Direct https URL of the main product photograph, not a logo or icon.",
+        },
+        "product_description": {"type": "string"},
+        "vendor_name": {"type": "string"},
+        "price": {
+            "type": "string",
+            "description": "Price as shown, including currency symbol.",
+        },
+        "specifications": {
+            "type": "object",
+            "description": (
+                "Every technical specification shown on the page as name/value pairs "
+                "(full spec table: dimensions, material, compatibility, weight, "
+                "OEM/part numbers, voltage, capacity, and similar attributes)."
+            ),
+            "additionalProperties": True,
+        },
+        "product_details": {
+            "type": "object",
+            "additionalProperties": True,
+        },
+        "datasheet_url": {
+            "type": "string",
+            "description": "Direct URL to a datasheet, spec sheet, or PDF manual.",
+        },
+        "delivery": {"type": "string"},
+        "location": {"type": "string"},
+        "contact": {"type": "string"},
+        "manufacturer": {"type": "string"},
+        "part_number": {"type": "string"},
+    },
+    "additionalProperties": True,
+}
+
+
 async def scrape_url_with_ai_extraction(
     api_key: str,
     url: str,
     ai_query: str,
+    *,
+    schema: dict | None = None,
 ) -> dict | None:
     """
     Scrape a URL and extract structured data using Firecrawl extract API.
@@ -146,9 +190,10 @@ async def scrape_url_with_ai_extraction(
         raise ValueError("FIRECRAWL_API_KEY is required")
     if not ai_query or not ai_query.strip():
         return None
-    payload = {
+    payload: dict = {
         "urls": [url],
         "prompt": ai_query.strip(),
+        "schema": schema if isinstance(schema, dict) and schema else DEFAULT_EXTRACT_SCHEMA,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",

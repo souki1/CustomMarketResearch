@@ -36,7 +36,7 @@ function priceBarColor(index: number, total: number): string {
 }
 
 const INSIGHT_ICON_CONFIG = {
-  info: { bg: 'bg-blue-50', text: 'text-blue-600', Icon: Info },
+  info: { bg: 'bg-app-accent-soft', text: 'text-app-accent', Icon: Info },
   clock: { bg: 'bg-amber-50', text: 'text-amber-600', Icon: Clock },
   alert: { bg: 'bg-orange-50', text: 'text-orange-600', Icon: AlertTriangle },
   check: { bg: 'bg-emerald-50', text: 'text-emerald-600', Icon: CheckCircle },
@@ -301,25 +301,25 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
   }
 
   return (
-    <section className="space-y-4 rounded-xl bg-white/90 p-3">
+    <section className="space-y-4 rounded-xl bg-app-surface/90 p-3">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-bold text-slate-900">{partLabel} — Insights</h3>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <h3 className="text-base font-bold text-app-label">{partLabel} — Insights</h3>
+          <p className="mt-0.5 text-sm text-app-secondary">
             {rows.length} vendors · price range {fmt(minP)}–{fmt(maxP)} · data as of today
           </p>
         </div>
         <button
           type="button"
           onClick={handleExport}
-          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary shadow-sm transition-colors hover:bg-app-fill"
         >
           Export
           <ExternalLink className="h-3 w-3" />
         </button>
       </div>
 
-      <div className="flex items-center gap-6 border-b border-slate-200">
+      <div className="flex items-center gap-6 border-b border-app-separator">
         {(['decisions', 'table', 'insights', 'mindmap'] as const).map((tab) => (
           <button
             key={tab}
@@ -327,8 +327,8 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
             onClick={() => onViewChange(tab)}
             className={`pb-2 text-sm font-medium transition-colors ${
               tab === 'insights'
-                ? 'border-b-2 border-slate-900 text-slate-900'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'border-b-2 border-slate-900 text-app-label'
+                : 'text-app-secondary hover:text-app-secondary'
             }`}
           >
             <span className="inline-flex items-center gap-1">
@@ -348,17 +348,17 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
       {focusedRow && (
         <div
           key={focusedRow.id}
-          className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 transition-all duration-200"
+          className="rounded-xl border border-app-separator bg-app-fill/80 p-4 transition-all duration-200"
         >
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="inline-block rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <span className="inline-block rounded-md border border-app-separator bg-app-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-app-secondary">
               {isManualFocus ? 'Selected vendor' : 'Top recommendation'}
             </span>
             {isManualFocus && (
               <button
                 type="button"
                 onClick={() => setFocusedVendorId(null)}
-                className="text-[10px] font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                className="text-[10px] font-medium text-app-secondary underline-offset-2 hover:text-app-label hover:underline"
               >
                 Back to recommendation
               </button>
@@ -366,7 +366,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
           </div>
           <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h4 className="text-sm font-bold text-slate-900">{focusedRow.vendor}</h4>
+              <h4 className="text-sm font-bold text-app-label">{focusedRow.vendor}</h4>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {focusTags.map((tag, i) => (
                   <span
@@ -374,7 +374,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                     className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                       tag.accent
                         ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-white text-slate-600 ring-1 ring-slate-200'
+                        : 'bg-app-surface text-app-secondary ring-1 ring-slate-200'
                     }`}
                   >
                     {tag.accent && '● '}
@@ -384,7 +384,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
               </div>
               {(focusedRow.delivery && focusedRow.delivery !== '—') ||
               (focusedRow.location && focusedRow.location !== '—') ? (
-                <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+                <p className="mt-2 max-w-md text-xs leading-relaxed text-app-secondary">
                   {[
                     focusedRow.delivery !== '—' ? focusedRow.delivery : null,
                     focusedRow.location !== '—' ? focusedRow.location : null,
@@ -396,7 +396,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
             </div>
             <div className="text-right">
               <p className="text-xl font-bold text-emerald-600">{fmt(focusedRow.price)}</p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-app-secondary">
                 {focusSavings != null && focusSavings !== 0
                   ? `${focusSavings > 0 ? focusSavings : Math.abs(focusSavings)}% ${focusSavings > 0 ? 'below' : 'above'} avg`
                   : ''}
@@ -424,7 +424,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
               onClick={() =>
                 focusedRow.url && window.open(focusedRow.url, '_blank', 'noopener')
               }
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-app-separator bg-app-surface py-2 text-xs font-semibold text-app-secondary transition-colors hover:bg-app-fill"
             >
               Vendor profile
               <ExternalLink className="h-3 w-3" />
@@ -434,11 +434,11 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-app-separator bg-app-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-app-secondary">
             Price Comparison
           </h4>
-          <p className="mb-2 text-[11px] text-slate-400">Click a vendor to show their details above</p>
+          <p className="mb-2 text-[11px] text-app-tertiary">Click a vendor to show their details above</p>
           <div className="space-y-2">
             {byPrice.map((row, i) => {
               const active = focusedVendorId === row.id
@@ -448,12 +448,12 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                   type="button"
                   onClick={() => selectVendor(row)}
                   className={`flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors ${
-                    active ? 'bg-slate-100 ring-1 ring-slate-300' : 'hover:bg-slate-50'
+                    active ? 'bg-app-fill ring-1 ring-slate-300' : 'hover:bg-app-fill'
                   }`}
                 >
                   <span
                     className={`w-28 shrink-0 truncate text-xs ${
-                      active ? 'font-semibold text-slate-900' : 'text-slate-700'
+                      active ? 'font-semibold text-app-label' : 'text-app-secondary'
                     }`}
                     title={row.vendor}
                   >
@@ -477,8 +477,8 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
         </div>
 
         {byScore.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="rounded-xl border border-app-separator bg-app-surface p-4">
+            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-app-secondary">
               Vendor Scores
             </h4>
             <div className="space-y-2">
@@ -491,19 +491,19 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                     type="button"
                     onClick={() => selectVendor(row)}
                     className={`flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors ${
-                      active ? 'bg-slate-100 ring-1 ring-slate-300' : 'hover:bg-slate-50'
+                      active ? 'bg-app-fill ring-1 ring-slate-300' : 'hover:bg-app-fill'
                     }`}
                   >
                     <span
                       className={`w-28 shrink-0 truncate text-xs ${
-                        active ? 'font-semibold text-slate-900' : 'text-slate-700'
+                        active ? 'font-semibold text-app-label' : 'text-app-secondary'
                       }`}
                       title={row.vendor}
                     >
                       {row.vendor}
                     </span>
                     <div className="flex flex-1 items-center gap-2">
-                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-app-fill">
                         <div
                           className="h-full rounded-full transition-all"
                           style={{
@@ -512,7 +512,7 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                           }}
                         />
                       </div>
-                      <span className="w-6 text-right text-xs font-semibold text-slate-700">{score}</span>
+                      <span className="w-6 text-right text-xs font-semibold text-app-secondary">{score}</span>
                     </div>
                   </button>
                 )
@@ -521,8 +521,8 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
           </div>
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-app-separator bg-app-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-app-secondary">
             Price Distribution
           </h4>
           <div className="space-y-2">
@@ -530,33 +530,33 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
               const maxCount = Math.max(...buckets.map((b) => b.count), 1)
               return (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-16 shrink-0 text-xs text-slate-500">{bucket.range}</span>
+                  <span className="w-16 shrink-0 text-xs text-app-secondary">{bucket.range}</span>
                   <div className="flex flex-1 items-center gap-2">
                     <div
-                      className="h-4 rounded bg-blue-500"
+                      className="h-4 rounded bg-app-accent"
                       style={{ width: `${Math.max(4, (bucket.count / maxCount) * 100)}%` }}
                     />
-                    <span className="text-xs text-slate-500">{bucket.count}</span>
+                    <span className="text-xs text-app-secondary">{bucket.count}</span>
                   </div>
                 </div>
               )
             })}
           </div>
-          <div className="mt-3 space-y-0.5 border-t border-slate-200 pt-3 text-xs text-slate-500">
+          <div className="mt-3 space-y-0.5 border-t border-app-separator pt-3 text-xs text-app-secondary">
             <p>
-              Median price: <span className="font-medium text-slate-700">{fmt(medianP)}</span>
+              Median price: <span className="font-medium text-app-secondary">{fmt(medianP)}</span>
             </p>
             <p>
               IQR:{' '}
-              <span className="font-medium text-slate-700">
+              <span className="font-medium text-app-secondary">
                 {fmt(q1)}–{fmt(q3)}
               </span>
             </p>
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-app-separator bg-app-surface p-4">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-app-secondary">
             Delivery Breakdown
           </h4>
           <div className="flex flex-col items-center gap-4">
@@ -589,16 +589,16 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                 })()}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-slate-900">{rows.length}</span>
-                <span className="text-[10px] text-slate-500">vendors</span>
+                <span className="text-2xl font-bold text-app-label">{rows.length}</span>
+                <span className="text-[10px] text-app-secondary">vendors</span>
               </div>
             </div>
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5">
               {deliverySegments.map((seg, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-xs">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: seg.color }} />
-                  <span className="text-slate-500">{seg.label}</span>
-                  <span className="font-medium text-slate-700">{seg.count}</span>
+                  <span className="text-app-secondary">{seg.label}</span>
+                  <span className="font-medium text-app-secondary">{seg.count}</span>
                 </div>
               ))}
             </div>
@@ -607,8 +607,8 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
       </div>
 
       {insights.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Key Insights</h4>
+        <div className="rounded-xl border border-app-separator bg-app-surface p-4">
+          <h4 className="mb-4 text-xs font-semibold uppercase tracking-wide text-app-secondary">Key Insights</h4>
           <div className="space-y-3">
             {insights.map((insight, i) => {
               const cfg = INSIGHT_ICON_CONFIG[insight.icon]
@@ -619,8 +619,8 @@ export function CompareInsightsPanel({ partLabel, rows, onViewChange, onAddToBuc
                   >
                     <cfg.Icon className={`h-3.5 w-3.5 ${cfg.text}`} />
                   </div>
-                  <p className="text-sm leading-relaxed text-slate-600">
-                    <strong className="font-semibold text-slate-900">{insight.bold}</strong>
+                  <p className="text-sm leading-relaxed text-app-secondary">
+                    <strong className="font-semibold text-app-label">{insight.bold}</strong>
                     {insight.detail}
                   </p>
                 </div>

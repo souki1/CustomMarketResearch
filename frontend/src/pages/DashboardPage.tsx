@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   FileText,
   FlaskConical,
-  Heart,
   ShoppingCart,
   TrendingDown,
 } from 'lucide-react'
@@ -35,19 +34,6 @@ function parsePrice(s: string | null | undefined): number | null {
 function parseBucketPrice(price: string): number {
   const n = parsePrice(price)
   return n != null && n >= 0 ? n : 0
-}
-
-function buildTrend(endValue: number, steps = 7): number[] {
-  const safeEnd = Math.max(0, endValue)
-  if (safeEnd === 0) return Array(steps).fill(0)
-  const out: number[] = []
-  for (let i = 0; i < steps; i++) {
-    const t = i / (steps - 1)
-    const eased = 0.55 + t * 0.45
-    out.push(Math.round(safeEnd * eased * (0.72 + t * 0.28)))
-  }
-  out[steps - 1] = safeEnd
-  return out
 }
 
 /** Group portfolio offers by part number (vendors for the same PN stay one part). */
@@ -326,8 +312,8 @@ export function DashboardPage() {
   }, [portfolioItems])
 
   const coveragePct = totalParts > 0 ? Math.round((partsResearched / totalParts) * 100) : 0
-  const spendTrend = buildTrend(bucketTotal)
-  const researchTrend = buildTrend(coveragePct)
+  const spendTrend = bucketTotal > 0 ? Array(7).fill(bucketTotal) : []
+  const researchTrend = totalParts > 0 ? Array(7).fill(coveragePct) : []
 
   const dateLabel = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -348,7 +334,7 @@ export function DashboardPage() {
       add(
         `${partsResearched} parts with vendor offers in portfolio`,
         'Overview',
-        'bg-blue-50 text-blue-600',
+        'bg-app-accent-soft text-app-accent',
         <FlaskConical className="h-3.5 w-3.5" strokeWidth={1.75} />
       )
     }
@@ -381,16 +367,10 @@ export function DashboardPage() {
       add(
         `${fileCount} workspace file${fileCount !== 1 ? 's' : ''} uploaded`,
         'Files',
-        'bg-blue-50 text-blue-600',
+        'bg-app-accent-soft text-app-accent',
         <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
       )
     }
-    add(
-      'Open wishlists to track priority parts',
-      'Wishlist',
-      'bg-violet-50 text-violet-600',
-      <Heart className="h-3.5 w-3.5" strokeWidth={1.75} />
-    )
 
     return items.slice(0, 6)
   }, [
@@ -409,7 +389,7 @@ export function DashboardPage() {
         : 'No files yet'
 
   return (
-    <div className="min-h-full overflow-y-auto bg-slate-50 p-5">
+    <div className="min-h-full overflow-y-auto bg-app-bg p-6 sm:p-8">
       <EnterpriseDashboard
         loading={loading}
         userName={userName}

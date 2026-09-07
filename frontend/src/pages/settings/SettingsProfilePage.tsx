@@ -283,8 +283,8 @@ export function SettingsProfilePage() {
   if (loading) {
     return (
       <header className="mb-8">
-        <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
-        <p className="mt-1 text-sm text-gray-500">Loading your profile…</p>
+        <h1 className="text-lg font-semibold text-app-label">Profile</h1>
+        <p className="mt-1 text-sm text-app-secondary">Loading your profile…</p>
       </header>
     )
   }
@@ -292,7 +292,7 @@ export function SettingsProfilePage() {
   if (error) {
     return (
       <header className="mb-8">
-        <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
+        <h1 className="text-lg font-semibold text-app-label">Profile</h1>
         <p className="mt-1 text-sm text-red-600">{error}</p>
       </header>
     )
@@ -301,8 +301,8 @@ export function SettingsProfilePage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-lg font-semibold text-app-label">Profile</h1>
+        <p className="mt-1 text-sm text-app-secondary">
           Update your personal information and security settings.
         </p>
         {fetchFailed && (
@@ -316,7 +316,7 @@ export function SettingsProfilePage() {
           <div className="sm:col-span-2">
             <label className={SETTINGS_LABEL_CLASS}>Profile photo</label>
             <div className="mt-1.5 flex items-center gap-4">
-              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-app-separator bg-app-fill">
                 {photoPreviewUrl ? (
                   <img
                     src={photoPreviewUrl}
@@ -330,7 +330,7 @@ export function SettingsProfilePage() {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-500">
+                  <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-app-secondary">
                     Add photo
                   </div>
                 )}
@@ -347,11 +347,11 @@ export function SettingsProfilePage() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={saving || uploadingPhoto}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
                 >
                   {uploadingPhoto ? 'Uploading…' : profilePhotoUrlState ? 'Change photo' : 'Add photo'}
                 </button>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-app-secondary">
                   {pendingPhotoFile ? 'Photo selected. Click “Save Changes” to upload.' : 'JPG, PNG, GIF or WebP. Max 5MB.'}
                 </p>
               </div>
@@ -398,16 +398,16 @@ export function SettingsProfilePage() {
             <button
               type="button"
               onClick={openChangePassword}
-              className="w-fit rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              className="w-fit rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
             >
               Change password
             </button>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700">Two-factor authentication</span>
+              <span className="text-xs font-medium text-app-secondary">Two-factor authentication</span>
             <label className="relative inline-flex cursor-pointer items-center">
               <input type="checkbox" className="peer sr-only" />
-              <span className="h-4 w-8 rounded-full bg-gray-200 peer-checked:bg-emerald-500" />
-              <span className="absolute left-0.5 h-3 w-3 rounded-full bg-white shadow peer-checked:translate-x-4" />
+              <span className="h-4 w-8 rounded-full bg-app-fill-strong peer-checked:bg-emerald-500" />
+              <span className="absolute left-0.5 h-3 w-3 rounded-full bg-app-surface shadow peer-checked:translate-x-4" />
             </label>
             </div>
           </div>
@@ -435,16 +435,16 @@ export function SettingsProfilePage() {
 
       {changePasswordOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-[520px] rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <div className="w-full max-w-[520px] rounded-xl border border-app-separator bg-app-surface shadow-sm">
+            <div className="flex items-center justify-between border-b border-app-separator px-4 py-3">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Change password</p>
-                <p className="text-xs text-gray-500">We’ll send a verification code to your email to confirm.</p>
+                <p className="text-sm font-semibold text-app-label">Change password</p>
+                <p className="text-xs text-app-secondary">We’ll send a verification code to your email to confirm.</p>
               </div>
               <button
                 type="button"
                 onClick={closeChangePassword}
-                className="rounded-md px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+                className="rounded-md px-2 py-1 text-sm text-app-secondary hover:bg-app-fill"
               >
                 ✕
               </button>
@@ -456,7 +456,7 @@ export function SettingsProfilePage() {
 
               {pwStep === 'request' ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-app-secondary">
                     Send code to: <span className="font-medium">{email || 'your email'}</span>
                   </p>
                   <button
@@ -517,7 +517,7 @@ export function SettingsProfilePage() {
                       type="button"
                       onClick={sendVerificationCode}
                       disabled={pwBusy}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="rounded-md border border-app-separator bg-app-surface px-3 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
                     >
                       Resend code
                     </button>
