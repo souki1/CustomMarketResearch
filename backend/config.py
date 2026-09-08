@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     firecrawl_api_key: str = Field(default="", validation_alias="FIRECRAWL_API_KEY")
     # Overlapping Firecrawl scrape POSTs. Lower this if logs show 429 Too Many Requests.
     firecrawl_max_concurrency: int = Field(
-        default=4, ge=1, le=8, validation_alias="FIRECRAWL_MAX_CONCURRENCY"
+        default=2, ge=1, le=8, validation_alias="FIRECRAWL_MAX_CONCURRENCY"
     )
     # How many sheet rows to Google-search in parallel (scrapes use Firecrawl concurrency).
     research_row_concurrency: int = Field(

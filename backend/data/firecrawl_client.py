@@ -17,10 +17,12 @@ logger = logging.getLogger(__name__)
 POLL_FIRST_WAIT = 1.5
 POLL_INTERVAL = 2.0
 POLL_TIMEOUT = 120.0
-MAX_START_ATTEMPTS = 3
-MIN_START_INTERVAL = 0.55
-MAX_START_INTERVAL = 2.0
-RATE_LIMIT_WAIT_CAP = 8.0
+MAX_START_ATTEMPTS = 6
+MAX_RATE_LIMIT_RETRIES = 8
+MIN_START_INTERVAL = 1.0
+MAX_START_INTERVAL = 4.0
+RATE_LIMIT_WAIT_CAP = 20.0
+MAX_PROMPT_CHARS = 10000
 RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
 
 _extract_sema: asyncio.Semaphore | None = None
@@ -36,7 +38,7 @@ def _max_concurrency() -> int:
     try:
         n = int(get_settings().firecrawl_max_concurrency)
     except Exception:
-        n = 4
+        n = 2
     return max(1, min(n, 8))
 
 
@@ -131,8 +133,15 @@ def _extracted_payload(status_data: dict) -> dict | None:
     return None
 
 
-# Always requested, even when the user prompt omits them. additionalProperties
-# keeps extra fields from a custom prompt.
+# Firecrawl/OpenAI reject additionalProperties and schema-less dictionaries.
+_NAME_VALUE_ITEM: dict = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "value": {"type": "string"},
+    },
+}
+
 DEFAULT_EXTRACT_SCHEMA: dict = {
     "type": "object",
     "properties": {
@@ -147,17 +156,18 @@ DEFAULT_EXTRACT_SCHEMA: dict = {
             "description": "Price as shown, including currency symbol.",
         },
         "specifications": {
-            "type": "object",
+            "type": "array",
             "description": (
                 "Every technical specification shown on the page as name/value pairs "
                 "(full spec table: dimensions, material, compatibility, weight, "
                 "OEM/part numbers, voltage, capacity, and similar attributes)."
             ),
-            "additionalProperties": True,
+            "items": _NAME_VALUE_ITEM,
         },
         "product_details": {
-            "type": "object",
-            "additionalProperties": True,
+            "type": "array",
+            "description": "Other product details as name/value pairs.",
+            "items": _NAME_VALUE_ITEM,
         },
         "datasheet_url": {
             "type": "string",
@@ -169,8 +179,24 @@ DEFAULT_EXTRACT_SCHEMA: dict = {
         "manufacturer": {"type": "string"},
         "part_number": {"type": "string"},
     },
-    "additionalProperties": True,
 }
+
+
+def _response_error_text(response: httpx.Response | None, *, limit: int = 400) -> str:
+    if response is None:
+        return ""
+    try:
+        data = response.json()
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        err = data.get("error") or data.get("message") or data.get("details")
+        if err:
+            return str(err)[:limit]
+    try:
+        return (response.text or "")[:limit]
+    except Exception:
+        return response.reason_phrase
 
 
 async def scrape_url_with_ai_extraction(
@@ -190,10 +216,12 @@ async def scrape_url_with_ai_extraction(
         raise ValueError("FIRECRAWL_API_KEY is required")
     if not ai_query or not ai_query.strip():
         return None
+    extract_schema = schema if isinstance(schema, dict) and schema else DEFAULT_EXTRACT_SCHEMA
     payload: dict = {
         "urls": [url],
-        "prompt": ai_query.strip(),
-        "schema": schema if isinstance(schema, dict) and schema else DEFAULT_EXTRACT_SCHEMA,
+        "prompt": ai_query.strip()[:MAX_PROMPT_CHARS],
+        "schema": extract_schema,
+        "ignoreInvalidURLs": True,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -203,7 +231,9 @@ async def scrape_url_with_ai_extraction(
         client = await _shared_http_client()
         job_id = None
         last_error: Exception | None = None
-        for attempt in range(MAX_START_ATTEMPTS):
+        rate_limit_tries = 0
+        dropped_schema = False
+        for attempt in range(MAX_START_ATTEMPTS + MAX_RATE_LIMIT_RETRIES):
             try:
                 resp = await _post_extract_once(client, payload, headers)
             except httpx.TransportError as exc:
@@ -212,18 +242,35 @@ async def scrape_url_with_ai_extraction(
                 continue
 
             if resp.status_code == 429:
+                rate_limit_tries += 1
                 delay = _note_rate_limit(resp)
                 last_error = httpx.HTTPStatusError(
                     f"{resp.status_code} {resp.reason_phrase}",
                     request=resp.request,
                     response=resp,
                 )
+                if rate_limit_tries > MAX_RATE_LIMIT_RETRIES:
+                    raise last_error
                 logger.info(
                     "Firecrawl rate limited starting extract, cooling down %.1fs then continuing",
                     delay,
                 )
                 await _wait_for_cooldown()
                 continue
+
+            if resp.status_code == 400:
+                err_text = _response_error_text(resp)
+                logger.warning("Firecrawl extract 400 for %s: %s", url[:80], err_text)
+                if not dropped_schema and "schema" in payload:
+                    payload.pop("schema", None)
+                    dropped_schema = True
+                    last_error = httpx.HTTPStatusError(
+                        f"400 {resp.reason_phrase}: {err_text}",
+                        request=resp.request,
+                        response=resp,
+                    )
+                    continue
+                return None
 
             if resp.status_code in RETRYABLE_STATUSES:
                 last_error = httpx.HTTPStatusError(
