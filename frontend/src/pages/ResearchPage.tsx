@@ -1010,6 +1010,97 @@ function mergeProductSpecs(
   return order.map((label) => ({ label, value: byKey.get(label.toLowerCase()) ?? '' }))
 }
 
+function ResearchOfferSpecsTable({
+  specs,
+  open,
+  onToggle,
+}: {
+  specs: { label: string; value: string }[]
+  open: boolean
+  onToggle: () => void
+}) {
+  const count = specs.length
+  const preview = specs
+    .slice(0, 3)
+    .map((spec) => spec.label)
+    .join(' · ')
+  return (
+    <div className="mt-2.5 overflow-hidden rounded-[8px] border border-app-separator">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onToggle()
+        }}
+        aria-expanded={open}
+        aria-controls="research-offer-specs-table"
+        className="flex w-full items-center gap-2 bg-app-fill/60 px-2.5 py-1.5 text-left transition-colors hover:bg-app-fill"
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-app-secondary" strokeWidth={2} aria-hidden />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-app-secondary" strokeWidth={2} aria-hidden />
+        )}
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-app-secondary">
+          Specifications
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-app-tertiary">
+          <span className="tabular-nums">
+            {count} {count === 1 ? 'attribute' : 'attributes'}
+          </span>
+          <span className="rounded-[4px] border border-app-separator bg-app-surface px-1.5 py-0.5 font-medium text-app-secondary">
+            {open ? 'Minimize' : 'Expand'}
+          </span>
+        </span>
+      </button>
+      {open ? (
+        <div id="research-offer-specs-table" className="max-h-64 overflow-auto border-t border-app-separator">
+          <table className="w-full table-fixed text-left text-[12px]">
+            <caption className="sr-only">Product specifications</caption>
+            <thead className="sticky top-0 z-[1] bg-app-fill">
+              <tr className="text-[11px] font-semibold tracking-[-0.01em] text-app-secondary">
+                <th scope="col" className="w-[38%] px-2.5 py-1.5 font-semibold">
+                  Attribute
+                </th>
+                <th scope="col" className="px-2.5 py-1.5 font-semibold">
+                  Value
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {specs.map((spec, idx) => (
+                <tr
+                  key={`${spec.label}-${idx}`}
+                  className={idx % 2 === 0 ? 'bg-app-surface' : 'bg-app-fill/40'}
+                >
+                  <th
+                    scope="row"
+                    className="px-2.5 py-1.5 align-top font-medium capitalize text-app-secondary"
+                    title={spec.label}
+                  >
+                    {spec.label}
+                  </th>
+                  <td className="px-2.5 py-1.5 align-top break-all text-app-label" title={spec.value}>
+                    {spec.value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        preview && (
+          <p className="truncate border-t border-app-separator px-2.5 py-1.5 text-[11px] text-app-tertiary">
+            {preview}
+            {count > 3 ? ` · +${count - 3} more` : ''}
+          </p>
+        )
+      )}
+    </div>
+  )
+}
+
 function scrapedOfferFields(data: Record<string, unknown>) {
   const details = parseMaybeRecord(
     pickScrapedField(data, ['product details', 'product_details', 'details', 'productdetails'])
@@ -1819,6 +1910,7 @@ export function ResearchPage() {
   const [inspectorSourceAiOpen, setInspectorSourceAiOpen] = useState<Set<number>>(new Set())
   const [inspectorSourceEditOpen, setInspectorSourceEditOpen] = useState<Set<number>>(new Set())
   const [inspectorRowAiOpen, setInspectorRowAiOpen] = useState(false)
+  const [inspectorSpecsOpen, setInspectorSpecsOpen] = useState(true)
   const [researchRowSummaryByIndex, setResearchRowSummaryByIndex] = useState<
     Map<number, ResearchGridSummaryRow>
   >(() => new Map())
@@ -6958,28 +7050,11 @@ export function ResearchPage() {
                                 </div>
                               )}
                               {structuredOfferSummary.specs.length > 0 && (
-                                <div className="mt-2.5">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-app-secondary">
-                                    Specifications
-                                  </p>
-                                  <dl className="mt-1.5 grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-x-3 gap-y-1 text-[12px]">
-                                    {structuredOfferSummary.specs.slice(0, 16).map((spec) => (
-                                      <Fragment key={spec.label}>
-                                        <dt className="truncate font-medium capitalize text-app-secondary" title={spec.label}>
-                                          {spec.label}
-                                        </dt>
-                                        <dd className="min-w-0 truncate text-app-label" title={spec.value}>
-                                          {spec.value}
-                                        </dd>
-                                      </Fragment>
-                                    ))}
-                                  </dl>
-                                  {structuredOfferSummary.specs.length > 16 && (
-                                    <p className="mt-1 text-[11px] text-app-tertiary">
-                                      +{structuredOfferSummary.specs.length - 16} more in source fields
-                                    </p>
-                                  )}
-                                </div>
+                                <ResearchOfferSpecsTable
+                                  specs={structuredOfferSummary.specs}
+                                  open={inspectorSpecsOpen}
+                                  onToggle={() => setInspectorSpecsOpen((open) => !open)}
+                                />
                               )}
                               <div className="mt-3 flex flex-wrap gap-1.5">
                                 {structuredOfferSummary.datasheetUrl ? (

@@ -1708,12 +1708,20 @@ async def research_urls_grid_summary(
             n_scraped = 1
         results = d.get("results") or []
         n_results = len(results)
+        created = d.get("created_at")
+        if hasattr(created, "isoformat"):
+            created_at = created.isoformat()
+        elif created is not None:
+            created_at = str(created)
+        else:
+            created_at = None
         out.append(
             {
                 "table_row_index": tri,
                 "results_count": n_results,
                 "structured_sources_count": n_scraped,
                 "has_structured_data": n_scraped > 0,
+                "created_at": created_at,
             }
         )
     return out

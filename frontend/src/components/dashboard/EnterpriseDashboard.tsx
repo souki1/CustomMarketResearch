@@ -15,7 +15,7 @@ import {
   RESEARCH_PATH,
   WISHLIST_PATH,
 } from '@/lib/paths'
-import { DonutChart, LineChart } from './DashboardCharts'
+import { BarChart, DonutChart, LineChart } from './DashboardCharts'
 
 export type DashboardTopVendor = {
   name: string
@@ -53,6 +53,7 @@ export type EnterpriseDashboardProps = {
   unresearchedParts: number
   spendTrend: number[]
   researchTrend: number[]
+  researchDayLabels: string[]
   topVendors: DashboardTopVendor[]
   categoryRows: DashboardCategoryRow[]
   recentActivity: DashboardActivity[]
@@ -130,6 +131,7 @@ export function EnterpriseDashboard({
   unresearchedParts,
   spendTrend,
   researchTrend,
+  researchDayLabels,
   topVendors,
   categoryRows,
   recentActivity,
@@ -139,21 +141,20 @@ export function EnterpriseDashboard({
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const coveragePct = totalParts > 0 ? Math.round((partsResearched / totalParts) * 100) : 0
   const spendLatest = spendTrend[spendTrend.length - 1] ?? 0
-  const researchLatest = coveragePct
   const spendHasHistory = spendLatest > 0
-  const researchHasHistory = totalParts > 0
+  const researchHasHistory = totalParts > 0 || researchTrend.some((n) => n > 0)
+  const researchedToday = researchTrend[researchTrend.length - 1] ?? 0
+  const researchedThisWeek = researchTrend.reduce((sum, n) => sum + n, 0)
 
   const kpis = [
     {
-      label: 'Parts Researched',
-      value: loading ? '—' : `${partsResearched}/${totalParts}`,
+      label: 'Parts researched',
+      value: loading ? '—' : `${partsResearched} / ${totalParts}`,
       sub: loading
         ? ''
-        : unresearchedParts > 0
-          ? `${unresearchedParts} still pending`
-          : totalParts > 0
-            ? 'All parts researched'
-            : 'No parts yet',
+        : totalParts > 0
+          ? `${partsResearched} researched · ${unresearchedParts} remaining`
+          : 'No parts in sheets yet',
       trend: partsResearched > 0 ? `${coveragePct}% coverage` : '—',
       trendUp: partsResearched > 0,
       color: 'text-app-accent',
@@ -295,7 +296,9 @@ export function EnterpriseDashboard({
             <p className="mt-1.5 text-[22px] font-semibold tracking-[-0.03em] tabular-nums text-app-label">
               {k.value}
             </p>
-            <p className="mt-1 text-xs text-app-secondary">{k.sub || k.trend}</p>
+            <p className="mt-1 text-xs text-app-secondary">
+              {k.sub || k.trend}
+            </p>
           </div>
         ))}
       </div>
@@ -325,17 +328,27 @@ export function EnterpriseDashboard({
           </div>
         </DashboardCard>
 
-        <DashboardCard title="Research progress" action={{ label: 'Open research', to: RESEARCH_PATH }}>
+        <DashboardCard title="Parts researched / day" action={{ label: 'Open research', to: RESEARCH_PATH }}>
           <div className="px-4 pb-4">
             <p className="text-[22px] font-semibold tracking-[-0.03em] tabular-nums text-app-label">
-              {researchLatest}%
+              {researchedToday}
+              <span className="ml-1.5 text-[13px] font-medium text-app-secondary">today</span>
+            </p>
+            <p className="mt-0.5 text-xs text-app-secondary">
+              {researchedThisWeek} in the last 7 days
+              {partsResearched > researchedThisWeek ? ` · ${partsResearched} total researched` : ''}
             </p>
             {researchHasHistory ? (
               <>
-                <LineChart data={researchTrend} color="#34c759" height={72} width={280} />
-                <div className="mt-1 flex justify-between">
-                  {MONTH_LABELS.map((l) => (
-                    <span key={l} className="text-xs text-app-tertiary">
+                <div className="mt-2">
+                  <BarChart data={researchTrend} color="var(--app-ok)" height={72} width={280} />
+                </div>
+                <div
+                  className="mt-1 grid text-center"
+                  style={{ gridTemplateColumns: `repeat(${researchDayLabels.length}, minmax(0, 1fr))` }}
+                >
+                  {researchDayLabels.map((l, i) => (
+                    <span key={`${l}-${i}`} className="text-xs text-app-secondary">
                       {l}
                     </span>
                   ))}
@@ -343,7 +356,7 @@ export function EnterpriseDashboard({
               </>
             ) : (
               <p className="mt-3 text-[13px] text-app-secondary">
-                Progress appears after you research parts in a sheet.
+                Daily counts appear after you research parts in a sheet.
               </p>
             )}
           </div>
@@ -353,28 +366,30 @@ export function EnterpriseDashboard({
           <div className="flex flex-col items-center gap-3 px-4 pb-4">
             <DonutChart
               segments={[
-                { value: partsResearched, color: '#007aff' },
-                { value: Math.max(0, totalParts - partsResearched), color: 'var(--app-fill-strong)' },
+                { value: partsResearched, color: 'var(--app-accent)' },
+                { value: Math.max(0, totalParts - partsResearched), color: 'var(--app-separator)' },
               ]}
-              size={90}
+              size={96}
+              centerLabel={`${coveragePct}%`}
             />
             <div className="flex w-full flex-col gap-1.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <span className="inline-block h-2 w-2 rounded-full bg-app-accent" />
-                  <span className="text-[13px] text-app-secondary">Researched</span>
+                  <span className="text-[13px] text-app-label">Researched</span>
                 </div>
-                <span className="text-[13px] font-medium tabular-nums text-app-label">{partsResearched}</span>
+                <span className="text-[13px] font-semibold tabular-nums text-app-label">{partsResearched}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-app-fill-strong" />
-                  <span className="text-[13px] text-app-secondary">Pending</span>
+                  <span className="inline-block h-2 w-2 rounded-full bg-app-tertiary" />
+                  <span className="text-[13px] text-app-label">Remaining parts</span>
                 </div>
-                <span className="text-[13px] font-medium tabular-nums text-app-label">
+                <span className="text-[13px] font-semibold tabular-nums text-app-label">
                   {Math.max(0, totalParts - partsResearched)}
                 </span>
               </div>
+              <p className="pt-0.5 text-[13px] text-app-secondary">{totalParts} parts in sheets</p>
             </div>
           </div>
         </DashboardCard>

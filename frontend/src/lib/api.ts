@@ -523,6 +523,7 @@ export type ResearchGridSummaryRow = {
   results_count: number
   structured_sources_count: number
   has_structured_data: boolean
+  created_at?: string | null
 }
 
 export async function listResearchGridSummary(

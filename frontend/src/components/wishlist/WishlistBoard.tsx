@@ -17,14 +17,11 @@ type WishlistList = {
   itemIds: string[]
 }
 
-const STATUS_META: Record<
-  WishlistStatus,
-  { label: string; bg: string; col: string; dot: string }
-> = {
-  priority: { label: 'Priority', bg: '#FAECE7', col: '#712B13', dot: '#D85A30' },
-  watching: { label: 'Watching', bg: '#E6F1FB', col: '#0C447C', dot: '#378ADD' },
-  interested: { label: 'Interested', bg: '#FAEEDA', col: '#633806', dot: '#EF9F27' },
-  ordered: { label: 'Ordered', bg: '#EAF3DE', col: '#27500A', dot: '#1D9E75' },
+const STATUS_META: Record<WishlistStatus, { label: string; chip: string }> = {
+  priority: { label: 'Priority', chip: 'border-app-destructive/35 bg-app-danger-soft text-app-destructive' },
+  watching: { label: 'Watching', chip: 'border-app-accent/35 bg-app-accent-soft text-app-accent' },
+  interested: { label: 'Interested', chip: 'border-app-warn/35 bg-app-warn-soft text-app-warn' },
+  ordered: { label: 'Ordered', chip: 'border-app-ok/35 bg-app-ok-soft text-app-ok' },
 }
 
 const COLORS = ['#378ADD', '#1D9E75', '#D85A30', '#EF9F27', '#7C5CBF', '#E05C94', '#26A69A', '#FF7043']
@@ -59,11 +56,19 @@ function saveCachedCatalog(items: WishlistCatalogItem[]) {
 }
 
 function priceTier(price: number | null) {
-  if (price == null) return { label: '—', col: '#64748b', bg: '#f8fafc', dot: '#cbd5e1' }
-  if (price < 25) return { label: 'Best', col: '#27500A', bg: '#EAF3DE', dot: '#1D9E75' }
-  if (price < 45) return { label: 'Good', col: '#0C447C', bg: '#E6F1FB', dot: '#378ADD' }
-  if (price < 65) return { label: 'Mid', col: '#633806', bg: '#FAEEDA', dot: '#EF9F27' }
-  return { label: 'High', col: '#712B13', bg: '#FAECE7', dot: '#D85A30' }
+  if (price == null || price <= 0) {
+    return { label: '—', chip: 'border-app-separator bg-app-fill text-app-secondary', value: 'text-app-tertiary' }
+  }
+  if (price < 25) {
+    return { label: 'Best', chip: 'border-app-ok/35 bg-app-ok-soft text-app-ok', value: 'text-app-ok' }
+  }
+  if (price < 45) {
+    return { label: 'Good', chip: 'border-app-accent/35 bg-app-accent-soft text-app-accent', value: 'text-app-accent' }
+  }
+  if (price < 65) {
+    return { label: 'Mid', chip: 'border-app-warn/35 bg-app-warn-soft text-app-warn', value: 'text-app-warn' }
+  }
+  return { label: 'High', chip: 'border-app-destructive/35 bg-app-danger-soft text-app-destructive', value: 'text-app-destructive' }
 }
 
 function uid() {
@@ -107,20 +112,20 @@ function ScoreBar({ score }: { score: number | null }) {
   if (score == null) {
     return <span className="font-mono text-[11px] text-app-tertiary">—</span>
   }
-  const barColor = score >= 70 ? '#1D9E75' : score >= 40 ? '#378ADD' : '#c8c6be'
+  const barColor = score >= 70 ? 'bg-app-ok' : score >= 40 ? 'bg-app-accent' : 'bg-app-fill-strong'
   return (
     <div className="flex items-center gap-1.5">
       <div className="h-1 w-11 overflow-hidden rounded bg-app-fill">
-        <div className="h-full rounded" style={{ width: `${score}%`, backgroundColor: barColor }} />
+        <div className={`h-full rounded ${barColor}`} style={{ width: `${score}%` }} />
       </div>
       <span className="font-mono text-[11px] text-app-secondary">{score}</span>
     </div>
   )
 }
 
-function Tag({ label, bg, col }: { label: string; bg: string; col: string }) {
+function Tag({ label, className }: { label: string; className: string }) {
   return (
-    <span className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ backgroundColor: bg, color: col }}>
+    <span className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium ${className}`}>
       {label}
     </span>
   )
@@ -190,11 +195,11 @@ function ItemCard({
   return (
     <div
       onClick={() => onSelect(item.id)}
-      className="cursor-pointer rounded-lg border px-3.5 py-3 transition-colors"
-      style={{
-        backgroundColor: selected ? '#EBF4FF' : '#ffffff',
-        borderColor: selected ? '#378ADD' : '#e0ddd4',
-      }}
+      className={`cursor-pointer rounded-lg border px-3.5 py-3 transition-colors ${
+        selected
+          ? 'border-app-accent bg-app-accent-soft'
+          : 'border-app-separator bg-app-surface hover:bg-app-elevated'
+      }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -204,15 +209,17 @@ function ItemCard({
               checked={selected}
               onChange={() => onSelect(item.id)}
               onClick={(event) => event.stopPropagation()}
-              className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#378ADD]"
+              className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-app-accent"
             />
             {item.imageUrl && (
               <ItemThumb src={item.imageUrl} alt={item.part} onPreview={() => onPreviewImage(item)} />
             )}
             <span className="font-mono text-xs font-medium text-app-accent">{item.part}</span>
-            <Tag label={statusMeta.label} bg={statusMeta.bg} col={statusMeta.col} />
-            <Tag label={tier.label} bg={tier.bg} col={tier.col} />
-            {item.shipsToday && <Tag label="⚡ Ships today" bg="#EAF3DE" col="#27500A" />}
+            <Tag label={statusMeta.label} className={statusMeta.chip} />
+            {tier.label !== '—' && <Tag label={tier.label} className={tier.chip} />}
+            {item.shipsToday && (
+              <Tag label="Ships today" className="border-app-ok/35 bg-app-ok-soft text-app-ok" />
+            )}
           </div>
           <div className="mb-1 text-[13px] font-medium text-app-label">{item.vendor}</div>
           <div className="mb-1.5 text-xs text-app-secondary">
@@ -234,8 +241,8 @@ function ItemCard({
           )}
         </div>
         <div className="shrink-0 text-right">
-          <div className="font-mono text-lg font-medium" style={{ color: tier.col }}>
-            {item.price != null ? `$${item.price.toFixed(2)}` : '—'}
+          <div className={`font-mono text-lg font-medium ${tier.value}`}>
+            {item.price != null && item.price > 0 ? `$${item.price.toFixed(2)}` : '—'}
           </div>
           <ScoreBar score={item.score} />
         </div>
@@ -247,12 +254,9 @@ function ItemCard({
             key={key}
             type="button"
             onClick={() => onStatus(item.id, key)}
-            className="rounded px-2 py-0.5 text-[10px] font-medium"
-            style={{
-              border: `0.5px solid ${status === key ? STATUS_META[key].dot : '#c8c6be'}`,
-              backgroundColor: status === key ? STATUS_META[key].bg : '#f7f5f0',
-              color: status === key ? STATUS_META[key].col : '#73726c',
-            }}
+            className={`rounded border px-2 py-0.5 text-[10px] font-medium ${
+              status === key ? STATUS_META[key].chip : 'border-app-separator bg-app-fill text-app-secondary'
+            }`}
           >
             {STATUS_META[key].label}
           </button>
@@ -261,14 +265,14 @@ function ItemCard({
           <button
             type="button"
             onClick={() => onAddTo(item.id)}
-            className="rounded border border-app-accent bg-app-accent-soft px-2 py-0.5 text-[10px] font-medium text-app-accent"
+            className="rounded border border-app-accent/40 bg-app-accent-soft px-2 py-0.5 text-[10px] font-medium text-app-accent"
           >
             + Add to list
           </button>
           <button
             type="button"
             onClick={() => onRemove(item.id)}
-            className="rounded border border-app-separator bg-app-fill px-2 py-0.5 text-[10px] text-app-secondary"
+            className="rounded border border-app-separator bg-app-fill px-2 py-0.5 text-[10px] text-app-secondary hover:text-app-label"
           >
             Remove
           </button>
@@ -313,11 +317,18 @@ function SidebarItem({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onSelect}
-      className="mb-0.5 flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors"
-      style={{
-        backgroundColor: isActive ? `${list.color}18` : hovered ? '#ffffff' : 'transparent',
-        border: `1px solid ${isActive ? `${list.color}55` : hovered ? '#e2e8f0' : 'transparent'}`,
-      }}
+      className={`mb-0.5 flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors ${
+        isActive
+          ? 'bg-app-surface'
+          : hovered
+            ? 'border-app-separator bg-app-surface'
+            : 'border-transparent'
+      }`}
+      style={
+        isActive
+          ? { backgroundColor: `${list.color}22`, borderColor: `${list.color}66` }
+          : undefined
+      }
     >
       <span className="text-sm">{list.emoji}</span>
       {editingId === list.id ? (
@@ -335,8 +346,8 @@ function SidebarItem({
         />
       ) : (
         <span
-          className="flex-1 truncate text-[13px]"
-          style={{ color: isActive ? list.color : '#475569', fontWeight: isActive ? 600 : 400 }}
+          className={`flex-1 truncate text-[13px] ${isActive ? 'font-semibold text-app-label' : 'text-app-secondary'}`}
+          style={isActive ? { color: list.color } : undefined}
         >
           {list.name}
         </span>
@@ -531,7 +542,7 @@ export function WishlistBoard() {
     })
   }, [catalogItems, pickerSearch, pickerTier, pickerShipsToday, pickerHideAdded, activeList])
 
-  const pricedItems = visibleItems.filter((item) => item.price != null)
+  const pricedItems = visibleItems.filter((item) => item.price != null && item.price > 0)
   const bestPrice = pricedItems.length ? Math.min(...pricedItems.map((item) => item.price!)) : null
   const totalValue = pricedItems.reduce((sum, item) => sum + (item.price ?? 0), 0)
 
@@ -650,7 +661,7 @@ export function WishlistBoard() {
             setSelected(new Set())
           }}
           className={`mb-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors ${
-            activeId === 'all' ? 'bg-app-surface text-app-label shadow-sm ring-1 ring-slate-200' : 'text-app-secondary hover:bg-app-surface'
+            activeId === 'all' ? 'bg-app-surface text-app-label shadow-sm ring-1 ring-app-separator' : 'text-app-secondary hover:bg-app-surface'
           }`}
         >
           <span className="text-sm">🗂</span>
@@ -705,7 +716,7 @@ export function WishlistBoard() {
                     type="button"
                     onClick={() => setNewEmoji(emoji)}
                     className="rounded border px-0.5 text-sm"
-                    style={{ borderColor: newEmoji === emoji ? '#9c9a92' : 'transparent' }}
+                    style={{ borderColor: newEmoji === emoji ? 'var(--app-separator)' : 'transparent' }}
                   >
                     {emoji}
                   </button>
@@ -718,7 +729,7 @@ export function WishlistBoard() {
                     type="button"
                     onClick={() => setNewColor(color)}
                     className="h-4 w-4 rounded-full border-2"
-                    style={{ backgroundColor: color, borderColor: newColor === color ? '#fff' : 'transparent' }}
+                    style={{ backgroundColor: color, borderColor: newColor === color ? 'var(--app-label)' : 'transparent' }}
                   />
                 ))}
               </div>
@@ -744,7 +755,7 @@ export function WishlistBoard() {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="w-full rounded-md border border-dashed border-app-separator bg-app-surface px-2.5 py-1.5 text-left text-xs text-app-secondary hover:border-slate-400 hover:text-app-label"
+              className="w-full rounded-md border border-dashed border-app-separator bg-app-surface px-2.5 py-1.5 text-left text-xs text-app-secondary hover:border-app-tertiary hover:text-app-label"
             >
               + New wishlist
             </button>
@@ -782,18 +793,24 @@ export function WishlistBoard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-px border-b border-app-separator bg-[#e0ddd4] md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px border-b border-app-separator bg-app-separator md:grid-cols-4">
           {[
-            ['Items', String(visibleItems.length), '#1a1a18'],
-            ['Best price', bestPrice != null ? `$${bestPrice.toFixed(2)}` : '—', '#1D9E75'],
-            ['Est. total', `$${totalValue.toFixed(2)}`, '#1a1a18'],
-            ['Ships today', String(visibleItems.filter((item) => item.shipsToday).length), '#1D9E75'],
-          ].map(([label, value, color]) => (
-            <div key={label} className="bg-app-surface px-3.5 py-2">
-              <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[#a3a19a]">{label}</div>
-              <div className="font-mono text-lg font-medium" style={{ color }}>
-                {value}
-              </div>
+            { label: 'Items', value: String(visibleItems.length), className: 'text-app-label' },
+            {
+              label: 'Best price',
+              value: bestPrice != null ? `$${bestPrice.toFixed(2)}` : '—',
+              className: 'text-app-ok',
+            },
+            { label: 'Est. total', value: `$${totalValue.toFixed(2)}`, className: 'text-app-label' },
+            {
+              label: 'Ships today',
+              value: String(visibleItems.filter((item) => item.shipsToday).length),
+              className: 'text-app-ok',
+            },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-app-surface px-3.5 py-2">
+              <div className="mb-0.5 text-[10px] uppercase tracking-wide text-app-tertiary">{stat.label}</div>
+              <div className={`font-mono text-lg font-medium ${stat.className}`}>{stat.value}</div>
             </div>
           ))}
         </div>
@@ -803,12 +820,12 @@ export function WishlistBoard() {
             placeholder="Search part or vendor…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-44 rounded border border-app-separator bg-app-fill px-2.5 py-1 text-xs"
+            className="w-44 rounded border border-app-separator bg-app-fill px-2.5 py-1 text-xs text-app-label placeholder:text-app-tertiary"
           />
           <select
             value={sort}
             onChange={(event) => setSort(event.target.value as (typeof SORTS)[number])}
-            className="rounded border border-app-separator bg-app-fill px-2 py-1 text-xs"
+            className="rounded border border-app-separator bg-app-fill px-2 py-1 text-xs text-app-label"
           >
             {SORTS.map((option) => (
               <option key={option}>{option}</option>
@@ -817,23 +834,20 @@ export function WishlistBoard() {
           <div className="flex flex-wrap gap-1">
             {(['all', 'priority', 'watching', 'interested', 'ordered'] as const).map((key) => {
               const active = filterStatus === key
-              const meta =
+              const chip =
                 key === 'all'
-                  ? { label: 'All status', bg: '#f7f5f0', col: '#1a1a18', dot: '#c8c6be' }
-                  : STATUS_META[key]
+                  ? 'border-app-separator bg-app-fill text-app-label'
+                  : STATUS_META[key].chip
               return (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setFilterStatus(key)}
-                  className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                  style={{
-                    border: `0.5px solid ${active ? meta.dot : '#c8c6be'}`,
-                    backgroundColor: active ? meta.bg : '#f7f5f0',
-                    color: active ? meta.col : '#73726c',
-                  }}
+                  className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                    active ? chip : 'border-app-separator bg-app-fill text-app-secondary'
+                  }`}
                 >
-                  {key === 'all' ? 'All status' : meta.label}
+                  {key === 'all' ? 'All status' : STATUS_META[key].label}
                 </button>
               )
             })}
@@ -856,12 +870,7 @@ export function WishlistBoard() {
                 key={key}
                 type="button"
                 onClick={() => bulkStatus(key)}
-                className="rounded px-2 py-0.5 text-[11px] font-medium"
-                style={{
-                  border: `0.5px solid ${STATUS_META[key].dot}`,
-                  backgroundColor: STATUS_META[key].bg,
-                  color: STATUS_META[key].col,
-                }}
+                className={`rounded border px-2 py-0.5 text-[11px] font-medium ${STATUS_META[key].chip}`}
               >
                 {STATUS_META[key].label}
               </button>
@@ -870,7 +879,7 @@ export function WishlistBoard() {
               <button
                 type="button"
                 onClick={bulkRemove}
-                className="rounded border border-app-separator bg-[#FAECE7] px-2 py-0.5 text-[11px] font-medium text-[#712B13]"
+                className="rounded border border-app-destructive/35 bg-app-danger-soft px-2 py-0.5 text-[11px] font-medium text-app-destructive"
               >
                 Remove from list
               </button>
@@ -891,7 +900,7 @@ export function WishlistBoard() {
               type="checkbox"
               checked={selected.size === visibleItems.length && visibleItems.length > 0}
               onChange={toggleAll}
-              className="h-3.5 w-3.5 accent-[#378ADD]"
+              className="h-3.5 w-3.5 accent-app-accent"
             />
             <span className="text-xs text-app-secondary">
               Select all · {visibleItems.length} item{visibleItems.length === 1 ? '' : 's'}
@@ -982,7 +991,7 @@ export function WishlistBoard() {
                   type="button"
                   onClick={() => setBulkListEmoji(emoji)}
                   className="rounded border px-0.5 text-sm"
-                  style={{ borderColor: bulkListEmoji === emoji ? '#94a3b8' : 'transparent' }}
+                  style={{ borderColor: bulkListEmoji === emoji ? 'var(--app-separator)' : 'transparent' }}
                 >
                   {emoji}
                 </button>
@@ -995,7 +1004,7 @@ export function WishlistBoard() {
                   type="button"
                   onClick={() => setBulkListColor(color)}
                   className="h-4 w-4 rounded-full border-2"
-                  style={{ backgroundColor: color, borderColor: bulkListColor === color ? '#0f172a' : 'transparent' }}
+                  style={{ backgroundColor: color, borderColor: bulkListColor === color ? 'var(--app-label)' : 'transparent' }}
                 />
               ))}
             </div>
@@ -1044,15 +1053,16 @@ export function WishlistBoard() {
                     onClick={() => {
                       if (!already) addToList(list.id, addToPart.id)
                     }}
-                    className="flex items-center gap-2 rounded-md px-3 py-2 text-left"
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left ${
+                      already ? 'bg-app-fill' : 'bg-app-fill/60 hover:bg-app-fill'
+                    }`}
                     style={{
-                      backgroundColor: already ? `${list.color}10` : '#f7f5f0',
-                      border: `0.5px solid ${already ? list.color : '#e0ddd4'}`,
+                      borderColor: already ? list.color : undefined,
                     }}
                   >
                     <span className="text-base">{list.emoji}</span>
                     <span className="flex-1 text-[13px] font-medium">{list.name}</span>
-                    <span className="text-[11px]" style={{ color: already ? list.color : '#73726c' }}>
+                    <span className={`text-[11px] ${already ? 'font-medium' : 'text-app-secondary'}`} style={already ? { color: list.color } : undefined}>
                       {already ? '✓ Added' : `${list.itemIds.length} items`}
                     </span>
                   </button>
@@ -1082,7 +1092,7 @@ export function WishlistBoard() {
             <div className="mb-3 text-[15px] font-medium">Add parts to "{activeList.name}"</div>
 
             <div className="mb-2 flex items-center gap-1.5 rounded-md border border-app-separator bg-app-fill px-2.5 py-1.5">
-              <Search className="h-3.5 w-3.5 shrink-0 text-[#a3a19a]" strokeWidth={2} />
+              <Search className="h-3.5 w-3.5 shrink-0 text-app-tertiary" strokeWidth={2} />
               <input
                 ref={pickerSearchRef}
                 placeholder="Search part, vendor, or brand…"
@@ -1091,13 +1101,13 @@ export function WishlistBoard() {
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') setShowPartPicker(false)
                 }}
-                className="min-w-0 flex-1 bg-transparent text-xs text-app-label outline-none placeholder:text-[#a3a19a]"
+                className="min-w-0 flex-1 bg-transparent text-xs text-app-label outline-none placeholder:text-app-tertiary"
               />
               {pickerSearch && (
                 <button
                   type="button"
                   onClick={() => setPickerSearch('')}
-                  className="shrink-0 text-xs text-[#a3a19a] hover:text-app-secondary"
+                  className="shrink-0 text-xs text-app-tertiary hover:text-app-secondary"
                   aria-label="Clear search"
                 >
                   ×
@@ -1108,57 +1118,54 @@ export function WishlistBoard() {
             <div className="mb-2.5 flex flex-wrap items-center gap-1">
               {(['all', 'best', 'good', 'mid', 'high'] as const).map((tier) => {
                 const active = pickerTier === tier
-                const meta =
+                const chip =
                   tier === 'all'
-                    ? { label: 'All prices', bg: '#f7f5f0', col: '#1a1a18', dot: '#c8c6be' }
+                    ? 'border-app-separator bg-app-fill text-app-label'
                     : tier === 'best'
-                      ? { label: 'Best', bg: '#EAF3DE', col: '#27500A', dot: '#1D9E75' }
+                      ? 'border-app-ok/35 bg-app-ok-soft text-app-ok'
                       : tier === 'good'
-                        ? { label: 'Good', bg: '#E6F1FB', col: '#0C447C', dot: '#378ADD' }
+                        ? 'border-app-accent/35 bg-app-accent-soft text-app-accent'
                         : tier === 'mid'
-                          ? { label: 'Mid', bg: '#FAEEDA', col: '#633806', dot: '#EF9F27' }
-                          : { label: 'High', bg: '#FAECE7', col: '#712B13', dot: '#D85A30' }
+                          ? 'border-app-warn/35 bg-app-warn-soft text-app-warn'
+                          : 'border-app-destructive/35 bg-app-danger-soft text-app-destructive'
+                const label =
+                  tier === 'all' ? 'All prices' : tier === 'best' ? 'Best' : tier === 'good' ? 'Good' : tier === 'mid' ? 'Mid' : 'High'
                 return (
                   <button
                     key={tier}
                     type="button"
                     onClick={() => setPickerTier(tier)}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      border: `0.5px solid ${active ? meta.dot : '#c8c6be'}`,
-                      backgroundColor: active ? meta.bg : '#f7f5f0',
-                      color: active ? meta.col : '#73726c',
-                    }}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                      active ? chip : 'border-app-separator bg-app-fill text-app-secondary'
+                    }`}
                   >
-                    {meta.label}
+                    {label}
                   </button>
                 )
               })}
               <button
                 type="button"
                 onClick={() => setPickerShipsToday((prev) => !prev)}
-                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{
-                  border: `0.5px solid ${pickerShipsToday ? '#1D9E75' : '#c8c6be'}`,
-                  backgroundColor: pickerShipsToday ? '#EAF3DE' : '#f7f5f0',
-                  color: pickerShipsToday ? '#27500A' : '#73726c',
-                }}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                  pickerShipsToday
+                    ? 'border-app-ok/35 bg-app-ok-soft text-app-ok'
+                    : 'border-app-separator bg-app-fill text-app-secondary'
+                }`}
               >
-                ⚡ Ships today
+                Ships today
               </button>
               <button
                 type="button"
                 onClick={() => setPickerHideAdded((prev) => !prev)}
-                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{
-                  border: `0.5px solid ${pickerHideAdded ? '#378ADD' : '#c8c6be'}`,
-                  backgroundColor: pickerHideAdded ? '#E6F1FB' : '#f7f5f0',
-                  color: pickerHideAdded ? '#0C447C' : '#73726c',
-                }}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                  pickerHideAdded
+                    ? 'border-app-accent/35 bg-app-accent-soft text-app-accent'
+                    : 'border-app-separator bg-app-fill text-app-secondary'
+                }`}
               >
                 Hide added
               </button>
-              <span className="ml-auto text-[10px] text-[#a3a19a]">
+              <span className="ml-auto text-[10px] text-app-tertiary">
                 {pickerItems.length} of {catalogItems.length}
               </span>
             </div>
@@ -1179,24 +1186,23 @@ export function WishlistBoard() {
                     onClick={() => {
                       if (!inList) addToList(activeId, item.id)
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left"
-                    style={{
-                      backgroundColor: inList ? '#f7f5f0' : '#ffffff',
-                      border: '0.5px solid #e0ddd4',
-                      opacity: inList ? 0.6 : 1,
-                    }}
+                    className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left ${
+                      inList
+                        ? 'border-app-separator bg-app-fill opacity-60'
+                        : 'border-app-separator bg-app-surface hover:bg-app-fill'
+                    }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-mono text-xs font-medium text-app-accent">{item.part}</div>
                       <div className="text-xs text-app-secondary">{item.vendor}</div>
                     </div>
-                    <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ backgroundColor: tier.bg, color: tier.col }}>
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${tier.chip}`}>
                       {tier.label}
                     </span>
-                    <span className="font-mono text-[13px] font-medium" style={{ color: tier.col }}>
-                      {item.price != null ? `$${item.price.toFixed(2)}` : '—'}
+                    <span className={`font-mono text-[13px] font-medium ${tier.value}`}>
+                      {item.price != null && item.price > 0 ? `$${item.price.toFixed(2)}` : '—'}
                     </span>
-                    <span className="text-xs" style={{ color: inList ? '#1D9E75' : '#c8c6be' }}>
+                    <span className={`text-xs ${inList ? 'text-app-ok' : 'text-app-tertiary'}`}>
                       {inList ? '✓' : '+'}
                     </span>
                   </button>

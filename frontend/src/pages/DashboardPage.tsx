@@ -19,9 +19,10 @@ import {
   listDataSheetSelections,
   listPortfolioItems,
   listResearchGridSummary,
+  listResearchUrls,
   listWorkspaceItems,
 } from '@/lib/api'
-import type { DataSheetSelection, PortfolioItem, ResearchGridSummaryRow } from '@/lib/api'
+import type { DataSheetSelection, PortfolioItem, ResearchGridSummaryRow, ResearchUrlItem } from '@/lib/api'
 
 function parsePrice(s: string | null | undefined): number | null {
   if (s == null || !String(s).trim()) return null
@@ -81,7 +82,7 @@ async function loadResearchRowCoverage(
   token: string,
   fileIds: number[],
   tabIds: string[]
-): Promise<{ researched: number; tracked: number }> {
+): Promise<{ researched: number; tracked: number; researchedAt: string[] }> {
   const jobs: Promise<ResearchGridSummaryRow[]>[] = [
     ...fileIds.map((fileId) =>
       listResearchGridSummary(token, { fileId }).catch(() => [] as ResearchGridSummaryRow[])
@@ -90,13 +91,14 @@ async function loadResearchRowCoverage(
       listResearchGridSummary(token, { tabId }).catch(() => [] as ResearchGridSummaryRow[])
     ),
   ]
-  if (jobs.length === 0) return { researched: 0, tracked: 0 }
+  if (jobs.length === 0) return { researched: 0, tracked: 0, researchedAt: [] }
 
   const summaries = await Promise.all(jobs)
   // Dedupe by sheet scope + table row so the same row isn't counted twice.
   const seen = new Set<string>()
   let researched = 0
   let tracked = 0
+  const researchedAt: string[] = []
   const scopes = [
     ...fileIds.map((id) => `file:${id}`),
     ...tabIds.map((id) => `tab:${id}`),
@@ -108,10 +110,65 @@ async function loadResearchRowCoverage(
       if (seen.has(key)) continue
       seen.add(key)
       tracked += 1
-      if (isResearchedGridRow(row)) researched += 1
+      if (isResearchedGridRow(row)) {
+        researched += 1
+        if (row.created_at) researchedAt.push(row.created_at)
+      }
     }
   })
-  return { researched, tracked }
+  if (researched > 0 && researchedAt.length === 0) {
+    const urlLists = await Promise.all([
+      ...fileIds.map((fileId) =>
+        listResearchUrls(token, { fileId, fast: true }).catch(() => [] as ResearchUrlItem[])
+      ),
+      ...tabIds.map((tabId) =>
+        listResearchUrls(token, { tabId, fast: true }).catch(() => [] as ResearchUrlItem[])
+      ),
+    ])
+    const seenUrl = new Set<string>()
+    urlLists.forEach((rows, i) => {
+      const scope = scopes[i] ?? `scope:${i}`
+      for (const row of rows) {
+        const hasData = (row.scraped_data?.length ?? 0) > 0
+        if (!hasData) continue
+        const tri = row.table_row_index ?? row.row_index
+        const key = `${scope}:${tri}`
+        if (seenUrl.has(key)) continue
+        seenUrl.add(key)
+        if (row.created_at) researchedAt.push(row.created_at)
+      }
+    })
+  }
+  return { researched, tracked, researchedAt }
+}
+
+function localDayKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function last7DaysResearch(timestamps: string[]): { labels: string[]; counts: number[] } {
+  const countsByDay = new Map<string, number>()
+  for (const raw of timestamps) {
+    const parsed = new Date(raw)
+    if (Number.isNaN(parsed.getTime())) continue
+    const key = localDayKey(parsed)
+    countsByDay.set(key, (countsByDay.get(key) ?? 0) + 1)
+  }
+
+  const labels: string[] = []
+  const counts: number[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = 6; i >= 0; i--) {
+    const day = new Date(today)
+    day.setDate(today.getDate() - i)
+    labels.push(day.toLocaleDateString('en-US', { weekday: 'short' }))
+    counts.push(countsByDay.get(localDayKey(day)) ?? 0)
+  }
+  return { labels, counts }
 }
 
 export function DashboardPage() {
@@ -122,6 +179,7 @@ export function DashboardPage() {
   const [selectionPartCount, setSelectionPartCount] = useState(0)
   const [researchedPartsCount, setResearchedPartsCount] = useState(0)
   const [trackedResearchRows, setTrackedResearchRows] = useState(0)
+  const [researchedAt, setResearchedAt] = useState<string[]>([])
   const [offerCount, setOfferCount] = useState(0)
   const [fileCount, setFileCount] = useState(0)
 
@@ -137,6 +195,7 @@ export function DashboardPage() {
       setSelectionPartCount(0)
       setResearchedPartsCount(0)
       setTrackedResearchRows(0)
+      setResearchedAt([])
       setOfferCount(0)
       setFileCount(0)
       setLoading(false)
@@ -173,6 +232,7 @@ export function DashboardPage() {
         setSelectionPartCount(countPartsFromSelections(selections))
         setResearchedPartsCount(coverage.researched)
         setTrackedResearchRows(coverage.tracked)
+        setResearchedAt(coverage.researchedAt)
         setOfferCount(summary.offer_count)
         setFileCount(files.length)
       })
@@ -182,6 +242,7 @@ export function DashboardPage() {
           setSelectionPartCount(0)
           setResearchedPartsCount(0)
           setTrackedResearchRows(0)
+          setResearchedAt([])
           setOfferCount(0)
           setFileCount(0)
         }
@@ -311,9 +372,10 @@ export function DashboardPage() {
     ]
   }, [portfolioItems])
 
-  const coveragePct = totalParts > 0 ? Math.round((partsResearched / totalParts) * 100) : 0
   const spendTrend = bucketTotal > 0 ? Array(7).fill(bucketTotal) : []
-  const researchTrend = totalParts > 0 ? Array(7).fill(coveragePct) : []
+  const dailyResearch = last7DaysResearch(researchedAt)
+  const researchTrend = dailyResearch.counts
+  const researchDayLabels = dailyResearch.labels
 
   const dateLabel = useMemo(() => {
     return new Date().toLocaleDateString('en-US', {
@@ -405,6 +467,7 @@ export function DashboardPage() {
         unresearchedParts={unresearchedParts}
         spendTrend={spendTrend}
         researchTrend={researchTrend}
+        researchDayLabels={researchDayLabels}
         topVendors={topVendors}
         categoryRows={categoryRows}
         recentActivity={recentActivity}
