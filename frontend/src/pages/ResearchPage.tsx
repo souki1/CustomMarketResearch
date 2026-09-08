@@ -1539,6 +1539,8 @@ function newBlankSheet(): TabState {
 const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
 const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
+const DEFAULT_RESEARCH_AI_QUERY =
+  'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
 const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
 const RESEARCH_TABS_KEY = 'research-tabs'
 const RESEARCH_LOCATIONS_KEY = 'ir-research-locations-v1'
@@ -1873,7 +1875,7 @@ export function ResearchPage() {
   const [addRowCountDraft, setAddRowCountDraft] = useState('1')
   const [deleteConfirm, setDeleteConfirm] = useState<'rows' | 'columns' | null>(null)
   const [researchFieldsPopupOpen, setResearchFieldsPopupOpen] = useState(false)
-  const [researchAiQueryInput, setResearchAiQueryInput] = useState('')
+  const [researchAiQueryInput, setResearchAiQueryInput] = useState(DEFAULT_RESEARCH_AI_QUERY)
   const [researchZipInput, setResearchZipInput] = useState(() => loadResearchLocations().lastZip)
   const [researchAddressInput, setResearchAddressInput] = useState(
     () => loadResearchLocations().lastAddress
@@ -5156,7 +5158,7 @@ export function ResearchPage() {
               Start research
             </h2>
             <p className="mt-1 text-sm text-app-secondary">
-              Optionally describe extra fields to extract, then set a ZIP or address. Search
+              Review or edit the extraction query, then set a ZIP or address. Search
               results prefer vendors and listings near that location. Product image,
               specifications, and datasheet are always collected.
             </p>
@@ -5171,13 +5173,13 @@ export function ResearchPage() {
               ))}
             </div>
             <label htmlFor="research-ai-query" className="mt-3 block text-xs font-semibold text-app-secondary">
-              Extra extraction query
+              AI extraction query
             </label>
             <textarea
               id="research-ai-query"
               value={researchAiQueryInput}
               onChange={(e) => setResearchAiQueryInput(e.target.value)}
-              placeholder="Optional — e.g. warranty terms, OEM equivalents, pallet quantity"
+              placeholder="Describe in natural language what you want to extract from each search result"
               rows={3}
               className="mt-1.5 w-full rounded-lg border border-app-separator px-3 py-2 text-sm focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20 resize-none"
             />
@@ -5972,6 +5974,9 @@ export function ResearchPage() {
                       : 'Select at least one row first'
                 )
                 return
+              }
+              if (!researchAiQueryInput.trim()) {
+                setResearchAiQueryInput(DEFAULT_RESEARCH_AI_QUERY)
               }
               setResearchFieldsPopupOpen(true)
             }}
