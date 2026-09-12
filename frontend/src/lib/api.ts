@@ -339,17 +339,23 @@ export async function searchSelectionAndStoreUrls(
   selectionId: number,
   token: string,
   aiQuery?: string | null,
-  searchLocation?: ResearchSearchLocation | null
+  searchLocation?: ResearchSearchLocation | null,
+  searchHint?: string | null,
+  options?: { findMore?: boolean; agentFocus?: ResearchAgentFocus | null }
 ): Promise<ResearchSearchResult> {
-  const body: Record<string, string> = {}
+  const body: Record<string, string | boolean> = {}
   const query = aiQuery?.trim() ?? ''
   if (query) body.ai_query = query
   const zip = searchLocation?.zipCode?.trim() ?? ''
   const address = searchLocation?.address?.trim() ?? ''
   const location = searchLocation?.location?.trim() ?? ''
+  const hint = searchHint?.trim() ?? ''
   if (zip) body.zip_code = zip.slice(0, 20)
   if (address) body.address = address.slice(0, 300)
   if (location) body.location = location.slice(0, 300)
+  if (hint) body.search_hint = hint.slice(0, 300)
+  if (options?.findMore) body.find_more = true
+  if (options?.agentFocus) body.agent_focus = options.agentFocus
   return request<ResearchSearchResult>(
     `/datasheet/selections/${selectionId}/search`,
     {
@@ -706,6 +712,133 @@ export async function listActiveResearchJobs(
   if (options?.tabId != null) params.set('tab_id', options.tabId)
   const search = params.toString() ? `?${params}` : ''
   return request<ResearchJob[]>(`/research/jobs/active${search}`, { token })
+}
+
+export type ResearchAgentFocus =
+  | 'vendors'
+  | 'pricing'
+  | 'datasheets'
+  | 'contacts'
+  | 'availability'
+  | 'document'
+  | 'custom'
+
+export type ResearchAgent = {
+  id: number
+  owner_id: number
+  name: string
+  focus: ResearchAgentFocus
+  instructions: string
+  search_hint?: string | null
+  created_at: string
+  updated_at: string
+  seeded?: boolean
+}
+
+export type ResearchAgentPayload = {
+  name: string
+  focus: ResearchAgentFocus
+  instructions: string
+  search_hint?: string | null
+}
+
+export type ResearchAgentAssignment = {
+  id: number
+  owner_id: number
+  agent_id: number
+  file_id?: number | null
+  tab_id?: string | null
+  row_indices: number[]
+  created_at: string
+  updated_at: string
+  last_run_at?: string | null
+  agent?: ResearchAgent | null
+}
+
+export async function listResearchAgents(token: string): Promise<ResearchAgent[]> {
+  return request<ResearchAgent[]>('/research/agents', { token })
+}
+
+export async function createResearchAgent(
+  payload: ResearchAgentPayload,
+  token: string
+): Promise<ResearchAgent> {
+  return request<ResearchAgent>('/research/agents', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
+export async function updateResearchAgent(
+  agentId: number,
+  payload: Partial<ResearchAgentPayload>,
+  token: string
+): Promise<ResearchAgent> {
+  return request<ResearchAgent>(`/research/agents/${agentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
+export async function deleteResearchAgent(agentId: number, token: string): Promise<void> {
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
+  const res = await fetch(`${API_BASE}/research/agents/${agentId}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail)
+      ? err.detail[0]?.msg ?? 'Request failed'
+      : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
+}
+
+export async function listResearchAgentAssignments(
+  token: string,
+  options?: { fileId?: number | null; tabId?: string | null }
+): Promise<ResearchAgentAssignment[]> {
+  const params = new URLSearchParams()
+  if (options?.fileId != null) params.set('file_id', String(options.fileId))
+  if (options?.tabId != null) params.set('tab_id', options.tabId)
+  const search = params.toString() ? `?${params}` : ''
+  return request<ResearchAgentAssignment[]>(`/research/agent-assignments${search}`, { token })
+}
+
+export async function assignResearchAgent(
+  payload: {
+    agent_id: number
+    file_id?: number | null
+    tab_id?: string | null
+    row_indices: number[]
+  },
+  token: string
+): Promise<ResearchAgentAssignment> {
+  return request<ResearchAgentAssignment>('/research/agent-assignments', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    token,
+  })
+}
+
+export async function deleteResearchAgentAssignment(
+  assignmentId: number,
+  token: string
+): Promise<void> {
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  void token
+  const res = await fetch(`${API_BASE}/research/agent-assignments/${assignmentId}`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const msg = Array.isArray(err.detail)
+      ? err.detail[0]?.msg ?? 'Request failed'
+      : (err.detail ?? 'Request failed')
+    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+  }
 }
 
 export async function deleteWorkspaceItem(itemId: number, token: string): Promise<void> {

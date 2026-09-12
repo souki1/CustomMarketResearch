@@ -21,6 +21,7 @@ import {
   apiResponseToSavedReport,
   createEmptyBlock,
   normalizeBlock,
+  parseIntelligenceReportDraft,
   reportBlockToPayload,
   type ReportBlock,
   type ReportBlockType,
@@ -45,134 +46,6 @@ type PortfolioReportContext = {
       url: string | null
     }
   }>
-}
-
-function newBlockId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  } catch {
-    // fall through
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-function createTitleBlock(text: string): ReportBlock {
-  return { id: newBlockId(), type: 'title', text, align: 'left' }
-}
-
-function createHeadingBlock(text: string): ReportBlock {
-  return { id: newBlockId(), type: 'heading', text, align: 'left' }
-}
-
-function createParagraphBlock(text: string): ReportBlock {
-  return { id: newBlockId(), type: 'paragraph', text, align: 'left' }
-}
-
-function createBulletsBlock(items: string[]): ReportBlock {
-  return { id: newBlockId(), type: 'bullets', items, align: 'left' }
-}
-
-function extractJsonCandidate(raw: string): string {
-  const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch && fencedMatch[1]) return fencedMatch[1].trim()
-  return raw.trim()
-}
-
-function readString(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-}
-
-function parseAiToReportDraft(userPrompt: string, raw: string): { title: string; blocks: ReportBlock[] } {
-  let parsed: Record<string, unknown> | null = null
-  const candidate = extractJsonCandidate(raw)
-  try {
-    const json = JSON.parse(candidate) as unknown
-    if (json && typeof json === 'object' && !Array.isArray(json)) parsed = json as Record<string, unknown>
-  } catch {
-    parsed = null
-  }
-
-  const fallbackTitle = userPrompt.trim().slice(0, 80) || 'AI generated report'
-  const title = readString(parsed?.title) ?? fallbackTitle
-  const blocks: ReportBlock[] = [createTitleBlock(title)]
-
-  const summary = readString(parsed?.summary)
-  if (summary) blocks.push(createParagraphBlock(summary))
-
-  const sections = parsed && Array.isArray(parsed.sections) ? parsed.sections : []
-  for (const section of sections) {
-    if (!section || typeof section !== 'object' || Array.isArray(section)) continue
-    const row = section as Record<string, unknown>
-    const heading = readString(row.heading)
-    if (heading) blocks.push(createHeadingBlock(heading))
-    for (const p of readStringArray(row.paragraphs)) {
-      blocks.push(createParagraphBlock(p))
-    }
-    const bullets = readStringArray(row.bullets)
-    if (bullets.length) blocks.push(createBulletsBlock(bullets))
-  }
-
-  const keyPoints = readStringArray(parsed?.key_points)
-  if (keyPoints.length) {
-    blocks.push(createHeadingBlock('Key points'))
-    blocks.push(createBulletsBlock(keyPoints))
-  }
-
-  const conclusion = readString(parsed?.conclusion)
-  if (conclusion) {
-    blocks.push(createHeadingBlock('Conclusion'))
-    blocks.push(createParagraphBlock(conclusion))
-  }
-
-  if (blocks.length > 1) return { title, blocks }
-
-  const chunks = raw
-    .split(/\n{2,}/)
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-
-  for (const chunk of chunks) {
-    const lines = chunk
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    if (lines.length === 0) continue
-
-    const markdownHeading = lines[0]?.match(/^#{1,6}\s+(.+)$/)
-    if (markdownHeading?.[1]) {
-      blocks.push(createHeadingBlock(markdownHeading[1].trim()))
-      const body = lines.slice(1).join(' ').trim()
-      if (body) blocks.push(createParagraphBlock(body))
-      continue
-    }
-
-    const bulletItems = lines
-      .filter((line) => /^[-*•]\s+/.test(line))
-      .map((line) => line.replace(/^[-*•]\s+/, '').trim())
-      .filter(Boolean)
-    if (bulletItems.length >= 2 && bulletItems.length === lines.length) {
-      blocks.push(createBulletsBlock(bulletItems))
-      continue
-    }
-
-    blocks.push(createParagraphBlock(lines.join(' ')))
-  }
-
-  if (blocks.length === 1) {
-    blocks.push(createParagraphBlock(raw.trim() || 'No AI content generated.'))
-  }
-
-  return { title, blocks }
 }
 
 function buildPortfolioContextText(ctx: PortfolioReportContext): string {
@@ -493,13 +366,16 @@ export function GenerateReportPage() {
       const datasetText = buildReportDatasetContextText(dataset)
 
       const instruction = [
-        'Generate a professional report from the user prompt.',
+        'Write a detailed Supplier & Vendor Intelligence Report from the user prompt and research data.',
         'Return JSON only (no markdown), using this schema:',
-        '{"title":"string","summary":"string","sections":[{"heading":"string","paragraphs":["string"],"bullets":["string"]}],"key_points":["string"],"conclusion":"string"}',
-        'Use concise, factual language and avoid unsafe or unverifiable claims.',
+        '{"title":"string","tldr":["string"],"key_findings":["string"],"sections":[{"heading":"string","paragraphs":["string"],"bullets":["string"],"numbered":["string"]}],"sources":["string"],"conclusion":"string"}',
+        'Title must include the part number and what the part is.',
+        'tldr: 3-6 dense bullets on distinct supply sources, related/alternate part numbers, and pricing caveats.',
+        'key_findings: 4-8 numbered findings with vendors, prices, and OEM vs aftermarket specifics.',
+        'Use only provided facts. Never invent vendors, prices, factories, or part numbers.',
         'Use all provided portfolio data, all vendor offers, and all scraped research data when present.',
-        'In sections, clearly present vendor comparisons (price, quantity, source URL) and scraped highlights by source.',
-        portfolioCtx ? 'If portfolio context is provided, create one section per selected part using those details.' : '',
+        'Include source URLs in sources. Separate facts from inference.',
+        portfolioCtx ? 'If portfolio context is provided, create one analysis section per selected part using those details.' : '',
       ].join('\n')
 
       const effectivePrompt = portfolioCtx
@@ -524,7 +400,10 @@ export function GenerateReportPage() {
         history: [],
       })
 
-      const generated = parseAiToReportDraft(prompt, res.content)
+      const generated = parseIntelligenceReportDraft(
+        res.content,
+        prompt.trim().slice(0, 80) || 'Supplier & Vendor Intelligence Report'
+      )
       const normalizedBlocks = generated.blocks.map((b) => normalizeBlock(structuredClone(b)))
       setDocTitle(generated.title)
       setBlocks(normalizedBlocks)

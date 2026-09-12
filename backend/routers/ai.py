@@ -89,6 +89,7 @@ async def ai_chat(
         user_message=body.message,
         history=history,
         model=model_to_use,
+        max_completion_tokens=8192 if body.mode == "report" else 2048,
         context=ctx,
     )
     if text is None:

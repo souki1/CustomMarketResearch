@@ -16,6 +16,7 @@ type AllFilesViewProps = {
   onNewFolderClick: () => void
   onNewFileClick?: () => void
   onNewResearchClick?: () => void
+  onNewAgentClick?: () => void
   onNewReportClick?: () => void
   onImportCsvClick?: () => void
   onUploadFileClick?: () => void
@@ -32,6 +33,7 @@ export function AllFilesView({
   onNewFolderClick,
   onNewFileClick,
   onNewResearchClick,
+  onNewAgentClick,
   onNewReportClick,
   onImportCsvClick,
   onUploadFileClick,
@@ -83,6 +85,7 @@ export function AllFilesView({
             onFolderClick={onNewFolderClick}
             onFileClick={onNewFileClick}
             onNewResearchClick={onNewResearchClick}
+            onNewAgentClick={onNewAgentClick}
             onNewReportClick={onNewReportClick}
             onImportCsvClick={onImportCsvClick ?? onNewFileClick}
             onUploadFileClick={onUploadFileClick ?? onNewFileClick}

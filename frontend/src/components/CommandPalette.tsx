@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PARTS_CATALOG_PATH, RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { OEM_OVERVIEW_PATH, PARTS_CATALOG_PATH, RESEARCH_COMPARE_PATH, SUPPLIER_HOME_PATH } from '@/lib/paths'
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -116,6 +116,13 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         action: () => navigate('/research'),
       },
       {
+        id: 'new-agent',
+        label: 'Create research agent',
+        keywords: ['create', 'new', 'agent', 'assign', 'research'],
+        icon: <ResearchIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
+        action: () => navigate('/research?agents=new'),
+      },
+      {
         id: 'parts-catalog',
         label: 'Go to Parts Catalog',
         keywords: ['parts', 'catalog', 'inventory', 'browser', 'vendors'],
@@ -128,6 +135,20 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         keywords: ['compare', 'comparison', 'parts', 'vendors'],
         icon: <ResearchIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate(RESEARCH_COMPARE_PATH),
+      },
+      {
+        id: 'oem-desk',
+        label: 'Go to OEM desk',
+        keywords: ['oem', 'procurement', 'rfq', 'bom', 'supplier', 'portal', 'invoice', 'po'],
+        icon: <FileIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
+        action: () => navigate(OEM_OVERVIEW_PATH),
+      },
+      {
+        id: 'supplier-portal',
+        label: 'Go to supplier portal',
+        keywords: ['supplier', 'portal', 'bid', 'acknowledge', 'quote', 'vendor'],
+        icon: <FileIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
+        action: () => navigate(SUPPLIER_HOME_PATH),
       },
       {
         id: 'settings',

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileSpreadsheet, FileText, FlaskConical, FolderPlus, Plus, Upload } from 'lucide-react'
+import { FileSpreadsheet, FileText, FlaskConical, FolderPlus, Bot, Plus, Upload } from 'lucide-react'
 
 type NewMenuProps = {
   onFolderClick: () => void
   onFileClick?: () => void
   onNewResearchClick?: () => void
+  onNewAgentClick?: () => void
   onNewReportClick?: () => void
   onImportCsvClick?: () => void
   onUploadFileClick?: () => void
@@ -14,6 +15,7 @@ export function NewMenu({
   onFolderClick,
   onFileClick,
   onNewResearchClick,
+  onNewAgentClick,
   onNewReportClick,
   onImportCsvClick,
   onUploadFileClick,
@@ -75,6 +77,18 @@ export function NewMenu({
           >
             <FlaskConical className="h-4 w-4 shrink-0 text-app-accent" strokeWidth={1.75} />
             New research
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onNewAgentClick?.()
+              setOpen(false)
+            }}
+            className={itemClass}
+            role="menuitem"
+          >
+            <Bot className="h-4 w-4 shrink-0 text-app-accent" strokeWidth={1.75} />
+            New agent
           </button>
           <button
             type="button"

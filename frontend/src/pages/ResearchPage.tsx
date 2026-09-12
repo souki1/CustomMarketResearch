@@ -35,9 +35,15 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { getToken, workspaceStorageKey } from '@/lib/auth'
 import {
   aiGroqChat,
+  assignResearchAgent,
+  createReport,
+  createResearchAgent,
+  deleteResearchAgent,
   getResearchState,
   getWorkspaceFileContent,
   listActiveResearchJobs,
+  listResearchAgentAssignments,
+  listResearchAgents,
   listResearchGridSummary,
   listResearchUrls,
   listWorkspaceItems,
@@ -48,6 +54,9 @@ import {
   updateWorkspaceFileContent,
   uploadWorkspaceCsv,
   upsertResearchState,
+  type ResearchAgent,
+  type ResearchAgentAssignment,
+  type ResearchAgentFocus,
   type ResearchFieldChange,
   type ResearchGridSummaryRow,
   type ScrapedDataItem,
@@ -72,6 +81,7 @@ import {
   type FilterBuilderTopItem,
 } from '@/lib/researchSheetFilter'
 import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { parseIntelligenceReportDraft, reportBlockToPayload } from '@/lib/savedReports'
 
 type TabState = {
   id: string
@@ -855,7 +865,8 @@ function findDatasheetUrl(data: Record<string, unknown>, pageUrl?: string): stri
     'pdf_url',
   ])
   const dedicatedHref = httpUrlFromUnknown(dedicated)
-  if (dedicatedHref) return isPdfUrl(dedicatedHref) ?? dedicatedHref
+  const dedicatedPdf = isPdfUrl(dedicatedHref)
+  if (dedicatedPdf) return dedicatedPdf
   const nestedPdf = findPdfInRecord(data)
   if (nestedPdf) return nestedPdf
   return isPdfUrl(pageUrl)
@@ -1541,6 +1552,123 @@ const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
 const DEFAULT_RESEARCH_AI_QUERY =
   'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
+
+type AgentFocusTemplate = {
+  label: string
+  hint: string
+  instructions: string
+  searchHint: string
+}
+
+const AGENT_FOCUS_TEMPLATES: Record<ResearchAgentFocus, AgentFocusTemplate> = {
+  vendors: {
+    label: 'Vendors',
+    hint: 'Find distributors and manufacturers',
+    instructions:
+      'Find distributors and manufacturers that sell this exact part. Extract vendor name, website, location, authorized status, and whether they stock this part number.',
+    searchHint: 'distributor supplier authorized reseller',
+  },
+  pricing: {
+    label: 'Pricing',
+    hint: 'Find unit price and quantity breaks',
+    instructions:
+      'Extract current unit price, currency, quantity breaks, minimum order quantity, and any promotions or quote requirements.',
+    searchHint: 'price buy quote unit cost',
+  },
+  datasheets: {
+    label: 'Datasheets',
+    hint: 'Find official PDF datasheets, not catalog pages',
+    instructions:
+      'Find a direct PDF file for the official datasheet, spec sheet, or parts/operator manual. Extract datasheet_url only when the URL ends in .pdf — never a catalog or product page.',
+    searchHint: 'filetype:pdf datasheet "spec sheet" "parts manual"',
+  },
+  availability: {
+    label: 'Availability',
+    hint: 'Find stock, lead time, and shipping',
+    instructions:
+      'Extract stock status, quantity available, lead time, and shipping or delivery estimates for this part at nearby vendors.',
+    searchHint: 'stock availability lead time shipping',
+  },
+  contacts: {
+    label: 'Contacts',
+    hint: 'Find sales phone and email',
+    instructions:
+      'Extract sales contact name, phone, email, and support channels for the vendor of this part.',
+    searchHint: 'contact sales phone email',
+  },
+  document: {
+    label: 'Document',
+    hint: 'Write a detailed intelligence report',
+    instructions:
+      'Write a detailed Supplier & Vendor Intelligence Report from researched sources. Include TL;DR, numbered key findings, genuine vs aftermarket analysis, pricing, related/alternate part numbers, and source URLs. Use only provided facts.',
+    searchHint: 'supplier vendor OEM aftermarket "cross reference"',
+  },
+  custom: {
+    label: 'Custom',
+    hint: 'Write your own research brief',
+    instructions:
+      'Find additional information that is missing from the current research. Extract alternate, OEM, superseded, and cross-reference part numbers when they appear.',
+    searchHint: 'alternate part OEM replaces superseded "cross reference"',
+  },
+}
+
+function agentFocusLabel(focus: ResearchAgentFocus): string {
+  switch (focus) {
+    case 'vendors':
+      return AGENT_FOCUS_TEMPLATES.vendors.label
+    case 'pricing':
+      return AGENT_FOCUS_TEMPLATES.pricing.label
+    case 'datasheets':
+      return AGENT_FOCUS_TEMPLATES.datasheets.label
+    case 'availability':
+      return AGENT_FOCUS_TEMPLATES.availability.label
+    case 'contacts':
+      return AGENT_FOCUS_TEMPLATES.contacts.label
+    case 'document':
+      return AGENT_FOCUS_TEMPLATES.document.label
+    case 'custom':
+      return AGENT_FOCUS_TEMPLATES.custom.label
+    default: {
+      const _exhaustive: never = focus
+      return _exhaustive
+    }
+  }
+}
+
+function agentWantsDocument(agent: ResearchAgent): boolean {
+  if (agent.focus === 'document') return true
+  const blob = `${agent.name} ${agent.instructions}`.toLowerCase()
+  return /\b(intelligence report|write (?:a |the )?(?:document|report|memo|brief)|make (?:a |the )?(?:document|report))\b/.test(
+    blob
+  )
+}
+
+const RESEARCH_REPORT_MAX_CHARS = 40000
+
+function clipResearchReportPayload(value: unknown, maxChars: number): string {
+  try {
+    const json = JSON.stringify(value)
+    if (json.length <= maxChars) return json
+    return `${json.slice(0, maxChars)}\n…[truncated]`
+  } catch {
+    return '{}'
+  }
+}
+
+function emptyAgentForm(focus: ResearchAgentFocus = 'custom'): {
+  name: string
+  focus: ResearchAgentFocus
+  instructions: string
+  searchHint: string
+} {
+  const template = AGENT_FOCUS_TEMPLATES[focus]
+  return {
+    name: focus === 'custom' ? '' : `${template.label} agent`,
+    focus,
+    instructions: template.instructions,
+    searchHint: template.searchHint,
+  }
+}
 const RESEARCH_PAGE_STATE_KEY = 'research-page-state'
 const RESEARCH_TABS_KEY = 'research-tabs'
 const RESEARCH_LOCATIONS_KEY = 'ir-research-locations-v1'
@@ -1782,6 +1910,7 @@ export function ResearchPage() {
   const fileIdParam = searchParams.get('fileId')
   const nameFromUrl = searchParams.get('name')
   const folderFromUrl = searchParams.get('folder')
+  const agentsParam = searchParams.get('agents')
   const [tabs, setTabs] = useState<TabState[]>(() => {
     try {
       // Never read the legacy unscoped `research-tabs` key — it leaked across accounts.
@@ -1888,6 +2017,16 @@ export function ResearchPage() {
   const [cellFillPrompt, setCellFillPrompt] = useState('')
   const [cellFillMode, setCellFillMode] = useState<'internal' | 'external'>('internal')
   const [cellFillLoading, setCellFillLoading] = useState(false)
+  const [researchAgents, setResearchAgents] = useState<ResearchAgent[]>([])
+  const [agentAssignments, setAgentAssignments] = useState<ResearchAgentAssignment[]>([])
+  const [agentsPanelOpen, setAgentsPanelOpen] = useState(false)
+  const [agentFormOpen, setAgentFormOpen] = useState(false)
+  const [agentForm, setAgentForm] = useState(() => emptyAgentForm('vendors'))
+  const [agentFormSaving, setAgentFormSaving] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null)
+  const [assignAgentLoading, setAssignAgentLoading] = useState(false)
+  const [writingReportLoading, setWritingReportLoading] = useState(false)
+  const [agentAssignVersion, setAgentAssignVersion] = useState(0)
   const [researchMoreOpen, setResearchMoreOpen] = useState(false)
   const [researchMorePrompt, setResearchMorePrompt] = useState('')
   const [addStructuredColumnOpen, setAddStructuredColumnOpen] = useState(false)
@@ -2022,7 +2161,15 @@ export function ResearchPage() {
   const runSelectedResearch = useCallback(
     async (
       aiQuery?: string,
-      options?: { rowIndices?: number[]; zipCode?: string; address?: string }
+      options?: {
+        rowIndices?: number[]
+        zipCode?: string
+        address?: string
+        searchHint?: string
+        findMore?: boolean
+        agentFocus?: ResearchAgentFocus
+        agentName?: string
+      }
     ) => {
       if (!content) return
       const token = getToken()
@@ -2082,16 +2229,36 @@ export function ResearchPage() {
           token
         )
         setResearchProgress(45)
-        const searchResult = await searchSelectionAndStoreUrls(saved.id, token, aiQuery?.trim() || null, {
-          zipCode,
-          address,
-          location: researchLocationLabel(zipCode, address),
-        })
+        const searchResult = await searchSelectionAndStoreUrls(
+          saved.id,
+          token,
+          aiQuery?.trim() || null,
+          {
+            zipCode,
+            address,
+            location: researchLocationLabel(zipCode, address),
+          },
+          options?.searchHint?.trim() || null,
+          {
+            findMore: Boolean(options?.findMore),
+            agentFocus: options?.agentFocus ?? null,
+          }
+        )
         setResearchProgress(100)
         setResearchVersion((v) => v + 1)
-        showToast(
-          `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${searchResult.total_urls} URLs.`
-        )
+        const sourceCount = searchResult.total_urls
+        if (options?.findMore) {
+          const who = options.agentName?.trim() || 'Agent'
+          showToast(
+            sourceCount > 0
+              ? `${who} found ${sourceCount} new source${sourceCount === 1 ? '' : 's'} (skipped websites you already have).`
+              : `${who} did not find new websites beyond what you already have. Try a more specific search hint.`
+          )
+        } else {
+          showToast(
+            `Saved ${rows.length} row${rows.length !== 1 ? 's' : ''}. Searched and scraped ${sourceCount} URLs.`
+          )
+        }
       } catch (e) {
         showToast(e instanceof Error ? e.message : 'Failed to save or search')
       } finally {
@@ -2117,6 +2284,309 @@ export function ResearchPage() {
       startResearchProgressTicker,
     ]
   )
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      setResearchAgents([])
+      return
+    }
+    let cancelled = false
+    listResearchAgents(token)
+      .then((rows) => {
+        if (cancelled) return
+        setResearchAgents(rows)
+        setSelectedAgentId((prev) => prev ?? rows[0]?.id ?? null)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          showToast(err instanceof Error ? err.message : 'Could not load agents')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showToast, agentAssignVersion])
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      setAgentAssignments([])
+      return
+    }
+    let cancelled = false
+    listResearchAgentAssignments(token, {
+      fileId: activeTab?.fileId ?? null,
+      tabId: effectiveTabId,
+    })
+      .then((rows) => {
+        if (!cancelled) setAgentAssignments(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setAgentAssignments([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab?.fileId, agentAssignVersion, effectiveTabId])
+
+  useEffect(() => {
+    if (agentsParam !== '1' && agentsParam !== 'new') return
+    setAgentsPanelOpen(true)
+    if (agentsParam === 'new') setAgentFormOpen(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('agents')
+        return next
+      },
+      { replace: true }
+    )
+  }, [agentsParam, setSearchParams])
+
+  const writeIntelligenceReport = useCallback(
+    async (rowIndices: number[], agent: ResearchAgent | null) => {
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to write a report')
+        return
+      }
+      if (rowIndices.length === 0) {
+        showToast('Select at least one researched row')
+        return
+      }
+      setWritingReportLoading(true)
+      try {
+        const headerRow = content?.[0] ?? []
+        const rowsPayload: Array<{
+          row_index: number
+          sheet_row: Record<string, string>
+          search_query: string
+          sources: Array<{ url: string; data: Record<string, unknown> }>
+        }> = []
+        let sourceCount = 0
+        for (const rowIndex of rowIndices) {
+          const sheetRow: Record<string, string> = {}
+          const row = content?.[rowIndex + 1] ?? []
+          headerRow.forEach((h, i) => {
+            const key = (h || `Column ${i + 1}`).trim()
+            sheetRow[key] = String(row[i] ?? '').slice(0, 500)
+          })
+          let urls: Awaited<ReturnType<typeof listResearchUrls>> = []
+          try {
+            urls = await listResearchUrls(token, {
+              fileId: activeTab?.fileId ?? undefined,
+              tabId: activeTab?.fileId == null ? effectiveTabId ?? undefined : undefined,
+              tableRowIndex: rowIndex,
+              fast: true,
+            })
+          } catch {
+            urls = []
+          }
+          const itemQueries = urls.map((item) => item.search_query).filter(Boolean)
+          const seenUrls = new Set<string>()
+          const sources: Array<{ url: string; data: Record<string, unknown> }> = []
+          for (const item of urls) {
+            for (const entry of item.scraped_data ?? []) {
+              const url = String(entry.url ?? '').trim()
+              if (!url || seenUrls.has(url)) continue
+              seenUrls.add(url)
+              sources.push({ url, data: entry.data ?? {} })
+            }
+          }
+          sourceCount += sources.length
+          rowsPayload.push({
+            row_index: rowIndex,
+            sheet_row: sheetRow,
+            search_query: itemQueries.join(' | '),
+            sources,
+          })
+        }
+        if (sourceCount === 0) {
+          showToast('Research this row first, or use Assign & find more, then write the report')
+          return
+        }
+
+        const agentBrief = agent
+          ? `${agent.name}: ${agent.instructions}`.slice(0, 4000)
+          : 'Write a detailed Supplier & Vendor Intelligence Report.'
+        const researchJson = clipResearchReportPayload(
+          { rows: rowsPayload },
+          RESEARCH_REPORT_MAX_CHARS
+        )
+        const message = [
+          'Write a detailed Supplier & Vendor Intelligence Report for procurement.',
+          'Use ONLY the research JSON below. Never invent vendors, prices, factories, or part numbers.',
+          'If sources conflict, say so. If a fact is missing, say it is not in the sources.',
+          'Title must include the part number and what the part is.',
+          'Structure: TL;DR (dense bullets), numbered Key Findings, deep sections (OEM origin, aftermarket/relisting, related/alternate part numbers, pricing, availability), Sources (URLs), Conclusion.',
+          `Agent brief: ${agentBrief}`,
+          '',
+          'RESEARCH_DATA:',
+          researchJson,
+        ].join('\n')
+
+        const res = await aiGroqChat(token, {
+          mode: 'report',
+          message,
+          history: [],
+          session_label: agent ? `Intelligence report · ${agent.name}` : 'Intelligence report',
+          source: 'research_agent_document',
+        })
+        const fallbackTitle =
+          Object.values(rowsPayload[0]?.sheet_row ?? {}).find((v) => v.trim())?.slice(0, 80) ||
+          'Supplier & Vendor Intelligence Report'
+        const generated = parseIntelligenceReportDraft(res.content, fallbackTitle)
+        const created = await createReport(token, {
+          title: generated.title,
+          blocks: generated.blocks.map((b) => reportBlockToPayload(b)),
+        })
+        showToast('Opened intelligence report')
+        navigate(`/reports?edit=${created.id}`)
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Could not write the report')
+      } finally {
+        setWritingReportLoading(false)
+      }
+    },
+    [activeTab?.fileId, content, effectiveTabId, navigate, showToast]
+  )
+
+  const assignAndRunAgent = useCallback(
+    async (agent: ResearchAgent, rowIndices: number[]) => {
+      const token = getToken()
+      if (!token) {
+        showToast('Sign in to assign an agent')
+        return
+      }
+      if (rowIndices.length === 0) {
+        showToast('Select at least one row to assign')
+        return
+      }
+      const zipCode = researchZipInput.trim()
+      const address = researchAddressInput.trim()
+      if (!zipCode && !address) {
+        showToast('Enter a ZIP code or address in Start research first, then assign the agent')
+        setAgentsPanelOpen(false)
+        setResearchFieldsPopupOpen(true)
+        return
+      }
+      setAssignAgentLoading(true)
+      try {
+        await assignResearchAgent(
+          {
+            agent_id: agent.id,
+            file_id: activeTab?.fileId ?? null,
+            tab_id: effectiveTabId,
+            row_indices: rowIndices,
+          },
+          token
+        )
+        setAgentAssignVersion((v) => v + 1)
+        setResearchAiQueryInput(agent.instructions)
+        setAgentsPanelOpen(false)
+        await runSelectedResearch(agent.instructions, {
+          rowIndices,
+          zipCode,
+          address,
+          searchHint: agent.search_hint ?? '',
+          findMore: true,
+          agentFocus: agent.focus,
+          agentName: agent.name,
+        })
+        if (agentWantsDocument(agent)) {
+          await writeIntelligenceReport(rowIndices, agent)
+        }
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Could not assign agent')
+      } finally {
+        setAssignAgentLoading(false)
+      }
+    },
+    [
+      activeTab?.fileId,
+      effectiveTabId,
+      researchAddressInput,
+      researchZipInput,
+      runSelectedResearch,
+      showToast,
+      writeIntelligenceReport,
+    ]
+  )
+
+  const saveAgentForm = useCallback(async () => {
+    const token = getToken()
+    if (!token) {
+      showToast('Sign in to create an agent')
+      return
+    }
+    const name = agentForm.name.trim()
+    const instructions = agentForm.instructions.trim()
+    if (!name) {
+      showToast('Give the agent a name')
+      return
+    }
+    if (!instructions) {
+      showToast('Tell the agent what information to find')
+      return
+    }
+    setAgentFormSaving(true)
+    try {
+      const created = await createResearchAgent(
+        {
+          name,
+          focus: agentForm.focus,
+          instructions,
+          search_hint: agentForm.searchHint.trim() || null,
+        },
+        token
+      )
+      setResearchAgents((prev) => [created, ...prev.filter((row) => row.id !== created.id)])
+      setSelectedAgentId(created.id)
+      setAgentFormOpen(false)
+      setAgentForm(emptyAgentForm('vendors'))
+      showToast(`Created “${created.name}”`)
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not create agent')
+    } finally {
+      setAgentFormSaving(false)
+    }
+  }, [agentForm, showToast])
+
+  const removeResearchAgent = useCallback(
+    async (agent: ResearchAgent) => {
+      const token = getToken()
+      if (!token) return
+      try {
+        await deleteResearchAgent(agent.id, token)
+        setResearchAgents((prev) => prev.filter((row) => row.id !== agent.id))
+        setSelectedAgentId((prev) => (prev === agent.id ? null : prev))
+        setAgentAssignVersion((v) => v + 1)
+        showToast(`Deleted “${agent.name}”`)
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Could not delete agent')
+      }
+    },
+    [showToast]
+  )
+
+  const selectedAgent =
+    researchAgents.find((row) => row.id === selectedAgentId) ?? researchAgents[0] ?? null
+
+  const inspectorAssignedAgents = useMemo(() => {
+    if (selectedRowIndex == null) return []
+    const seen = new Set<number>()
+    const out: ResearchAgent[] = []
+    for (const assignment of agentAssignments) {
+      if (!assignment.row_indices.includes(selectedRowIndex)) continue
+      const agent =
+        assignment.agent ?? researchAgents.find((row) => row.id === assignment.agent_id) ?? null
+      if (!agent || seen.has(agent.id)) continue
+      seen.add(agent.id)
+      out.push(agent)
+    }
+    return out
+  }, [agentAssignments, researchAgents, selectedRowIndex])
 
   useEffect(() => () => clearResearchProgressTicker(), [clearResearchProgressTicker])
 
@@ -5402,6 +5872,251 @@ export function ResearchPage() {
           </div>
         </div>
       )}
+      {agentsPanelOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="research-agents-title"
+          onClick={(e) => e.target === e.currentTarget && !assignAgentLoading && setAgentsPanelOpen(false)}
+        >
+          <div
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-app-separator bg-app-surface shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-app-separator px-4 py-3">
+              <div>
+                <h2 id="research-agents-title" className="text-sm font-semibold text-app-label">
+                  Research agents
+                </h2>
+                <p className="mt-0.5 text-xs text-app-secondary">
+                  Agents search for new sources and skip websites already found. A datasheet agent
+                  looks for PDF files. A document agent writes a detailed intelligence report
+                  (TL;DR, key findings, OEM vs aftermarket) after finding more information.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAgentsPanelOpen(false)}
+                className="rounded-md p-1 text-app-secondary hover:bg-app-fill hover:text-app-label"
+                aria-label="Close agents"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-app-secondary">Your agents</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgentForm(emptyAgentForm('vendors'))
+                    setAgentFormOpen((open) => !open)
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-app-separator bg-app-surface px-2.5 py-1 text-xs font-medium text-app-label hover:bg-app-fill"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  {agentFormOpen ? 'Close form' : 'New agent'}
+                </button>
+              </div>
+
+              {agentFormOpen && (
+                <div className="mt-3 rounded-lg border border-app-separator bg-app-fill p-3">
+                  <label className="block text-xs font-medium text-app-secondary" htmlFor="agent-name">
+                    Name
+                  </label>
+                  <input
+                    id="agent-name"
+                    value={agentForm.name}
+                    maxLength={80}
+                    onChange={(e) => setAgentForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Price hunter"
+                    className="mt-1 w-full rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
+                  />
+                  <p className="mt-3 text-xs font-medium text-app-secondary">Focus</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        'vendors',
+                        'pricing',
+                        'datasheets',
+                        'availability',
+                        'contacts',
+                        'document',
+                        'custom',
+                      ] as const satisfies readonly ResearchAgentFocus[]
+                    ).map((focus) => (
+                      <button
+                        key={focus}
+                        type="button"
+                        onClick={() => setAgentForm(emptyAgentForm(focus))}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-medium ${
+                          agentForm.focus === focus
+                            ? 'border-app-accent bg-app-accent-soft text-blue-900'
+                            : 'border-app-separator bg-app-surface text-app-secondary hover:bg-app-fill'
+                        }`}
+                      >
+                        {agentFocusLabel(focus)}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="mt-3 block text-xs font-medium text-app-secondary" htmlFor="agent-instructions">
+                    What should this agent find?
+                  </label>
+                  <textarea
+                    id="agent-instructions"
+                    value={agentForm.instructions}
+                    maxLength={4000}
+                    rows={3}
+                    onChange={(e) =>
+                      setAgentForm((prev) => ({ ...prev, instructions: e.target.value }))
+                    }
+                    placeholder="Describe the extra information this agent should extract"
+                    className="mt-1 w-full resize-none rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
+                  />
+                  <label className="mt-3 block text-xs font-medium text-app-secondary" htmlFor="agent-search-hint">
+                    Search hint (optional)
+                  </label>
+                  <input
+                    id="agent-search-hint"
+                    value={agentForm.searchHint}
+                    maxLength={300}
+                    onChange={(e) => setAgentForm((prev) => ({ ...prev, searchHint: e.target.value }))}
+                    placeholder="Extra terms added to the web search"
+                    className="mt-1 w-full rounded-lg border border-app-separator bg-app-surface px-3 py-2 text-sm text-app-label focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
+                  />
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={agentFormSaving}
+                      onClick={() => void saveAgentForm()}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-app-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-app-accent-hover disabled:opacity-50"
+                    >
+                      {agentFormSaving ? <LoaderIcon className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                      Save agent
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 space-y-2">
+                {researchAgents.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-app-separator px-3 py-4 text-center text-xs text-app-secondary">
+                    No agents yet. Create one to start assigning research work.
+                  </p>
+                ) : (
+                  researchAgents.map((agent) => {
+                    const selected = selectedAgent?.id === agent.id
+                    return (
+                      <div
+                        key={agent.id}
+                        className={`rounded-lg border px-3 py-2 ${
+                          selected
+                            ? 'border-app-accent/40 bg-app-accent-soft/50'
+                            : 'border-app-separator bg-app-surface'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAgentId(agent.id)}
+                          className="flex w-full items-start justify-between gap-2 text-left"
+                        >
+                          <span>
+                            <span className="block text-sm font-semibold text-app-label">{agent.name}</span>
+                            <span className="mt-0.5 block text-[11px] text-app-secondary">
+                              {agentFocusLabel(agent.focus)}
+                              {agent.search_hint ? ` · ${agent.search_hint}` : ''}
+                            </span>
+                          </span>
+                          {selected && (
+                            <span className="rounded-full bg-app-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                              Selected
+                            </span>
+                          )}
+                        </button>
+                        <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-app-secondary">
+                          {agent.instructions}
+                        </p>
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => void removeResearchAgent(agent)}
+                            className="rounded-md px-2 py-1 text-[11px] font-medium text-app-secondary hover:bg-app-fill hover:text-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-app-separator px-4 py-3">
+              <p className="text-[11px] text-app-secondary">
+                {selectedRows.size === 0
+                  ? 'Select one or more sheet rows, then assign an agent. It searches for extra sources and skips URLs you already have. Document agents also write a detailed report.'
+                  : selectedAgent && agentWantsDocument(selectedAgent)
+                    ? `Ready to find new sources for ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'}, then write a Supplier & Vendor Intelligence Report.`
+                    : `Ready to find new sources for ${selectedRows.size} selected row${selectedRows.size === 1 ? '' : 's'} (will skip existing websites).`}
+              </p>
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAgentsPanelOpen(false)}
+                  className="rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    selectedRows.size === 0 ||
+                    writingReportLoading ||
+                    assignAgentLoading ||
+                    storeSelectionLoading
+                  }
+                  onClick={() => {
+                    void writeIntelligenceReport(
+                      Array.from(selectedRows).sort((a, b) => a - b),
+                      selectedAgent
+                    )
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-label hover:bg-app-fill disabled:opacity-50"
+                >
+                  {(writingReportLoading && !assignAgentLoading) && (
+                    <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {writingReportLoading && !assignAgentLoading ? 'Writing report…' : 'Write report'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedAgent || selectedRows.size === 0 || assignAgentLoading || storeSelectionLoading || writingReportLoading}
+                  onClick={() => {
+                    if (!selectedAgent) return
+                    void assignAndRunAgent(selectedAgent, Array.from(selectedRows).sort((a, b) => a - b))
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {(assignAgentLoading || storeSelectionLoading) && (
+                    <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  {assignAgentLoading || storeSelectionLoading
+                    ? selectedAgent && agentWantsDocument(selectedAgent)
+                      ? 'Finding more & writing…'
+                      : 'Finding more…'
+                    : selectedAgent && agentWantsDocument(selectedAgent)
+                      ? 'Find more & write report'
+                      : 'Assign & find more'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {addRowPopover.open && (
         <div
           data-add-row-popover
@@ -6098,6 +6813,37 @@ export function ResearchPage() {
           <button
             type="button"
             onClick={() => {
+              setAgentsPanelOpen(true)
+              if (researchAgents.length === 0) setAgentFormOpen(true)
+            }}
+            disabled={storeSelectionLoading || assignAgentLoading || writingReportLoading}
+            className={researchToolbarBtnClass(
+              agentsPanelOpen || assignAgentLoading || writingReportLoading,
+              storeSelectionLoading || assignAgentLoading || writingReportLoading
+            )}
+            aria-label="Create or assign research agents"
+          >
+            {assignAgentLoading || writingReportLoading ? (
+              <LoaderIcon className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            <ResearchToolbarTooltip
+              label={
+                writingReportLoading
+                  ? 'Writing intelligence report…'
+                  : assignAgentLoading
+                  ? 'Running agent…'
+                  : selectedRows.size === 0
+                    ? 'Agents — create, then select rows to assign'
+                    : 'Assign agent to find more'
+              }
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
               if (selectedRows.size === 0) return
               const first = Math.min(...selectedRows)
               setSelectedRowIndex(first)
@@ -6688,6 +7434,15 @@ export function ResearchPage() {
                   <Bot className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                   AI
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setAgentsPanelOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-md border border-violet-300 bg-app-surface px-4 py-2 text-sm font-medium text-violet-800 hover:bg-violet-50"
+                  title="Assign a research agent to this row"
+                >
+                  <Bot className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  Agents
+                </button>
               </div>
             )}
           </header>
@@ -6776,6 +7531,41 @@ export function ResearchPage() {
                         sessionLabel={researchAiSessionLabel}
                         onApplySheetUpdates={applySheetColumnUpdates}
                       />
+                    )}
+                    {inspectorAssignedAgents.length > 0 && selectedRowIndex != null && (
+                      <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3">
+                        <p className="text-xs font-semibold text-violet-900">Assigned agents</p>
+                        <p className="mt-0.5 text-[11px] text-violet-800/80">
+                          Run again to search for new sources and skip websites already found.
+                          Document agents then write a detailed intelligence report.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {inspectorAssignedAgents.map((agent) => (
+                            <div key={agent.id} className="flex flex-wrap items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={assignAgentLoading || storeSelectionLoading || writingReportLoading}
+                                onClick={() => void assignAndRunAgent(agent, [selectedRowIndex])}
+                                className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                              >
+                                <Bot className="h-3.5 w-3.5" aria-hidden />
+                                {agent.name}
+                              </button>
+                              {agentWantsDocument(agent) && (
+                                <button
+                                  type="button"
+                                  disabled={assignAgentLoading || storeSelectionLoading || writingReportLoading}
+                                  onClick={() => void writeIntelligenceReport([selectedRowIndex], agent)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                                >
+                                  <FileText className="h-3.5 w-3.5" aria-hidden />
+                                  {writingReportLoading ? 'Writing…' : 'Write report'}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                     <div className="rounded-xl border border-app-separator bg-app-surface p-4 shadow-sm">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -6894,6 +7684,27 @@ export function ResearchPage() {
                             placeholder="e.g. Get current price, warranty terms, and shipping ETA"
                             className="mt-2 w-full resize-y rounded-md border border-app-accent/30 bg-app-surface px-2.5 py-2 text-sm text-app-label placeholder:text-app-tertiary focus:border-app-accent focus:outline-none focus:ring-2 focus:ring-app-accent/20"
                           />
+                          {researchAgents.length > 0 && (
+                            <label className="mt-2 block text-[11px] font-medium text-blue-900">
+                              Use an agent prompt
+                              <select
+                                className="mt-1 w-full rounded-md border border-app-accent/30 bg-app-surface px-2 py-1.5 text-xs text-app-label"
+                                value=""
+                                onChange={(e) => {
+                                  const agent = researchAgents.find((row) => String(row.id) === e.target.value)
+                                  if (!agent) return
+                                  setResearchMorePrompt(agent.instructions)
+                                }}
+                              >
+                                <option value="">Choose an agent…</option>
+                                {researchAgents.map((agent) => (
+                                  <option key={agent.id} value={agent.id}>
+                                    {agent.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
                           <div className="mt-2 flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
@@ -7070,17 +7881,17 @@ export function ResearchPage() {
                                     className={RESEARCH_OFFER_ACTION_BTN}
                                   >
                                     <FileText className="h-3.5 w-3.5 text-app-destructive" strokeWidth={1.75} />
-                                    Datasheet
+                                    PDF datasheet
                                   </a>
                                 ) : (
                                   <button
                                     type="button"
                                     className={RESEARCH_OFFER_ACTION_BTN}
                                     disabled
-                                    title="No datasheet URL on these sources"
+                                    title="No PDF datasheet URL on these sources"
                                   >
                                     <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
-                                    Datasheet
+                                    PDF datasheet
                                   </button>
                                 )}
                                 {structuredOfferSummary.manufacturerUrl ? (

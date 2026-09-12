@@ -415,6 +415,182 @@ export function blocksToPlainText(blocks: ReportBlock[]): string {
   return lines.join('\n').trim()
 }
 
+function extractJsonCandidate(raw: string): string {
+  const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fencedMatch?.[1]) return fencedMatch[1].trim()
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start >= 0 && end > start) return raw.slice(start, end + 1)
+  return raw.trim()
+}
+
+function readReportString(value: unknown, maxLen = 8000): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return trimmed.slice(0, maxLen)
+}
+
+function readReportStringArray(value: unknown, maxItems = 24, maxLen = 4000): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const trimmed = item.trim()
+    if (!trimmed) continue
+    out.push(trimmed.slice(0, maxLen))
+    if (out.length >= maxItems) break
+  }
+  return out
+}
+
+function titleBlock(text: string): ReportBlock {
+  return { id: newId(), type: 'title', text, align: 'left' }
+}
+
+function headingBlock(text: string): ReportBlock {
+  return { id: newId(), type: 'heading', text, align: 'left' }
+}
+
+function paragraphBlock(text: string): ReportBlock {
+  return { id: newId(), type: 'paragraph', text, align: 'left' }
+}
+
+function bulletsBlock(items: string[]): ReportBlock {
+  return { id: newId(), type: 'bullets', items, align: 'left' }
+}
+
+function numberedBlock(items: string[]): ReportBlock {
+  return { id: newId(), type: 'numbered', items, align: 'left' }
+}
+
+function appendMarkdownFallback(blocks: ReportBlock[], raw: string): void {
+  const chunks = raw
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+
+  for (const chunk of chunks) {
+    const lines = chunk
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) continue
+
+    const markdownHeading = lines[0]?.match(/^#{1,6}\s+(.+)$/)
+    if (markdownHeading?.[1]) {
+      blocks.push(headingBlock(markdownHeading[1].trim().slice(0, 200)))
+      const body = lines.slice(1).join(' ').trim()
+      if (body) blocks.push(paragraphBlock(body.slice(0, 8000)))
+      continue
+    }
+
+    const bulletItems = lines
+      .filter((line) => /^[-*•]\s+/.test(line))
+      .map((line) => line.replace(/^[-*•]\s+/, '').trim())
+      .filter(Boolean)
+    if (bulletItems.length >= 2 && bulletItems.length === lines.length) {
+      blocks.push(bulletsBlock(bulletItems.map((item) => item.slice(0, 4000))))
+      continue
+    }
+
+    const numberedItems = lines
+      .filter((line) => /^\d+[.)]\s+/.test(line))
+      .map((line) => line.replace(/^\d+[.)]\s+/, '').trim())
+      .filter(Boolean)
+    if (numberedItems.length >= 2 && numberedItems.length === lines.length) {
+      blocks.push(numberedBlock(numberedItems.map((item) => item.slice(0, 4000))))
+      continue
+    }
+
+    blocks.push(paragraphBlock(lines.join(' ').slice(0, 8000)))
+  }
+}
+
+/**
+ * Turn Groq report JSON into studio blocks: title, TL;DR, numbered Key Findings,
+ * analysis sections, sources, and conclusion. Also accepts the older
+ * summary / key_points schema.
+ */
+export function parseIntelligenceReportDraft(
+  raw: string,
+  fallbackTitle = 'Supplier & Vendor Intelligence Report'
+): { title: string; blocks: ReportBlock[] } {
+  let parsed: Record<string, unknown> | null = null
+  try {
+    const json = JSON.parse(extractJsonCandidate(raw)) as unknown
+    if (json && typeof json === 'object' && !Array.isArray(json)) {
+      parsed = json as Record<string, unknown>
+    }
+  } catch {
+    parsed = null
+  }
+
+  const title =
+    readReportString(parsed?.title, 240) ??
+    (fallbackTitle.trim().slice(0, 240) || 'Supplier & Vendor Intelligence Report')
+  const blocks: ReportBlock[] = [titleBlock(title)]
+
+  const tldr = readReportStringArray(parsed?.tldr)
+  if (tldr.length) {
+    blocks.push(headingBlock('TL;DR'))
+    blocks.push(bulletsBlock(tldr))
+  } else {
+    const summary = readReportString(parsed?.summary)
+    if (summary) {
+      blocks.push(headingBlock('TL;DR'))
+      blocks.push(paragraphBlock(summary))
+    }
+  }
+
+  const keyFindings = readReportStringArray(parsed?.key_findings)
+  if (keyFindings.length) {
+    blocks.push(headingBlock('Key Findings'))
+    blocks.push(numberedBlock(keyFindings))
+  } else {
+    const keyPoints = readReportStringArray(parsed?.key_points)
+    if (keyPoints.length) {
+      blocks.push(headingBlock('Key Findings'))
+      blocks.push(numberedBlock(keyPoints))
+    }
+  }
+
+  const sections = parsed && Array.isArray(parsed.sections) ? parsed.sections : []
+  for (const section of sections) {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) continue
+    const row = section as Record<string, unknown>
+    const heading = readReportString(row.heading, 200)
+    if (heading) blocks.push(headingBlock(heading))
+    for (const p of readReportStringArray(row.paragraphs, 12, 8000)) {
+      blocks.push(paragraphBlock(p))
+    }
+    const bullets = readReportStringArray(row.bullets)
+    if (bullets.length) blocks.push(bulletsBlock(bullets))
+    const numbered = readReportStringArray(row.numbered)
+    if (numbered.length) blocks.push(numberedBlock(numbered))
+  }
+
+  const sources = readReportStringArray(parsed?.sources, 40, 500)
+  if (sources.length) {
+    blocks.push(headingBlock('Sources'))
+    blocks.push(bulletsBlock(sources))
+  }
+
+  const conclusion = readReportString(parsed?.conclusion)
+  if (conclusion) {
+    blocks.push(headingBlock('Conclusion'))
+    blocks.push(paragraphBlock(conclusion))
+  }
+
+  if (blocks.length > 1) return { title, blocks }
+
+  appendMarkdownFallback(blocks, raw)
+  if (blocks.length === 1) {
+    blocks.push(paragraphBlock(raw.trim().slice(0, 8000) || 'No AI content generated.'))
+  }
+  return { title, blocks }
+}
+
 /**
  * Convert a backend ReportResponse (raw blocks as Record[]) into a typed SavedReport.
  */

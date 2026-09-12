@@ -171,7 +171,10 @@ DEFAULT_EXTRACT_SCHEMA: dict = {
         },
         "datasheet_url": {
             "type": "string",
-            "description": "Direct URL to a datasheet, spec sheet, or PDF manual.",
+            "description": (
+                "Direct https URL of a PDF file (must end in .pdf) for the official "
+                "datasheet, spec sheet, or manual. Never a catalog or product webpage."
+            ),
         },
         "delivery": {"type": "string"},
         "location": {"type": "string"},

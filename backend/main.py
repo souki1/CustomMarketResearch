@@ -52,6 +52,12 @@ async def lifespan(app: FastAPI):
         await db["research_states"].create_index([("updated_at", -1)])
         await db["research_jobs"].create_index([("owner_id", 1), ("status", 1), ("updated_at", -1)])
         await db["research_jobs"].create_index([("owner_id", 1), ("file_id", 1), ("status", 1)])
+        await db["research_agents"].create_index([("owner_id", 1), ("updated_at", -1)])
+        await db["research_agent_seeds"].create_index([("owner_id", 1)], unique=True)
+        await db["research_agent_assignments"].create_index(
+            [("owner_id", 1), ("file_id", 1), ("tab_id", 1)]
+        )
+        await db["research_agent_assignments"].create_index([("owner_id", 1), ("agent_id", 1)])
         await db["reports"].create_index([("owner_id", 1), ("updated_at", -1)])
         await db["purchase_orders"].create_index([("owner_id", 1), ("updated_at", -1)])
         await db["portfolio_exclusions"].create_index([("owner_id", 1), ("part_number", 1)])

@@ -133,6 +133,24 @@ class ResearchSearchBody(BaseModel):
     zip_code: str | None = Field(default=None, max_length=20)
     address: str | None = Field(default=None, max_length=300)
     location: str | None = Field(default=None, max_length=300)
+    search_hint: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Extra search terms appended to each row query (e.g. agent focus).",
+    )
+    find_more: bool = Field(
+        default=False,
+        description="Skip already-known source URLs and search for additional sources only.",
+    )
+    agent_focus: Literal[
+        "vendors",
+        "pricing",
+        "datasheets",
+        "contacts",
+        "availability",
+        "document",
+        "custom",
+    ] | None = None
 
 
 class ResearchTransferRowMap(BaseModel):
@@ -415,3 +433,64 @@ class PurchaseOrderResponse(BaseModel):
     source_selection_id: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Research agents
+# ---------------------------------------------------------------------------
+
+ResearchAgentFocus = Literal[
+    "vendors",
+    "pricing",
+    "datasheets",
+    "contacts",
+    "availability",
+    "document",
+    "custom",
+]
+
+
+class ResearchAgentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    focus: ResearchAgentFocus = "custom"
+    instructions: str = Field(..., min_length=1, max_length=4000)
+    search_hint: str | None = Field(default=None, max_length=300)
+
+
+class ResearchAgentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    focus: ResearchAgentFocus | None = None
+    instructions: str | None = Field(default=None, min_length=1, max_length=4000)
+    search_hint: str | None = Field(default=None, max_length=300)
+
+
+class ResearchAgentResponse(BaseModel):
+    id: int
+    owner_id: int
+    name: str
+    focus: ResearchAgentFocus
+    instructions: str
+    search_hint: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    seeded: bool = False
+
+
+class ResearchAgentAssignBody(BaseModel):
+    agent_id: int
+    file_id: int | None = None
+    tab_id: str | None = Field(default=None, max_length=120)
+    row_indices: list[int] = Field(default_factory=list, max_length=500)
+
+
+class ResearchAgentAssignmentResponse(BaseModel):
+    id: int
+    owner_id: int
+    agent_id: int
+    file_id: int | None = None
+    tab_id: str | None = None
+    row_indices: list[int] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+    last_run_at: datetime | None = None
+    agent: ResearchAgentResponse | None = None

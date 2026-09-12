@@ -28,6 +28,8 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/wishlist')) return 'Wishlist'
   if (pathname.startsWith('/settings')) return 'Settings'
   if (pathname.startsWith('/purchase-order')) return 'Purchase Order'
+  if (pathname.startsWith('/oem')) return 'OEM desk'
+  if (pathname.startsWith('/supplier')) return 'Supplier portal'
   return 'Intelligent Research'
 }
 

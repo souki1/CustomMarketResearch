@@ -6,7 +6,12 @@ import { ComparePage } from '@/pages/ComparePage'
 import { AiPlaceholderPage } from '@/pages/AiPlaceholderPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { HomePage } from '@/pages/HomePage'
-import { RESEARCH_COMPARE_PATH } from '@/lib/paths'
+import { OEM_OVERVIEW_PATH, RESEARCH_COMPARE_PATH, SUPPLIER_HOME_PATH } from '@/lib/paths'
+import { DeskShell } from '@/pages/oem/DeskShell'
+import { OemLayout } from '@/pages/oem/OemLayout'
+import { OemSectionPage } from '@/pages/oem/OemSectionPage'
+import { SupplierLayout } from '@/pages/oem/SupplierLayout'
+import { SupplierSectionPage } from '@/pages/oem/SupplierSectionPage'
 import { PurchaseOrderPage } from '@/pages/PurchaseOrderPage'
 import { BucketPage } from '@/pages/BucketPage'
 import { PartsCatalogPage } from '@/pages/PartsCatalogPage'
@@ -39,6 +44,28 @@ const router = createBrowserRouter([
       { path: 'bucket', element: <BucketPage /> },
 
       { path: 'purchase-order', element: <PurchaseOrderPage /> },
+      {
+        element: <DeskShell />,
+        children: [
+          {
+            path: 'oem',
+            element: <OemLayout />,
+            children: [
+              { index: true, element: <Navigate to={OEM_OVERVIEW_PATH} replace /> },
+              { path: 'portal', element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
+              { path: ':section', element: <OemSectionPage /> },
+            ],
+          },
+          {
+            path: 'supplier',
+            element: <SupplierLayout />,
+            children: [
+              { index: true, element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
+              { path: ':section', element: <SupplierSectionPage /> },
+            ],
+          },
+        ],
+      },
       { path: 'ai', element: <AiPlaceholderPage /> },
       { path: 'portfolio', element: <PortfolioPage /> },
       { path: 'wishlist', element: <WishlistPage /> },

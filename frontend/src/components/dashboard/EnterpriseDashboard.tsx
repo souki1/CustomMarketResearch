@@ -2,17 +2,21 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   BarChart3,
+  Factory,
   FileUp,
   FlaskConical,
   GitCompare,
   Lightbulb,
   ShoppingCart,
+  Store,
 } from 'lucide-react'
 import {
   BUCKET_PATH,
   FILES_PATH,
+  OEM_OVERVIEW_PATH,
   RESEARCH_COMPARE_PATH,
   RESEARCH_PATH,
+  SUPPLIER_HOME_PATH,
   WISHLIST_PATH,
 } from '@/lib/paths'
 import { BarChart, DonutChart, LineChart } from './DashboardCharts'
@@ -225,6 +229,24 @@ export function EnterpriseDashboard({
       bg: 'bg-emerald-50',
       border: 'border-emerald-600/15',
       to: RESEARCH_COMPARE_PATH,
+    },
+    {
+      icon: Factory,
+      label: 'Open OEM desk',
+      sub: 'Buyer: RFQ, demand, pay',
+      color: 'text-sky-700',
+      bg: 'bg-sky-50',
+      border: 'border-sky-600/15',
+      to: OEM_OVERVIEW_PATH,
+    },
+    {
+      icon: Store,
+      label: 'Open supplier portal',
+      sub: 'Bid, ACK, ship as Messicks',
+      color: 'text-emerald-700',
+      bg: 'bg-emerald-50',
+      border: 'border-emerald-600/15',
+      to: SUPPLIER_HOME_PATH,
     },
     {
       icon: Lightbulb,

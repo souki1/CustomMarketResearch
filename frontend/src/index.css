@@ -82,6 +82,45 @@
   }
 }
 
+/* Printed page stays white in dark mode; force ink tokens so body text is readable. */
+.report-page {
+  color-scheme: light;
+  --app-label: #1d1d1f;
+  --app-secondary: #424245;
+  --app-tertiary: #6e6e73;
+  --app-surface: #ffffff;
+  --app-elevated: #ffffff;
+  --app-fill: rgba(60, 60, 67, 0.08);
+  --app-fill-strong: rgba(60, 60, 67, 0.14);
+  --app-separator: rgba(60, 60, 67, 0.22);
+  --app-accent-soft: rgba(0, 122, 255, 0.12);
+  --app-paper: #ffffff;
+  --color-app-label: #1d1d1f;
+  --color-app-secondary: #424245;
+  --color-app-tertiary: #6e6e73;
+  --color-app-surface: #ffffff;
+  --color-app-elevated: #ffffff;
+  --color-app-fill: rgba(60, 60, 67, 0.08);
+  --color-app-fill-strong: rgba(60, 60, 67, 0.14);
+  --color-app-separator: rgba(60, 60, 67, 0.22);
+  --color-app-accent-soft: rgba(0, 122, 255, 0.12);
+  --color-app-paper: #ffffff;
+  background-color: #ffffff;
+  color: #1d1d1f;
+}
+
+.report-page textarea,
+.report-page input:not([type='checkbox']):not([type='radio']) {
+  color: #1d1d1f;
+  caret-color: #1d1d1f;
+  background-color: #ffffff;
+}
+
+.report-page textarea::placeholder,
+.report-page input::placeholder {
+  color: #6e6e73;
+}
+
 html,
 body,
 #root {

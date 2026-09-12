@@ -1,4 +1,6 @@
 import {
+  Archive,
+  Factory,
   Files,
   GitCompare,
   Heart,
@@ -8,13 +10,21 @@ import {
   Package,
   Search,
   Settings,
+  ShoppingCart,
   Sparkles,
+  Store,
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import {
+  BUCKET_PATH,
   FILES_PATH,
+  OEM_OVERVIEW_PATH,
+  OEM_PATH,
   PARTS_CATALOG_PATH,
+  PURCHASE_ORDER_PATH,
   RESEARCH_COMPARE_PATH,
+  SUPPLIER_HOME_PATH,
+  SUPPLIER_PATH,
   WISHLIST_PATH,
 } from '@/lib/paths'
 
@@ -63,6 +73,36 @@ const GROUPS: NavGroup[] = [
       { to: '/reports', label: 'Reports', icon: LineChart, match: (p) => p === '/reports' },
       { to: '/portfolio', label: 'Portfolio', icon: LayoutGrid, match: (p) => p === '/portfolio' },
       { to: WISHLIST_PATH, label: 'Wishlist', icon: Heart, match: (p) => p === WISHLIST_PATH },
+    ],
+  },
+  {
+    id: 'operate',
+    label: 'Operate',
+    items: [
+      {
+        to: OEM_OVERVIEW_PATH,
+        label: 'OEM desk',
+        icon: Factory,
+        match: (p) => p.startsWith(OEM_PATH),
+      },
+      {
+        to: SUPPLIER_HOME_PATH,
+        label: 'Supplier portal',
+        icon: Store,
+        match: (p) => p.startsWith(SUPPLIER_PATH),
+      },
+      {
+        to: PURCHASE_ORDER_PATH,
+        label: 'Orders',
+        icon: ShoppingCart,
+        match: (p) => p.startsWith(PURCHASE_ORDER_PATH),
+      },
+      {
+        to: BUCKET_PATH,
+        label: 'Bucket',
+        icon: Archive,
+        match: (p) => p === BUCKET_PATH,
+      },
     ],
   },
   {

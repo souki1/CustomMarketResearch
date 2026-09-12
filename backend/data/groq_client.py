@@ -58,10 +58,22 @@ _AI_MODE_SYSTEM: dict[str, tuple[str, float]] = {
         0.9,
     ),
     "report": (
-        "Generate professional, factual reports from provided procurement/research context. "
-        "Use only provided data, clearly separate facts from assumptions, and avoid unverifiable claims. "
-        "Structure output so it is easy to parse into sections.",
-        0.3,
+        "You write detailed Supplier & Vendor Intelligence Reports for procurement teams. "
+        "Use ONLY facts from the provided research/scraped sources. Separate facts from inference. "
+        "Never invent prices, vendors, factories, or part numbers. "
+        "Return JSON only (no markdown fences) with this schema: "
+        '{"title":"string","tldr":["string"],"key_findings":["string"],'
+        '"sections":[{"heading":"string","paragraphs":["string"],"bullets":["string"],"numbered":["string"]}],'
+        '"sources":["string"],"conclusion":"string"}. '
+        "Title must name the part number and what the part is "
+        '(example: Supplier & Vendor Intelligence Report: Kubota Part TC403-14670 "SEAL, OIL"). '
+        "tldr: 3-6 dense bullets covering distinct supply sources vs storefront counts, "
+        "related/alternate part numbers, and pricing caveats. "
+        "key_findings: 4-8 numbered findings with specifics (vendors, prices, OEM vs aftermarket). "
+        "sections: deep analysis (OEM origin, aftermarket/relisting, pricing, availability, related part numbers). "
+        "sources: source URLs from the research data. "
+        "Write in a professional intelligence-brief voice, similar to a market research memo.",
+        0.25,
     ),
 }
 
@@ -87,7 +99,7 @@ Rules:
 4. price: preserve exactly as shown including currency symbol ($, €, £, etc.); if array, use first price string; remove if empty
 5. specifications: keep as an object of technical spec name -> value; snake_case keys; remove empty values. If specs arrived as a list of {name,value} or {key,value}, convert to an object.
 6. product_details: keep as object; use snake_case keys; remove empty values
-7. datasheet_url: a direct https URL to a datasheet, spec sheet, or PDF. If the value is an object with url/href/src, use that. Map data_sheet, spec_sheet, manual_url, pdf_url onto datasheet_url when datasheet_url is missing.
+7. datasheet_url: a direct https URL to a PDF file (path ends in .pdf). Never a catalog or product webpage. If the value is an object with url/href/src, use that. Map data_sheet, spec_sheet, manual_url, pdf_url onto datasheet_url when datasheet_url is missing.
 8. delivery, location, contact: omit if null or empty
 9. Preserve any additional non-empty keys the extractor returned (user-requested fields).
 10. Omit any key with null, empty string, or empty array"""

@@ -783,6 +783,7 @@ export function HomePage() {
             onNewFolderClick={() => setCreateFolderOpen(true)}
             onNewFileClick={() => handleUploadCsvClick()}
             onNewResearchClick={() => navigate('/research')}
+            onNewAgentClick={() => navigate('/research?agents=new')}
             onImportCsvClick={() => handleUploadCsvClick()}
             onUploadFileClick={() => handleUploadFileClick()}
             onMoveClick={handleOpenMove}

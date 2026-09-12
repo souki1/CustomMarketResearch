@@ -723,7 +723,7 @@ export function ReportStudio({
                   }}
                 >
                   <div
-                    className={`relative bg-app-paper text-[#1d1d1f] ${PAGE_SHADOW} rounded-sm ${
+                    className={`report-page relative bg-white text-[#1d1d1f] ${PAGE_SHADOW} rounded-sm ${
                       isPdfMode && pendingFillTool ? 'cursor-crosshair' : ''
                     }`}
                     style={{

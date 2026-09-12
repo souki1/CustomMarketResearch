@@ -86,8 +86,9 @@ DEFAULT_EXTRACT_FIELDS_PROMPT = (
     "name -> value (dimensions, material, compatibility, weight, length, width, "
     "height, OEM/part numbers, voltage, capacity, color, finish, and similar). "
     "Do not summarize or omit rows.\n"
-    "- datasheet_url: a direct URL to the product datasheet, spec sheet, or "
-    "PDF manual. Look for links labeled datasheet, spec sheet, manual, PDF, or download.\n"
+    "- datasheet_url: a direct https URL to a PDF file (path ends in .pdf) for the "
+    "official datasheet, spec sheet, or parts/operator manual. Never use a product "
+    "listing, parts catalog, or shopping page.\n"
     "Also extract vendor_name, price (keep currency symbols), product_description, "
     "delivery/lead time, location, contact, manufacturer, and part_number when present. "
     "Return structured JSON. Omit empty values."
@@ -368,12 +369,15 @@ def _normalize_extracted_defaults(data: dict, *, page_url: str | None = None) ->
             datasheet = _first_http_url(out.get(alias))
             if datasheet:
                 break
-    if not datasheet:
-        datasheet = _find_pdf_in_record(out)
-    if not datasheet and page_url and _is_pdf_url(page_url):
-        datasheet = _first_http_url(page_url)
-    if datasheet:
-        out["datasheet_url"] = datasheet
+    pdf = datasheet if datasheet and _is_pdf_url(datasheet) else None
+    if not pdf:
+        pdf = _find_pdf_in_record(out)
+    if not pdf and page_url and _is_pdf_url(page_url):
+        pdf = _first_http_url(page_url)
+    if pdf:
+        out["datasheet_url"] = pdf
+    else:
+        out.pop("datasheet_url", None)
     return out
 
 
@@ -399,6 +403,8 @@ def _compose_research_extract_query(
     user_query: str | None,
     *,
     location_label: str | None = None,
+    find_more: bool = False,
+    agent_focus: str | None = None,
 ) -> str:
     """User prompt plus default image / spec / datasheet extraction."""
     parts: list[str] = []
@@ -406,12 +412,86 @@ def _compose_research_extract_query(
     if user:
         parts.append(user)
     parts.append(DEFAULT_EXTRACT_FIELDS_PROMPT)
-    if location_label:
+    focus = (agent_focus or "").strip().lower()
+    if find_more and focus == "datasheets":
+        parts.append(
+            "datasheet_url MUST be a direct https URL whose path ends in .pdf. "
+            "Never use a product listing, parts catalog, shopping page, or HTML brochure. "
+            "If no PDF is present, omit datasheet_url."
+        )
+    elif find_more and focus == "document":
+        parts.append(
+            "Extract facts for a supplier intelligence report: vendor names, OEM vs aftermarket, "
+            "related/alternate/superseded part numbers, prices, stock, factory or brand names, "
+            "and whether listings appear to be relists of the same source. Keep source URLs."
+        )
+    elif find_more:
+        parts.append(
+            "Prioritize information that is missing from a typical vendor listing. "
+            "Extract alternate, OEM, superseded, and cross-reference part numbers when shown."
+        )
+    elif location_label:
         parts.append(
             f"Prefer vendors, stock, pricing, and delivery available to {location_label}. "
             "Include local availability and lead time for this ZIP or address when present."
         )
+    if location_label and find_more and focus in {"vendors", "pricing", "availability"}:
+        parts.append(
+            f"Prefer vendors, stock, pricing, and delivery available to {location_label}."
+        )
     return "\n\n".join(parts)
+
+
+def _normalize_agent_focus(raw: object) -> str:
+    value = str(raw or "").strip().lower()
+    mapping = {
+        "vendors": "vendors",
+        "pricing": "pricing",
+        "datasheets": "datasheets",
+        "contacts": "contacts",
+        "availability": "availability",
+        "document": "document",
+        "custom": "custom",
+    }
+    return mapping.get(value, "custom")
+
+
+def _agent_search_queries(
+    part_query: str,
+    *,
+    focus: str,
+    hint: str,
+    instructions: str,
+) -> list[str]:
+    """Specialized Google queries so agents find new info instead of repeating vendor search."""
+    q = part_query.strip()
+    extra = hint.strip()
+    if focus == "datasheets":
+        return [
+            f'{q} (datasheet OR "specification sheet" OR "parts manual") filetype:pdf',
+            f'{q} ("operator manual" OR "service manual" OR "tech specs") filetype:pdf',
+        ]
+    if focus == "vendors":
+        terms = extra or 'distributor OR supplier OR "authorized dealer" OR reseller'
+        return [f"{q} ({terms})"]
+    if focus == "pricing":
+        terms = extra or 'price OR quote OR buy OR "unit cost" OR MOQ'
+        return [f"{q} ({terms})"]
+    if focus == "availability":
+        terms = extra or '"in stock" OR inventory OR "lead time" OR shipping'
+        return [f"{q} ({terms})"]
+    if focus == "contacts":
+        terms = extra or '"sales" (phone OR email OR contact) OR "customer service"'
+        return [f"{q} ({terms})"]
+    if focus == "document":
+        return [
+            f'{q} (supplier OR vendor OR OEM OR aftermarket OR "cross reference")',
+            f'{q} (equivalent OR replaces OR superseded OR "part number")',
+        ]
+    terms = extra or _printable_clip(instructions, 120)
+    if terms:
+        return [f"{q} {terms}"]
+    return [f'{q} ("alternate part" OR OEM OR replaces OR superseded OR "cross reference")']
 
 
 def _printable_clip(value: object, max_len: int) -> str:
@@ -645,6 +725,8 @@ async def search_selection_and_store_urls(
         )
 
         location_label = _compose_research_location(body)
+        find_more = bool(body.find_more) if body else False
+        agent_focus = _normalize_agent_focus(body.agent_focus if body else None)
         serper_location = location_label or None
         serper_gl: str | None = None
         if location_label:
@@ -668,6 +750,8 @@ async def search_selection_and_store_urls(
         base_ai_query = _compose_research_extract_query(
             body.ai_query if body else None,
             location_label=location_label,
+            find_more=find_more,
+            agent_focus=agent_focus if find_more else None,
         )
 
         async def mark_row_done() -> None:
@@ -747,54 +831,13 @@ async def search_selection_and_store_urls(
                 return
 
             async with row_sema:
-                search_query = " ".join(row_values)
-                if location_label:
-                    search_query = f"{search_query} near {location_label}"
-
-                try:
-                    result = await search_serper(
-                        settings.serper_api_key,
-                        search_query,
-                        num=10,
-                        location=serper_location,
-                        gl=serper_gl,
-                    )
-                    organic_results = extract_organic_results_from_serper_response(result)
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Serper API error for row {row_index + 1}: {e!s}",
-                    ) from e
-
-                serper_urls = [r["link"] for r in organic_results]
+                search_hint = _printable_clip(body.search_hint if body else "", 300)
+                part_query = " ".join(row_values)
                 table_row_index = (
                     row_indices[row_index] if row_index < len(row_indices) else row_index
                 )
                 now = datetime.utcnow()
                 new_id = await get_next_sequence(mongo_db, "research_urls")
-
-                spec_urls: list[str] = []
-                spec_organic: list[dict] = []
-                part_query = " ".join(row_values)
-                try:
-                    spec_result = await search_serper(
-                        settings.serper_api_key,
-                        (
-                            f'{part_query} (datasheet OR "specification sheet" '
-                            f'OR "tech specs" OR specifications)'
-                        ),
-                        num=8,
-                    )
-                    spec_organic = extract_organic_results_from_serper_response(spec_result)
-                    spec_urls = [r["link"] for r in spec_organic]
-                except Exception as exc:
-                    logger.warning(
-                        "Datasheet/spec search failed for row %s: %s",
-                        row_index + 1,
-                        exc,
-                    )
-                    spec_urls = []
-
                 prior_source_urls = await _list_prior_source_urls_for_row(
                     mongo_db,
                     owner_id=user.id,
@@ -803,17 +846,115 @@ async def search_selection_and_store_urls(
                     table_row_index=table_row_index,
                     exclude_research_url_id=new_id,
                 )
-                vendor_urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=10)
-                spec_ranked = sorted(
-                    _dedupe_urls_prefer_order(spec_urls, limit=8),
-                    key=lambda u: (0 if _is_pdf_url(u) else 1),
-                )
-                urls = _dedupe_urls_prefer_order(vendor_urls + spec_ranked, limit=15)
-                pdf_fallback = next((u for u in spec_ranked if _is_pdf_url(u)), None)
-                row_datasheet_fallback[row_index] = pdf_fallback
-                organic_results = organic_results + [
-                    r for r in spec_organic if r.get("link") in spec_ranked
-                ]
+                known_url_keys = {
+                    _normalize_source_url_key(u) for u in prior_source_urls if u
+                }
+
+                organic_results: list[dict] = []
+                search_query = part_query
+                spec_urls: list[str] = []
+                spec_organic: list[dict] = []
+
+                if find_more:
+                    queries = _agent_search_queries(
+                        part_query,
+                        focus=agent_focus,
+                        hint=search_hint,
+                        instructions=_printable_clip(body.ai_query if body else "", 4000),
+                    )
+                    use_geo = agent_focus in {"vendors", "pricing", "availability"}
+                    seen_links: set[str] = set()
+                    for query in queries:
+                        q = query
+                        if use_geo and location_label:
+                            q = f"{q} near {location_label}"
+                        try:
+                            result = await search_serper(
+                                settings.serper_api_key,
+                                q,
+                                num=10,
+                                location=serper_location if use_geo else None,
+                                gl=serper_gl if use_geo else None,
+                            )
+                            chunk = extract_organic_results_from_serper_response(result)
+                        except Exception as e:
+                            raise HTTPException(
+                                status_code=502,
+                                detail=f"Serper API error for row {row_index + 1}: {e!s}",
+                            ) from e
+                        search_query = q
+                        for row in chunk:
+                            link = str(row.get("link") or "").strip()
+                            key = _normalize_source_url_key(link) if link else ""
+                            if not key or key in seen_links:
+                                continue
+                            seen_links.add(key)
+                            organic_results.append(row)
+                    candidate_urls = [str(r.get("link") or "") for r in organic_results]
+                    if agent_focus == "datasheets":
+                        pdf_urls = [u for u in candidate_urls if _is_pdf_url(u)]
+                        candidate_urls = pdf_urls or candidate_urls
+                    fresh_urls = [
+                        u
+                        for u in candidate_urls
+                        if _normalize_source_url_key(u) not in known_url_keys
+                    ]
+                    urls = _dedupe_urls_prefer_order(fresh_urls, limit=10)
+                    pdf_fallback = next((u for u in urls if _is_pdf_url(u)), None)
+                    row_datasheet_fallback[row_index] = pdf_fallback
+                else:
+                    search_query = part_query
+                    if search_hint:
+                        search_query = f"{search_query} {search_hint}"
+                    if location_label:
+                        search_query = f"{search_query} near {location_label}"
+
+                    try:
+                        result = await search_serper(
+                            settings.serper_api_key,
+                            search_query,
+                            num=10,
+                            location=serper_location,
+                            gl=serper_gl,
+                        )
+                        organic_results = extract_organic_results_from_serper_response(result)
+                    except Exception as e:
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"Serper API error for row {row_index + 1}: {e!s}",
+                        ) from e
+
+                    serper_urls = [r["link"] for r in organic_results]
+                    try:
+                        spec_result = await search_serper(
+                            settings.serper_api_key,
+                            (
+                                f'{part_query} (datasheet OR "specification sheet" '
+                                f'OR "tech specs" OR specifications) filetype:pdf'
+                            ),
+                            num=8,
+                        )
+                        spec_organic = extract_organic_results_from_serper_response(spec_result)
+                        spec_urls = [r["link"] for r in spec_organic]
+                    except Exception as exc:
+                        logger.warning(
+                            "Datasheet/spec search failed for row %s: %s",
+                            row_index + 1,
+                            exc,
+                        )
+                        spec_urls = []
+
+                    vendor_urls = _dedupe_urls_prefer_order(prior_source_urls + serper_urls, limit=10)
+                    spec_ranked = sorted(
+                        _dedupe_urls_prefer_order(spec_urls, limit=8),
+                        key=lambda u: (0 if _is_pdf_url(u) else 1),
+                    )
+                    urls = _dedupe_urls_prefer_order(vendor_urls + spec_ranked, limit=15)
+                    pdf_fallback = next((u for u in spec_ranked if _is_pdf_url(u)), None)
+                    row_datasheet_fallback[row_index] = pdf_fallback
+                    organic_results = organic_results + [
+                        r for r in spec_organic if r.get("link") in spec_ranked
+                    ]
 
                 await mongo_db["research_urls"].insert_one(
                     {
@@ -826,6 +967,8 @@ async def search_selection_and_store_urls(
                         "file_id": selection.get("file_id"),
                         "search_query": search_query,
                         "search_location": location_label or None,
+                        "find_more": find_more,
+                        "agent_focus": agent_focus if find_more else None,
                         "urls": urls,
                         "results": organic_results,
                         "headers": headers,
@@ -871,11 +1014,14 @@ async def search_selection_and_store_urls(
                     source_url,
                     ai_query,
                 )
-                if data and isinstance(data, dict) and len(data) > 0:
+                scraped = data if data and isinstance(data, dict) else {}
+                if _is_pdf_url(source_url) and not scraped.get("datasheet_url"):
+                    scraped = {**scraped, "datasheet_url": source_url}
+                if scraped:
                     await persist_scraped(
                         research_url_id=research_url_id,
                         scraped_url=source_url,
-                        scraped=data,
+                        scraped=scraped,
                         table_row_index=table_row_index,
                         datasheet_fallback=row_datasheet_fallback[row_index],
                     )
