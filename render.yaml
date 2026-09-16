@@ -28,8 +28,16 @@ services:
       - key: ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "10080"
+        value: "480"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      - key: ENVIRONMENT
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
       - key: DEV_RETURN_OTP
+        value: "false"
+      - key: ENABLE_DOCS
         value: "false"
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b

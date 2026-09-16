@@ -28,7 +28,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/inteligentresearch
       SECRET_KEY: dev-secret-change-me
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: "10080"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      ENVIRONMENT: development
       FRONTEND_URL: http://localhost:5173
       DEV_RETURN_OTP: "true"
       # Optional Google OAuth (leave empty for local dev)

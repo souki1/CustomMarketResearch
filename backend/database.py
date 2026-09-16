@@ -60,7 +60,12 @@ async def get_db() -> AsyncSession:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception as exc:
+            # Keep 4xx mutations (lockout counters, OTP attempts) so they survive the error.
+            status = getattr(exc, "status_code", None)
+            if isinstance(status, int) and 400 <= status < 500:
+                await session.commit()
+                raise
             await session.rollback()
             raise
         finally:
@@ -87,6 +92,15 @@ async def init_db() -> None:
                 ("password_change_code_expires_at", "TIMESTAMPTZ"),
                 ("password_change_code_last_sent_at", "TIMESTAMPTZ"),
                 ("password_change_code_attempts", "INTEGER DEFAULT 0"),
+                ("is_active", "BOOLEAN DEFAULT TRUE"),
+                ("failed_login_attempts", "INTEGER DEFAULT 0"),
+                ("locked_until", "TIMESTAMPTZ"),
+                ("token_version", "INTEGER DEFAULT 0"),
+                ("totp_secret", "TEXT"),
+                ("totp_pending_secret", "TEXT"),
+                ("totp_enabled", "BOOLEAN DEFAULT FALSE"),
+                ("totp_backup_hashes", "TEXT"),
+                ("last_login_at", "TIMESTAMPTZ"),
             ]:
                 # Use a nested transaction (SAVEPOINT) per column so that a
                 # single failure doesn't abort the entire connection transaction.

@@ -5,16 +5,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse, urlunparse
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import decode_access_token
-from database import get_db
 from models import User
 from mongo import get_mongo_db
 from schemas import PortfolioExcludeRequest, PortfolioItemResponse, PortfolioSummaryResponse
+from security.deps import get_current_user
 
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -358,24 +355,6 @@ def _extract_portfolio_items_from_extracted(extracted: Any) -> list[dict[str, An
     if any(item.values()):
         return [item]
     return []
-
-
-async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth[7:]
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 
 def _aggregate_summary_from_items(items: list[dict[str, Any]]) -> dict[str, Any]:

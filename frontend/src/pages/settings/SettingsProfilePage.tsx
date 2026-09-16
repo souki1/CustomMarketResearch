@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Card } from '@/components'
-import { confirmPasswordChange, getMe, profilePhotoUrl, requestPasswordChangeCode, updateProfile, uploadProfilePhoto } from '@/lib/api'
-import { getCurrentUserEmail, getCurrentUserName, getCurrentUserPhotoUrl, getToken, setCurrentUserName, setCurrentUserPhotoUrl } from '@/lib/auth'
+import { confirmPasswordChange, fetchAuthenticatedBlobUrl, getMe, profilePhotoUrl, requestPasswordChangeCode, updateProfile, uploadProfilePhoto } from '@/lib/api'
+import { clearAuth, getCurrentUserEmail, getCurrentUserName, getCurrentUserPhotoUrl, getToken, setCurrentUserName, setCurrentUserPhotoUrl } from '@/lib/auth'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@/lib/passwordPolicy'
 import { SETTINGS_ACTIONS_CLASS, SETTINGS_BTN_PRIMARY_CLASS, SETTINGS_BTN_SECONDARY_CLASS, SETTINGS_CARD_CLASS, SETTINGS_INPUT_CLASS, SETTINGS_INPUT_READONLY_CLASS, SETTINGS_LABEL_CLASS } from '@/lib/settingsFormStyles'
 
 const PROFILE_DRAFT_KEY = 'cmr_profile_draft'
@@ -41,6 +43,7 @@ function getSaveErrorMessage(err: unknown): string {
 }
 
 export function SettingsProfilePage() {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +54,7 @@ export function SettingsProfilePage() {
   const [jobTitle, setJobTitle] = useState('')
   const [profilePhotoUrlState, setProfilePhotoUrlState] = useState<string | null>(null)
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
+  const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | null>(null)
   const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -113,6 +117,33 @@ export function SettingsProfilePage() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    if (!profilePhotoUrlState) {
+      setRemotePhotoUrl(null)
+      return
+    }
+    const href = profilePhotoUrl(profilePhotoUrlState)
+    if (!href) return
+    fetchAuthenticatedBlobUrl(href)
+      .then((url) => {
+        if (cancelled) {
+          if (url) URL.revokeObjectURL(url)
+          return
+        }
+        objectUrl = url
+        setRemotePhotoUrl(url)
+      })
+      .catch(() => {
+        if (!cancelled) setRemotePhotoUrl(null)
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [profilePhotoUrlState])
 
   const handleSave = async () => {
     const token = getToken()
@@ -257,8 +288,9 @@ export function SettingsProfilePage() {
       setPwErr('Enter the verification code.')
       return
     }
-    if (!pwNew || pwNew.length < 8) {
-      setPwErr('New password must be at least 8 characters.')
+    const policyError = validatePassword(pwNew, email)
+    if (policyError) {
+      setPwErr(policyError)
       return
     }
     if (pwNew !== pwConfirm) {
@@ -268,11 +300,11 @@ export function SettingsProfilePage() {
     setPwBusy(true)
     try {
       const resp = await confirmPasswordChange(token, { code, new_password: pwNew })
-      setPwMsg(resp.detail || 'Password updated.')
-      setPwStep('request')
-      setPwCode('')
-      setPwNew('')
-      setPwConfirm('')
+      setPwMsg(`${resp.detail || 'Password updated.'} Sign in again on this device.`)
+      setTimeout(() => {
+        clearAuth()
+        navigate('/signin', { replace: true })
+      }, 1200)
     } catch (err) {
       setPwErr(err instanceof Error ? err.message : 'Failed to change password')
     } finally {
@@ -323,9 +355,9 @@ export function SettingsProfilePage() {
                     alt="Profile preview"
                     className="h-full w-full object-cover"
                   />
-                ) : profilePhotoUrlState ? (
+                ) : remotePhotoUrl ? (
                   <img
-                    src={profilePhotoUrl(profilePhotoUrlState) ?? ''}
+                    src={remotePhotoUrl}
                     alt="Profile"
                     className="h-full w-full object-cover"
                   />
@@ -339,7 +371,7 @@ export function SettingsProfilePage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
                   className="hidden"
                   onChange={handlePhotoChange}
                 />
@@ -402,14 +434,9 @@ export function SettingsProfilePage() {
             >
               Change password
             </button>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-app-secondary">Two-factor authentication</span>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input type="checkbox" className="peer sr-only" />
-              <span className="h-4 w-8 rounded-full bg-app-fill-strong peer-checked:bg-emerald-500" />
-              <span className="absolute left-0.5 h-3 w-3 rounded-full bg-app-surface shadow peer-checked:translate-x-4" />
-            </label>
-            </div>
+            <Link to="/settings/security" className="w-fit text-xs font-medium text-app-accent hover:underline">
+              Manage two-factor authentication and sessions
+            </Link>
           </div>
         </div>
       </Card>
@@ -488,7 +515,7 @@ export function SettingsProfilePage() {
                       className={SETTINGS_INPUT_CLASS}
                       value={pwNew}
                       onChange={(e) => setPwNew(e.target.value)}
-                      placeholder="At least 8 characters"
+                      placeholder={`At least ${MIN_PASSWORD_LENGTH} characters, with a letter and a number`}
                     />
                   </div>
                   <div>
