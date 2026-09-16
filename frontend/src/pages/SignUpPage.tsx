@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@/lib/passwordPolicy'
 
 function GoogleIcon() {
   return (
@@ -60,8 +61,9 @@ export function SignUpPage() {
       setError('Passwords do not match')
       return
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    const policyError = validatePassword(password, email.trim())
+    if (policyError) {
+      setError(policyError)
       return
     }
     setLoading(true)
@@ -136,7 +138,7 @@ export function SignUpPage() {
               id="signup-password"
               type="password"
               autoComplete="new-password"
-              placeholder="••••••••"
+              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters, with a letter and a number`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

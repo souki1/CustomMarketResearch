@@ -47,7 +47,17 @@ class Settings(BaseSettings):
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     secret_key: str = Field(default="", validation_alias="SECRET_KEY")
     algorithm: str = Field(default="", validation_alias="ALGORITHM")
-    access_token_expire_minutes: int = Field(default=0, validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    access_token_expire_minutes: int = Field(default=480, validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    refresh_token_expire_days: int = Field(default=7, ge=1, le=30, validation_alias="REFRESH_TOKEN_EXPIRE_DAYS")
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
+    trust_proxy: bool = Field(default=False, validation_alias="TRUST_PROXY")
+    trusted_hosts: str = Field(default="", validation_alias="TRUSTED_HOSTS")
+    enable_docs: bool = Field(default=True, validation_alias="ENABLE_DOCS")
+    max_request_bytes: int = Field(default=30 * 1024 * 1024, validation_alias="MAX_REQUEST_BYTES")
+    max_login_attempts: int = Field(default=5, ge=3, le=20, validation_alias="MAX_LOGIN_ATTEMPTS")
+    lockout_minutes: int = Field(default=15, ge=1, le=1440, validation_alias="LOCKOUT_MINUTES")
+    auth_rate_limit_per_minute: int = Field(default=10, ge=0, le=1000, validation_alias="AUTH_RATE_LIMIT_PER_MINUTE")
+    api_rate_limit_per_minute: int = Field(default=120, ge=0, le=10000, validation_alias="API_RATE_LIMIT_PER_MINUTE")
     google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", validation_alias="GOOGLE_CLIENT_SECRET")
     frontend_url: str = Field(default="", validation_alias="FRONTEND_URL")
@@ -99,6 +109,34 @@ class Settings(BaseSettings):
 
     # Development helper: include OTP in API response (do NOT enable in production)
     dev_return_otp: bool = Field(default=False, validation_alias="DEV_RETURN_OTP")
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in {"production", "prod"}
+
+
+WEAK_SECRET_KEYS = {
+    "",
+    "changeme",
+    "secret",
+    "your-secret-key-change-in-production",
+    "dev-secret-change-me",
+}
+
+
+def assert_secure_runtime(settings: Settings) -> None:
+    """Refuse to boot production with weak secrets or OTP leakage enabled."""
+    if not settings.is_production:
+        return
+    secret = (settings.secret_key or "").strip()
+    if secret in WEAK_SECRET_KEYS or len(secret) < 32:
+        raise RuntimeError(
+            "Refusing to start: SECRET_KEY must be a random string of at least 32 characters in production."
+        )
+    if settings.dev_return_otp:
+        raise RuntimeError("Refusing to start: DEV_RETURN_OTP must be false in production.")
+    if not settings.frontend_url.startswith("https://"):
+        raise RuntimeError("Refusing to start: FRONTEND_URL must be https in production.")
 
 
 @lru_cache

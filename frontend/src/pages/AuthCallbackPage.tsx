@@ -1,39 +1,51 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserEmail, setCurrentUserName, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
-import { getMe } from '@/lib/api'
+import { setCurrentUserEmail, setCurrentUserName, setCurrentUserPhotoUrl } from '@/lib/auth'
+import { exchangeGoogleCode, getMe } from '@/lib/api'
 
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const token = searchParams.get('token')
-  const displayName = searchParams.get('display_name')
-  const email = searchParams.get('email')
+  const code = searchParams.get('code')
   const error = searchParams.get('error')
+  const [status, setStatus] = useState('Signing you in...')
 
   useEffect(() => {
-    if (error) {
-      navigate('/signin?error=' + encodeURIComponent(error), { replace: true })
-      return
+    let cancelled = false
+    async function finish() {
+      if (error) {
+        navigate('/signin?error=' + encodeURIComponent(error), { replace: true })
+        return
+      }
+      if (!code) {
+        navigate('/signin?error=missing_code', { replace: true })
+        return
+      }
+      try {
+        const res = await exchangeGoogleCode(code)
+        if (cancelled) return
+        if (res.display_name) setCurrentUserName(res.display_name)
+        const me = await getMe(res.access_token)
+        if (cancelled) return
+        if (me.email) setCurrentUserEmail(me.email)
+        setCurrentUserPhotoUrl(me.profile_photo_url ?? null)
+        navigate('/', { replace: true })
+      } catch {
+        if (!cancelled) {
+          setStatus('Sign-in failed')
+          navigate('/signin?error=google_denied', { replace: true })
+        }
+      }
     }
-    if (token) {
-      // Bind workspace owner before token so scoped storage keys never read another user's cache.
-      if (email) setCurrentUserEmail(email)
-      if (displayName) setCurrentUserName(displayName)
-      setToken(token)
-      // Fetch profile photo after login so navbar can show it immediately
-      getMe(token)
-        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
-        .catch(() => {
-          // ignore (navbar will fall back to letter avatar)
-        })
+    void finish()
+    return () => {
+      cancelled = true
     }
-    navigate('/', { replace: true })
-  }, [token, displayName, email, error, navigate])
+  }, [code, error, navigate])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-app-bg text-[13px] text-app-secondary">
-      Signing you in...
+      {status}
     </div>
   )
 }

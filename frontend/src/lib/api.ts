@@ -1,4 +1,4 @@
-import { getToken } from './auth'
+import { clearAuth, getRefreshToken, getToken, setRefreshToken, setToken } from './auth'
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
@@ -10,7 +10,15 @@ function bearerAuthHeader(): Record<string, string> {
 
 export type SignUpPayload = { email: string; password: string; display_name?: string }
 export type SignInPayload = { email: string; password: string }
-export type AuthResponse = { access_token: string; token_type: string; display_name: string }
+export type AuthResponse = {
+  access_token: string
+  token_type: string
+  display_name: string
+  refresh_token?: string | null
+  expires_in?: number | null
+  mfa_required?: boolean
+  mfa_token?: string | null
+}
 
 export type WorkspaceItem = {
   id: number
@@ -25,6 +33,56 @@ export type WorkspaceItem = {
   report_id?: number | null
 }
 
+const AUTH_NO_REFRESH_PREFIXES = [
+  '/auth/signin',
+  '/auth/signup',
+  '/auth/refresh',
+  '/auth/google/exchange',
+  '/auth/signin/mfa',
+]
+
+let refreshInFlight: Promise<boolean> | null = null
+
+function persistTokens(res: Pick<AuthResponse, 'access_token' | 'refresh_token'>) {
+  if (res.access_token) setToken(res.access_token)
+  if (res.refresh_token) setRefreshToken(res.refresh_token)
+}
+
+async function tryRefreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = (async () => {
+    const refreshToken = getRefreshToken()
+    if (!refreshToken) return false
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+      if (!res.ok) {
+        clearAuth()
+        return false
+      }
+      const data = (await res.json()) as AuthResponse
+      persistTokens(data)
+      return Boolean(data.access_token)
+    } catch {
+      return false
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+  return refreshInFlight
+}
+
+function errorMessageFromBody(err: { detail?: unknown }, fallback: string): string {
+  if (Array.isArray(err.detail)) {
+    const first = err.detail[0] as { msg?: string } | undefined
+    return first?.msg ?? fallback
+  }
+  return typeof err.detail === 'string' ? err.detail : fallback
+}
+
 async function request<T>(
   path: string,
   options: RequestInit & { token?: string } = {}
@@ -37,20 +95,69 @@ async function request<T>(
   }
   void _ignoredExplicitToken
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  if (res.status === 401 && !AUTH_NO_REFRESH_PREFIXES.some((p) => path.startsWith(p))) {
+    const ok = await tryRefreshAccessToken()
+    if (ok) {
+      const retryHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string>),
+        ...bearerAuthHeader(),
+      }
+      const retry = await fetch(`${API_BASE}${path}`, { ...init, headers: retryHeaders })
+      if (!retry.ok) {
+        const err = await retry.json().catch(() => ({ detail: retry.statusText }))
+        throw new Error(errorMessageFromBody(err, 'Request failed'))
+      }
+      if (retry.status === 204) return undefined as T
+      return retry.json()
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
-    throw new Error(typeof msg === 'string' ? msg : 'Request failed')
+    throw new Error(errorMessageFromBody(err, 'Request failed'))
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
 export async function signUp(payload: SignUpPayload): Promise<AuthResponse> {
-  return request<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(payload) })
+  const res = await request<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(payload) })
+  persistTokens(res)
+  return res
 }
 
 export async function signIn(payload: SignInPayload): Promise<AuthResponse> {
-  return request<AuthResponse>('/auth/signin', { method: 'POST', body: JSON.stringify(payload) })
+  const res = await request<AuthResponse>('/auth/signin', { method: 'POST', body: JSON.stringify(payload) })
+  if (!res.mfa_required) persistTokens(res)
+  return res
+}
+
+export async function signInMfa(payload: { mfa_token: string; code: string }): Promise<AuthResponse> {
+  const res = await request<AuthResponse>('/auth/signin/mfa', { method: 'POST', body: JSON.stringify(payload) })
+  persistTokens(res)
+  return res
+}
+
+export async function exchangeGoogleCode(code: string): Promise<AuthResponse> {
+  const res = await request<AuthResponse>('/auth/google/exchange', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+  persistTokens(res)
+  return res
+}
+
+export async function logoutCurrentSession(): Promise<void> {
+  const refresh = getRefreshToken()
+  try {
+    await request<{ detail: string }>('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refresh }),
+    })
+  } catch {
+    // still clear local state
+  }
+  clearAuth()
 }
 
 export type MeResponse = {
@@ -60,6 +167,8 @@ export type MeResponse = {
   phone: string | null
   job_title: string | null
   profile_photo_url: string | null
+  totp_enabled?: boolean
+  last_login_at?: string | null
 }
 
 export async function getMe(token: string): Promise<MeResponse> {
@@ -82,6 +191,14 @@ export function profilePhotoUrl(url: string | null | undefined): string | null {
   const base = API_BASE.replace(/\/$/, '')
   const path = url.startsWith('/') ? url : `/${url}`
   return `${base}${path}`
+}
+
+export async function fetchAuthenticatedBlobUrl(pathOrUrl: string): Promise<string | null> {
+  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`
+  const res = await fetch(url, { headers: bearerAuthHeader() })
+  if (!res.ok) return null
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
 }
 
 export async function uploadProfilePhoto(file: File, token: string): Promise<MeResponse> {
@@ -125,6 +242,63 @@ export async function confirmPasswordChange(
     method: 'POST',
     body: JSON.stringify(payload),
     token,
+  })
+}
+
+export type AuthSessionInfo = {
+  id: number
+  current: boolean
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  ip_address: string | null
+  user_agent: string | null
+}
+
+export async function listAuthSessions(): Promise<AuthSessionInfo[]> {
+  return request<AuthSessionInfo[]>('/auth/sessions')
+}
+
+export async function revokeAuthSession(sessionId: number): Promise<void> {
+  await request<{ detail: string }>(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+export async function revokeAllOtherSessions(): Promise<void> {
+  await request<{ detail: string }>('/auth/logout-all', { method: 'POST' })
+}
+
+export type MfaSetupResponse = {
+  otpauth_url: string
+  qr_data_uri: string
+  secret: string
+}
+
+export async function setupMfa(): Promise<MfaSetupResponse> {
+  return request<MfaSetupResponse>('/auth/mfa/setup', { method: 'POST' })
+}
+
+export async function confirmMfa(code: string): Promise<{ backup_codes: string[]; detail: string }> {
+  return request<{ backup_codes: string[]; detail: string }>('/auth/mfa/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
+export async function disableMfa(code: string): Promise<void> {
+  await request<{ detail: string }>('/auth/mfa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
+export async function deleteAccount(payload: {
+  email: string
+  password?: string
+  totp_code?: string
+}): Promise<void> {
+  await request<{ detail: string }>('/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
   })
 }
 

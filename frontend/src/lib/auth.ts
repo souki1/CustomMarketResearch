@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 const STORAGE_KEY = 'cmr_display_name'
 const EMAIL_KEY = 'cmr_email'
 const TOKEN_KEY = 'cmr_token'
+const REFRESH_TOKEN_KEY = 'cmr_refresh_token'
 const PHOTO_URL_KEY = 'cmr_profile_photo_url'
 const WORKSPACE_OWNER_KEY = 'cmr_workspace_owner'
 
@@ -220,6 +221,23 @@ export function getToken(): string | null {
   }
 }
 
+export function setRefreshToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(REFRESH_TOKEN_KEY, token)
+    else localStorage.removeItem(REFRESH_TOKEN_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export function getRefreshToken(): string | null {
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
 export function clearAuth() {
   try {
     const email = getCurrentUserEmail()
@@ -237,6 +255,7 @@ export function clearAuth() {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(EMAIL_KEY)
     localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(PHOTO_URL_KEY)
     localStorage.removeItem(WORKSPACE_OWNER_KEY)
     emitWorkspaceReset()

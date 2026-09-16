@@ -1,5 +1,17 @@
+.env
 .env.development
+backend/.env
 backend/.env.development
+
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pem
+*.key
+
+# Python virtualenvs
+.venv/
+backend/.venv/
 
 **/__pycache__/
 *.py[cod]

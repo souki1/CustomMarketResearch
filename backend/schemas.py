@@ -1,25 +1,69 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Literal
+
+from security.password_policy import MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH, validate_password
 
 
 class SignUpBody(BaseModel):
     email: EmailStr
-    password: str
-    display_name: str | None = None
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    display_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def _password_policy(cls, value: str, info):
+        email = None
+        if info.data:
+            email = info.data.get("email")
+        err = validate_password(value, email if isinstance(email, str) else None)
+        if err:
+            raise ValueError(err)
+        return value
 
 
 class SignInBody(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class MfaSignInBody(BaseModel):
+    mfa_token: str = Field(..., min_length=10, max_length=4096)
+    code: str = Field(..., min_length=6, max_length=16)
+
+
+class RefreshTokenBody(BaseModel):
+    refresh_token: str = Field(..., min_length=10, max_length=4096)
+
+
+class GoogleExchangeBody(BaseModel):
+    code: str = Field(..., min_length=16, max_length=256)
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str = ""
     token_type: str = "bearer"
-    display_name: str
+    display_name: str = ""
+    refresh_token: str | None = None
+    expires_in: int | None = None
+    mfa_required: bool = False
+    mfa_token: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -29,15 +73,17 @@ class UserResponse(BaseModel):
     phone: str | None = None
     job_title: str | None = None
     profile_photo_url: str | None = None
+    totp_enabled: bool = False
+    last_login_at: datetime | None = None
 
     class Config:
         from_attributes = True
 
 
 class UpdateProfileBody(BaseModel):
-    display_name: str | None = None
-    phone: str | None = None
-    job_title: str | None = None
+    display_name: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+    job_title: str | None = Field(default=None, max_length=255)
 
 
 class PasswordChangeRequestBody(BaseModel):
@@ -51,11 +97,62 @@ class PasswordChangeRequestResponse(BaseModel):
 
 
 class PasswordChangeConfirmBody(BaseModel):
-    code: str
-    new_password: str
+    code: str = Field(..., min_length=4, max_length=12)
+    new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        err = validate_password(value)
+        if err:
+            raise ValueError(err)
+        return value
 
 
 class PasswordChangeConfirmResponse(BaseModel):
+    detail: str
+
+
+class MfaSetupResponse(BaseModel):
+    otpauth_url: str
+    qr_data_uri: str
+    secret: str
+
+
+class MfaConfirmBody(BaseModel):
+    code: str = Field(..., min_length=6, max_length=16)
+
+
+class MfaDisableBody(BaseModel):
+    code: str = Field(..., min_length=6, max_length=16)
+
+
+class MfaBackupCodesResponse(BaseModel):
+    backup_codes: list[str]
+    detail: str
+
+
+class SessionResponse(BaseModel):
+    id: int
+    current: bool
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    ip_address: str | None = None
+    user_agent: str | None = None
+
+
+class LogoutBody(BaseModel):
+    refresh_token: str | None = None
+
+
+class DeleteAccountBody(BaseModel):
+    email: EmailStr
+    password: str | None = None
+    totp_code: str | None = Field(default=None, max_length=16)
+
+
+class MessageResponse(BaseModel):
     detail: str
 
 
@@ -71,7 +168,7 @@ class WorkspaceItemBase(BaseModel):
 
 
 class WorkspaceItemCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)
     is_folder: bool = False
     parent_id: int | None = None
 
@@ -91,12 +188,12 @@ class WorkspaceItemResponse(WorkspaceItemBase):
 class DataSheetSelectionCreate(BaseModel):
     """Payload to store selected table headers and row data in MongoDB."""
 
-    headers: list[str]
-    rows: list[list[str]]
-    row_indices: list[int] | None = None
-    sheet_name: str | None = None
+    headers: list[str] = Field(..., max_length=200)
+    rows: list[list[str]] = Field(..., max_length=5000)
+    row_indices: list[int] | None = Field(default=None, max_length=5000)
+    sheet_name: str | None = Field(default=None, max_length=255)
     file_id: int | None = None
-    tab_id: str | None = None
+    tab_id: str | None = Field(default=None, max_length=128)
 
 
 class DataSheetSelectionResponse(BaseModel):
@@ -279,16 +376,16 @@ class AiSessionMessagesResponse(BaseModel):
 
 
 class CompareStateUpsert(BaseModel):
-    compare_tabs: list[dict[str, Any]] = Field(default_factory=list)
-    active_compare_tab_id: str | None = None
+    compare_tabs: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    active_compare_tab_id: str | None = Field(default=None, max_length=128)
     compare_mode: Literal["same-part", "different-same-vendor", "different-different-vendors"] = "different-different-vendors"
-    scraped_vendor_filter: str = "all"
+    scraped_vendor_filter: str = Field(default="all", max_length=200)
     scraped_view_mode: Literal["row", "column"] = "row"
-    scraped_selected_fields: list[str] = Field(default_factory=list)
-    scraped_value_search: str = ""
+    scraped_selected_fields: list[str] = Field(default_factory=list, max_length=200)
+    scraped_value_search: str = Field(default="", max_length=500)
     scraped_non_empty_only: bool = False
     scraped_data_by_part: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
-    scraped_data: list[dict[str, Any]] = Field(default_factory=list)
+    scraped_data: list[dict[str, Any]] = Field(default_factory=list, max_length=2000)
 
 
 class CompareStateResponse(CompareStateUpsert):
@@ -300,7 +397,7 @@ class CompareStateResponse(CompareStateUpsert):
 class ResearchStateUpsert(BaseModel):
     """Cross-browser Research page session (file-backed open tabs + UI chrome)."""
 
-    open_tabs: list[dict[str, Any]] = Field(default_factory=list)
+    open_tabs: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
     active_file_id: int | None = None
     page_state: dict[str, Any] = Field(default_factory=dict)
 
@@ -334,12 +431,12 @@ class ResearchJobResponse(BaseModel):
 
 class ReportCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
-    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    blocks: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
 
 
 class ReportUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
-    blocks: list[dict[str, Any]] | None = None
+    blocks: list[dict[str, Any]] | None = Field(default=None, max_length=500)
 
 
 class ReportResponse(BaseModel):

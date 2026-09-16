@@ -5,43 +5,39 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import decode_access_token
-from config import get_settings
-from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
 from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
 from reports.docx_import import create_linked_report_from_docx
+from security.deps import get_current_user
+from security.files import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    extension_of,
+    sniff_csv_safe,
+    sniff_docx,
+    sniff_image_type,
+)
 from workspace_reports_folder import get_or_create_reports_folder_id
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
-settings = get_settings()
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = _BACKEND_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-async def get_current_user(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth[7:]
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+async def assert_owned_parent(
+    mongo_db: AsyncIOMotorDatabase,
+    user_id: int,
+    parent_id: int | None,
+) -> None:
+    if parent_id is None:
+        return
+    parent = await mongo_db["workspace_items"].find_one({"id": parent_id, "owner_id": user_id})
+    if not parent or not parent.get("is_folder"):
+        raise HTTPException(status_code=400, detail="Target folder not found")
 
 
 @router.get("/items", response_model=list[WorkspaceItemResponse])
@@ -94,6 +90,7 @@ async def create_folder(
         raise HTTPException(status_code=400, detail="Name is required")
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    await assert_owned_parent(mongo_db, user.id, payload.parent_id)
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "workspace_items")
@@ -133,6 +130,7 @@ async def create_file(
         raise HTTPException(status_code=400, detail="Name is required")
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    await assert_owned_parent(mongo_db, user.id, payload.parent_id)
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "workspace_items")
@@ -171,18 +169,21 @@ async def upload_csv(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is required")
-    suffix = Path(file.filename).suffix.lower()
+    suffix = extension_of(file.filename)
     if suffix not in {".csv"}:
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    if not sniff_csv_safe(content):
+        raise HTTPException(status_code=400, detail="File is not a valid CSV")
 
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    await assert_owned_parent(mongo_db, user.id, parent_id)
 
-    safe_name = Path(file.filename).name
+    safe_name = Path(file.filename).name[:255]
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "workspace_items")
@@ -223,17 +224,6 @@ async def upload_csv(
     )
 
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
-IMAGE_CONTENT_TYPES = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-}
-
-
 @router.post("/upload-image", response_model=WorkspaceItemResponse, status_code=201)
 async def upload_image(
     file: UploadFile = File(...),
@@ -243,22 +233,25 @@ async def upload_image(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is required")
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in IMAGE_SUFFIXES:
+    suffix = extension_of(file.filename)
+    if suffix not in ALLOWED_IMAGE_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Only image files are supported (.jpg, .jpeg, .png, .gif, .webp, .svg)",
+            detail="Only image files are supported (.jpg, .jpeg, .png, .gif, .webp)",
         )
 
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+    content_type = sniff_image_type(content)
+    if not content_type:
+        raise HTTPException(status_code=400, detail="File is not a valid image")
 
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
+    await assert_owned_parent(mongo_db, user.id, parent_id)
 
-    safe_name = Path(file.filename).name
-    content_type = IMAGE_CONTENT_TYPES.get(suffix) or file.content_type or "image/jpeg"
+    safe_name = Path(file.filename).name[:255]
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "workspace_items")
@@ -308,11 +301,13 @@ async def upload_docx(
     """Upload a Word document into the Reports folder and create an editable report."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is required")
-    suffix = Path(file.filename).suffix.lower()
+    suffix = extension_of(file.filename)
     if suffix != ".docx":
         raise HTTPException(status_code=400, detail="Only .docx Word files are supported")
 
     content = await file.read()
+    if not sniff_docx(content):
+        raise HTTPException(status_code=400, detail="File is not a valid Word document")
     if len(content) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Document too large (max 25MB)")
 
@@ -410,7 +405,18 @@ async def get_item_media(
     content = doc["content"]
     if isinstance(content, str):
         content = content.encode("utf-8")
-    return Response(content=content, media_type=content_type)
+    if content_type == "image/svg+xml":
+        raise HTTPException(status_code=400, detail="This file type is no longer supported")
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": "inline" if is_image else "attachment",
+            "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'none'",
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -434,7 +440,7 @@ async def delete_item(
         )
     # If folder, check it has no children
     if item["is_folder"]:
-        child = await mongo_db["workspace_items"].find_one({"parent_id": item_id})
+        child = await mongo_db["workspace_items"].find_one({"parent_id": item_id, "owner_id": user.id})
         if child is not None:
             raise HTTPException(
                 status_code=400,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
-import { getGoogleLoginUrl, getMe, signIn } from '@/lib/api'
+import { getGoogleLoginUrl, getMe, signIn, signInMfa } from '@/lib/api'
 
 function GoogleIcon() {
   return (
@@ -35,13 +35,16 @@ function EnvelopeIcon() {
 }
 
 export function SignInPage() {
-  const [step, setStep] = useState<'email' | 'password'>('email')
+  const [step, setStep] = useState<'email' | 'password' | 'mfa'>('email')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaToken, setMfaToken] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const nextPath = searchParams.get('next') || '/'
 
   useEffect(() => {
     document.title = 'Sign in — Intelligent Research'
@@ -49,7 +52,10 @@ export function SignInPage() {
 
   useEffect(() => {
     const err = searchParams.get('error')
-    if (err) setError(err === 'google_denied' ? 'Google sign-in was cancelled or failed.' : 'Something went wrong.')
+    if (err === 'google_denied') setError('Google sign-in was cancelled or failed.')
+    else if (err === 'unverified_email') setError('Your Google email is not verified.')
+    else if (err === 'account_disabled') setError('This account has been disabled.')
+    else if (err) setError('Something went wrong.')
   }, [searchParams])
 
   function handleGoogleSignIn() {
@@ -62,25 +68,49 @@ export function SignInPage() {
     if (email.trim()) setStep('password')
   }
 
+  async function finishLogin(accessToken: string, displayName: string) {
+    setCurrentUserEmail(email.trim())
+    setCurrentUserName(displayName)
+    setToken(accessToken)
+    getMe(accessToken)
+      .then((me) => {
+        if (me.email) setCurrentUserEmail(me.email)
+        setCurrentUserPhotoUrl(me.profile_photo_url ?? null)
+      })
+      .catch(() => {
+        // ignore
+      })
+    navigate(nextPath.startsWith('/') ? nextPath : '/', { replace: true })
+  }
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
       const res = await signIn({ email: email.trim(), password })
-      // Bind workspace owner before token so scoped storage keys never read another user's cache.
-      setCurrentUserEmail(email.trim())
-      setCurrentUserName(res.display_name)
-      setToken(res.access_token)
-      // Fetch profile photo right after login so navbar can show it
-      getMe(res.access_token)
-        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
-        .catch(() => {
-          // ignore
-        })
-      navigate('/')
+      if (res.mfa_required && res.mfa_token) {
+        setMfaToken(res.mfa_token)
+        setStep('mfa')
+        return
+      }
+      await finishLogin(res.access_token, res.display_name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleMfa(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await signInMfa({ mfa_token: mfaToken, code: mfaCode.trim() })
+      await finishLogin(res.access_token, res.display_name)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed')
     } finally {
       setLoading(false)
     }
@@ -95,7 +125,9 @@ export function SignInPage() {
         <p className="mb-6 text-[13px] text-app-secondary">
           {step === 'email'
             ? 'Sign in to continue researching parts and vendors.'
-            : 'Enter your password to sign in.'}
+            : step === 'mfa'
+              ? 'Enter the 6-digit code from your authenticator app.'
+              : 'Enter your password to sign in.'}
         </p>
 
         {error && (
@@ -151,6 +183,31 @@ export function SignInPage() {
               </button>
             </form>
           </>
+        ) : step === 'mfa' ? (
+          <form className="space-y-5" onSubmit={handleMfa}>
+            <div className="space-y-2">
+              <label htmlFor="signin-mfa" className="block text-sm font-medium text-app-secondary">
+                Authenticator code
+              </label>
+              <input
+                id="signin-mfa"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-transparent transition-colors"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-[10px] bg-app-accent px-5 py-2.5 font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Verifying...' : 'Verify and sign in'}
+            </button>
+          </form>
         ) : (
           <form className="space-y-5" onSubmit={handleSignIn}>
             <div className="space-y-2">

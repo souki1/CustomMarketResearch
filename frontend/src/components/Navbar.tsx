@@ -20,9 +20,8 @@ import {
   getCurrentUserName,
   getCurrentUserEmail,
   getCurrentUserPhotoUrl,
-  clearAuth,
 } from '@/lib/auth'
-import { profilePhotoUrl } from '@/lib/api'
+import { fetchAuthenticatedBlobUrl, logoutCurrentSession, profilePhotoUrl } from '@/lib/api'
 import { BUCKET_PATH } from '@/lib/paths'
 import { useBucket } from '@/contexts/BucketContext'
 
@@ -57,10 +56,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const [helpOpen, setHelpOpen] = useState(false)
   const [displayName, setDisplayName] = useState(() => getCurrentUserName() ?? 'User')
   const [userEmail, setUserEmail] = useState(() => getCurrentUserEmail())
-  const [profilePhotoFullUrl, setProfilePhotoFullUrl] = useState<string | null>(() => {
-    const path = getCurrentUserPhotoUrl()
-    return path ? profilePhotoUrl(path) : null
-  })
+  const [profilePhotoFullUrl, setProfilePhotoFullUrl] = useState<string | null>(null)
   const [showCommandTip, setShowCommandTip] = useState(() => {
     try {
       return !localStorage.getItem(TIP_SEEN_KEY)
@@ -80,17 +76,38 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
   const initials = displayName.trim().charAt(0).toUpperCase() || 'U'
 
   useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+
     const syncFromStorage = () => {
       setDisplayName(getCurrentUserName() ?? 'User')
       setUserEmail(getCurrentUserEmail())
       const path = getCurrentUserPhotoUrl()
-      setProfilePhotoFullUrl(path ? profilePhotoUrl(path) : null)
+      if (!path) {
+        setProfilePhotoFullUrl(null)
+        return
+      }
+      fetchAuthenticatedBlobUrl(profilePhotoUrl(path) ?? path)
+        .then((url) => {
+          if (cancelled) {
+            if (url) URL.revokeObjectURL(url)
+            return
+          }
+          if (objectUrl) URL.revokeObjectURL(objectUrl)
+          objectUrl = url
+          setProfilePhotoFullUrl(url)
+        })
+        .catch(() => {
+          if (!cancelled) setProfilePhotoFullUrl(null)
+        })
     }
 
     syncFromStorage()
     window.addEventListener(AUTH_CHANGED_EVENT, syncFromStorage as EventListener)
     window.addEventListener('storage', syncFromStorage)
     return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
       window.removeEventListener(AUTH_CHANGED_EVENT, syncFromStorage as EventListener)
       window.removeEventListener('storage', syncFromStorage)
     }
@@ -166,9 +183,9 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     setMenuAnimated(false)
   }, [dropdownOpen])
 
-  function handleSignOut() {
-    clearAuth()
+  async function handleSignOut() {
     setDropdownOpen(false)
+    await logoutCurrentSession()
     navigate('/signin')
   }
 
