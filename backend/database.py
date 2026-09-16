@@ -60,7 +60,12 @@ async def get_db() -> AsyncSession:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception as exc:
+            # Keep 4xx mutations (lockout counters, OTP attempts) so they survive the error.
+            status = getattr(exc, "status_code", None)
+            if isinstance(status, int) and 400 <= status < 500:
+                await session.commit()
+                raise
             await session.rollback()
             raise
         finally:

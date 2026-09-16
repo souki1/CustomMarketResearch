@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from typing import Any
+import secrets
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -25,27 +26,33 @@ def _encode(payload: dict[str, Any]) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=algo)
 
 
+def _base_claims(sub: str | int, token_type: str, expire: datetime, extra: dict[str, Any] | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "sub": str(sub),
+        "exp": expire,
+        "typ": token_type,
+        "jti": secrets.token_urlsafe(12),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 def create_access_token(sub: str | int, extra: dict[str, Any] | None = None) -> str:
     minutes = settings.access_token_expire_minutes or DEFAULT_ACCESS_MINUTES
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    payload: dict[str, Any] = {"sub": str(sub), "exp": expire, "typ": "access"}
-    if extra:
-        payload.update(extra)
-    return _encode(payload)
+    return _encode(_base_claims(sub, "access", expire, extra))
 
 
 def create_refresh_token(sub: str | int, extra: dict[str, Any] | None = None) -> str:
     days = settings.refresh_token_expire_days or 7
     expire = datetime.now(timezone.utc) + timedelta(days=days)
-    payload: dict[str, Any] = {"sub": str(sub), "exp": expire, "typ": "refresh"}
-    if extra:
-        payload.update(extra)
-    return _encode(payload)
+    return _encode(_base_claims(sub, "refresh", expire, extra))
 
 
 def create_mfa_token(sub: str | int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=5)
-    return _encode({"sub": str(sub), "exp": expire, "typ": "mfa"})
+    return _encode(_base_claims(sub, "mfa", expire, None))
 
 
 def decode_access_token(token: str) -> dict | None:
