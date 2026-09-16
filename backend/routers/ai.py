@@ -9,7 +9,7 @@ from config import get_settings
 from data.groq_client import groq_assistant_chat
 from models import User
 from mongo import get_mongo_db, get_next_sequence
-from routers.auth import get_current_user
+from deps import get_current_user
 from schemas import (
     AiChatHistoryMessage,
     AiChatRequest,

@@ -100,6 +100,21 @@ class Settings(BaseSettings):
     # Development helper: include OTP in API response (do NOT enable in production)
     dev_return_otp: bool = Field(default=False, validation_alias="DEV_RETURN_OTP")
 
+    # "development" | "production" — production disables docs and enforces SECRET_KEY strength
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
+    # Comma-separated hosts for TrustedHostMiddleware; empty skips the middleware (local dev)
+    allowed_hosts: str = Field(default="", validation_alias="ALLOWED_HOSTS")
+    # Force OpenAPI docs even in production (keep false unless debugging)
+    enable_docs: bool = Field(default=False, validation_alias="ENABLE_DOCS")
+
+    @property
+    def is_production(self) -> bool:
+        return (self.environment or "").strip().lower() == "production"
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        return [part.strip() for part in _ORIGIN_SPLIT.split(self.allowed_hosts or "") if part.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

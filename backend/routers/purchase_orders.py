@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from mongo import get_mongo_db, get_next_sequence
-from routers.auth import get_current_user
+from deps import get_current_user
 from models import User
 from schemas import PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate
 

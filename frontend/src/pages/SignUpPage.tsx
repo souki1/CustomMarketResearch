@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
+import { passwordPolicyError, passwordStrengthLabel } from '@/lib/passwordPolicy'
 
 function GoogleIcon() {
   return (
@@ -60,16 +61,22 @@ export function SignUpPage() {
       setError('Passwords do not match')
       return
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    const policyError = passwordPolicyError(password, email.trim())
+    if (policyError) {
+      setError(policyError)
       return
     }
     setLoading(true)
     try {
       const res = await signUp({ email: email.trim(), password })
-      setCurrentUserEmail(email.trim())
+      const nextEmail = (res.email || email).trim()
+      if (nextEmail) setCurrentUserEmail(nextEmail)
       setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
       setCurrentUserPhotoUrl(null)
+      if (!res.access_token) {
+        setError('Sign up failed')
+        return
+      }
       setToken(res.access_token)
       navigate('/')
     } catch (err) {
@@ -136,12 +143,15 @@ export function SignUpPage() {
               id="signup-password"
               type="password"
               autoComplete="new-password"
-              placeholder="••••••••"
+              placeholder="At least 8 characters, include a letter and a number"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-app-accent transition-colors"
             />
+            {password.length > 0 && (
+              <p className="text-xs text-app-secondary">Strength: {passwordStrengthLabel(password)}</p>
+            )}
           </div>
           <div className="space-y-2">
             <label htmlFor="signup-confirm" className="block text-sm font-medium text-app-secondary">

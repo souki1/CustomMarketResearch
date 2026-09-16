@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card } from '@/components'
 import { confirmPasswordChange, getMe, profilePhotoUrl, requestPasswordChangeCode, updateProfile, uploadProfilePhoto } from '@/lib/api'
 import { getCurrentUserEmail, getCurrentUserName, getCurrentUserPhotoUrl, getToken, setCurrentUserName, setCurrentUserPhotoUrl } from '@/lib/auth'
+import { passwordPolicyError } from '@/lib/passwordPolicy'
 import { SETTINGS_ACTIONS_CLASS, SETTINGS_BTN_PRIMARY_CLASS, SETTINGS_BTN_SECONDARY_CLASS, SETTINGS_CARD_CLASS, SETTINGS_INPUT_CLASS, SETTINGS_INPUT_READONLY_CLASS, SETTINGS_LABEL_CLASS } from '@/lib/settingsFormStyles'
 
 const PROFILE_DRAFT_KEY = 'cmr_profile_draft'
@@ -257,8 +259,9 @@ export function SettingsProfilePage() {
       setPwErr('Enter the verification code.')
       return
     }
-    if (!pwNew || pwNew.length < 8) {
-      setPwErr('New password must be at least 8 characters.')
+    const policyError = passwordPolicyError(pwNew, email)
+    if (policyError) {
+      setPwErr(policyError)
       return
     }
     if (pwNew !== pwConfirm) {
@@ -402,14 +405,12 @@ export function SettingsProfilePage() {
             >
               Change password
             </button>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-app-secondary">Two-factor authentication</span>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input type="checkbox" className="peer sr-only" />
-              <span className="h-4 w-8 rounded-full bg-app-fill-strong peer-checked:bg-emerald-500" />
-              <span className="absolute left-0.5 h-3 w-3 rounded-full bg-app-surface shadow peer-checked:translate-x-4" />
-            </label>
-            </div>
+            <Link
+              to="/settings/security"
+              className="w-fit text-xs font-medium text-app-accent hover:underline"
+            >
+              Manage two-factor authentication
+            </Link>
           </div>
         </div>
       </Card>

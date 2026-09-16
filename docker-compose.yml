@@ -8,7 +8,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: root
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: inteligentresearch
     ports:
       - "5433:5432"
@@ -28,7 +28,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/inteligentresearch
       SECRET_KEY: dev-secret-change-me
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: "10080"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "1440"
       FRONTEND_URL: http://localhost:5173
       DEV_RETURN_OTP: "true"
       # Optional Google OAuth (leave empty for local dev)
