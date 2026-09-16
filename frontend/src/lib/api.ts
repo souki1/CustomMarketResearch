@@ -1,4 +1,4 @@
-import { getToken } from './auth'
+import { clearAuth, getToken } from './auth'
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
@@ -10,7 +10,14 @@ function bearerAuthHeader(): Record<string, string> {
 
 export type SignUpPayload = { email: string; password: string; display_name?: string }
 export type SignInPayload = { email: string; password: string }
-export type AuthResponse = { access_token: string; token_type: string; display_name: string }
+export type AuthResponse = {
+  access_token?: string | null
+  token_type?: string
+  display_name?: string | null
+  email?: string | null
+  requires_2fa?: boolean
+  pending_token?: string | null
+}
 
 export type WorkspaceItem = {
   id: number
@@ -23,6 +30,26 @@ export type WorkspaceItem = {
   last_opened: string | null
   owner_display_name?: string | null
   report_id?: number | null
+}
+
+const AUTH_OPEN_PATHS = [
+  '/auth/signin',
+  '/auth/signup',
+  '/auth/2fa/verify',
+  '/auth/google/exchange',
+]
+
+function shouldIgnoreUnauthorized(path: string): boolean {
+  return AUTH_OPEN_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}?`))
+}
+
+function redirectIfUnauthorized(res: Response, path = '') {
+  if (res.status !== 401 || shouldIgnoreUnauthorized(path)) return
+  clearAuth()
+  if (typeof window === 'undefined') return
+  const here = window.location.pathname
+  if (here.startsWith('/signin') || here.startsWith('/signup') || here.startsWith('/auth/callback')) return
+  window.location.assign('/signin')
 }
 
 async function request<T>(
@@ -38,6 +65,7 @@ async function request<T>(
   void _ignoredExplicitToken
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res, path)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -60,6 +88,8 @@ export type MeResponse = {
   phone: string | null
   job_title: string | null
   profile_photo_url: string | null
+  totp_enabled?: boolean
+  has_password?: boolean
 }
 
 export async function getMe(token: string): Promise<MeResponse> {
@@ -95,6 +125,7 @@ export async function uploadProfilePhoto(file: File, token: string): Promise<MeR
     body: form,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Upload failed'
     throw new Error(msg)
@@ -125,6 +156,195 @@ export async function confirmPasswordChange(
     method: 'POST',
     body: JSON.stringify(payload),
     token,
+  })
+}
+
+export async function verifyLoginTotp(payload: {
+  pending_token: string
+  code: string
+}): Promise<AuthResponse> {
+  return request<AuthResponse>('/auth/2fa/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function exchangeGoogleCode(code: string): Promise<AuthResponse> {
+  return request<AuthResponse>('/auth/google/exchange', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
+export async function logoutCurrentSession(): Promise<void> {
+  try {
+    await request<{ detail: string }>('/auth/logout', { method: 'POST' })
+  } catch {
+    // Local sign-out still proceeds if the session is already gone.
+  }
+}
+
+export type AuthSessionInfo = {
+  id: number
+  created_at: string
+  last_seen_at: string | null
+  expires_at: string
+  ip: string | null
+  user_agent: string | null
+  is_current: boolean
+}
+
+export async function listAuthSessions(): Promise<AuthSessionInfo[]> {
+  return request<AuthSessionInfo[]>('/auth/sessions')
+}
+
+export async function revokeAuthSession(sessionId: number): Promise<void> {
+  await request<{ detail: string }>(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+export async function logoutAllOtherSessions(): Promise<{ revoked: number }> {
+  return request<{ detail: string; revoked: number }>('/auth/logout-all', { method: 'POST' })
+}
+
+export type TotpSetupResponse = {
+  otpauth_url: string
+  qr_svg: string
+  secret: string
+}
+
+export async function setupTotp(): Promise<TotpSetupResponse> {
+  return request<TotpSetupResponse>('/auth/2fa/setup', { method: 'POST' })
+}
+
+export async function enableTotp(code: string): Promise<void> {
+  await request<{ detail: string }>('/auth/2fa/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
+export async function disableTotp(payload: { code: string; password?: string }): Promise<void> {
+  await request<{ detail: string }>('/auth/2fa/disable', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export type ApiKeyInfo = {
+  id: number
+  name: string
+  prefix: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export type CreatedApiKey = ApiKeyInfo & { key: string }
+
+export async function listApiKeys(): Promise<ApiKeyInfo[]> {
+  return request<ApiKeyInfo[]>('/auth/api-keys')
+}
+
+export async function createApiKey(name: string): Promise<CreatedApiKey> {
+  return request<CreatedApiKey>('/auth/api-keys', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function revokeApiKey(keyId: number): Promise<void> {
+  await request<{ detail: string }>(`/auth/api-keys/${keyId}`, { method: 'DELETE' })
+}
+
+export type AuditEventInfo = {
+  id: number
+  action: string
+  ip: string | null
+  detail: string | null
+  created_at: string
+}
+
+export async function listAuditEvents(): Promise<AuditEventInfo[]> {
+  return request<AuditEventInfo[]>('/auth/audit')
+}
+
+export async function deleteAccount(payload: { confirmation: 'DELETE'; password?: string }): Promise<void> {
+  await request<{ detail: string }>('/auth/account/delete', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export type CompanyProfile = {
+  company_name?: string | null
+  industry?: string | null
+  tax_id?: string | null
+  website?: string | null
+  annual_volume?: string | null
+  currency?: string | null
+  timezone?: string | null
+  billing_address?: string | null
+  shipping_address?: string | null
+  has_logo?: boolean
+  updated_at?: string | null
+}
+
+export async function getCompanyProfile(): Promise<CompanyProfile> {
+  return request<CompanyProfile>('/settings/company')
+}
+
+export async function updateCompanyProfile(payload: CompanyProfile): Promise<CompanyProfile> {
+  return request<CompanyProfile>('/settings/company', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function uploadCompanyLogo(file: File): Promise<CompanyProfile> {
+  const headers: HeadersInit = { ...bearerAuthHeader() }
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_BASE}/settings/company/logo`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    redirectIfUnauthorized(res, '/settings/company/logo')
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(typeof err.detail === 'string' ? err.detail : 'Upload failed')
+  }
+  return res.json()
+}
+
+export async function getCompanyLogoBlob(): Promise<Blob | null> {
+  const res = await fetch(`${API_BASE}/settings/company/logo`, { headers: bearerAuthHeader() })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    redirectIfUnauthorized(res, '/settings/company/logo')
+    return null
+  }
+  return res.blob()
+}
+
+export type NotificationSettings = {
+  price_drop_alerts: boolean
+  stock_alerts: boolean
+  rfq_alerts: boolean
+  weekly_spend_report: boolean
+  delivery_email: boolean
+  delivery_sms: boolean
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  return request<NotificationSettings>('/settings/notifications')
+}
+
+export async function updateNotificationSettings(
+  payload: NotificationSettings
+): Promise<NotificationSettings> {
+  return request<NotificationSettings>('/settings/notifications', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
   })
 }
 
@@ -179,6 +399,7 @@ export async function uploadWorkspaceCsv(
     body: form,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -204,6 +425,7 @@ export async function uploadWorkspaceImage(
     body: form,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -224,6 +446,7 @@ export async function uploadWorkspaceDocx(file: File, token: string): Promise<Wo
     body: form,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -236,6 +459,7 @@ export async function getWorkspaceMediaBlob(itemId: number, token: string): Prom
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/media`, { headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -260,6 +484,7 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, { headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -282,6 +507,7 @@ export async function updateWorkspaceFileContent(
     body: content,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -489,6 +715,7 @@ export async function downloadResearchDatasheetPdf(
     { headers: bearerAuthHeader() }
   )
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Datasheet download failed'
     throw new Error(msg)
@@ -787,6 +1014,7 @@ export async function deleteResearchAgent(agentId: number, token: string): Promi
   void token
   const res = await fetch(`${API_BASE}/research/agents/${agentId}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail)
       ? err.detail[0]?.msg ?? 'Request failed'
@@ -833,6 +1061,7 @@ export async function deleteResearchAgentAssignment(
     headers,
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail)
       ? err.detail[0]?.msg ?? 'Request failed'
@@ -846,6 +1075,7 @@ export async function deleteWorkspaceItem(itemId: number, token: string): Promis
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1021,6 +1251,7 @@ export async function deletePurchaseOrder(token: string, id: number): Promise<vo
   void token
   const res = await fetch(`${API_BASE}/purchase-orders/${id}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1094,6 +1325,7 @@ export async function deleteReport(token: string, id: number): Promise<void> {
   void token
   const res = await fetch(`${API_BASE}/reports/${id}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1106,6 +1338,7 @@ async function fetchBlob(path: string, token: string): Promise<Blob> {
     headers: bearerAuthHeader(),
   })
   if (!res.ok) {
+    redirectIfUnauthorized(res)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Export failed'
     throw new Error(msg)

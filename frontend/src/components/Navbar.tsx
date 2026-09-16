@@ -22,7 +22,7 @@ import {
   getCurrentUserPhotoUrl,
   clearAuth,
 } from '@/lib/auth'
-import { profilePhotoUrl } from '@/lib/api'
+import { profilePhotoUrl, logoutCurrentSession } from '@/lib/api'
 import { BUCKET_PATH } from '@/lib/paths'
 import { useBucket } from '@/contexts/BucketContext'
 
@@ -166,7 +166,8 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     setMenuAnimated(false)
   }, [dropdownOpen])
 
-  function handleSignOut() {
+  async function handleSignOut() {
+    await logoutCurrentSession()
     clearAuth()
     setDropdownOpen(false)
     navigate('/signin')

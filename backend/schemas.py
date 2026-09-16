@@ -7,19 +7,31 @@ from typing import Literal
 
 class SignUpBody(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=72)
     display_name: str | None = None
 
 
 class SignInBody(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=72)
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
-    display_name: str
+    display_name: str | None = None
+    email: str | None = None
+    requires_2fa: bool = False
+    pending_token: str | None = None
+
+
+class TotpVerifyBody(BaseModel):
+    pending_token: str
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+class GoogleExchangeBody(BaseModel):
+    code: str = Field(..., min_length=16, max_length=128)
 
 
 class UserResponse(BaseModel):
@@ -29,6 +41,8 @@ class UserResponse(BaseModel):
     phone: str | None = None
     job_title: str | None = None
     profile_photo_url: str | None = None
+    totp_enabled: bool = False
+    has_password: bool = False
 
     class Config:
         from_attributes = True
@@ -51,8 +65,96 @@ class PasswordChangeRequestResponse(BaseModel):
 
 
 class PasswordChangeConfirmBody(BaseModel):
-    code: str
-    new_password: str
+    code: str = Field(..., min_length=4, max_length=12)
+    new_password: str = Field(..., min_length=8, max_length=72)
+
+
+class SessionResponse(BaseModel):
+    id: int
+    created_at: datetime
+    last_seen_at: datetime | None = None
+    expires_at: datetime
+    ip: str | None = None
+    user_agent: str | None = None
+    is_current: bool = False
+
+
+class TotpSetupResponse(BaseModel):
+    otpauth_url: str
+    qr_svg: str
+    secret: str
+
+
+class TotpEnableBody(BaseModel):
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+class TotpDisableBody(BaseModel):
+    code: str = Field(..., min_length=6, max_length=8)
+    password: str | None = None
+
+
+class ApiKeyCreateBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+
+class ApiKeyCreatedResponse(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    key: str
+    created_at: datetime
+
+
+class ApiKeyResponse(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class AuditEventResponse(BaseModel):
+    id: int
+    action: str
+    ip: str | None = None
+    detail: str | None = None
+    created_at: datetime
+
+
+class AccountDeleteBody(BaseModel):
+    confirmation: Literal["DELETE"]
+    password: str | None = None
+
+
+class CompanyProfileBody(BaseModel):
+    company_name: str | None = Field(default=None, max_length=255)
+    industry: str | None = Field(default=None, max_length=255)
+    tax_id: str | None = Field(default=None, max_length=64)
+    website: str | None = Field(default=None, max_length=512)
+    annual_volume: str | None = Field(default=None, max_length=64)
+    currency: str | None = Field(default=None, max_length=8)
+    timezone: str | None = Field(default=None, max_length=64)
+    billing_address: str | None = Field(default=None, max_length=8000)
+    shipping_address: str | None = Field(default=None, max_length=8000)
+
+
+class CompanyProfileResponse(CompanyProfileBody):
+    has_logo: bool = False
+    updated_at: datetime | None = None
+
+
+class NotificationSettingsBody(BaseModel):
+    price_drop_alerts: bool = True
+    stock_alerts: bool = True
+    rfq_alerts: bool = True
+    weekly_spend_report: bool = True
+    delivery_email: bool = True
+    delivery_sms: bool = False
+
+
+class NotificationSettingsResponse(NotificationSettingsBody):
+    updated_at: datetime | None = None
 
 
 class PasswordChangeConfirmResponse(BaseModel):

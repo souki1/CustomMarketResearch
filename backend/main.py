@@ -2,13 +2,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from config import get_settings, parse_frontend_urls
 from database import init_db
 from mongo import get_mongo_db
-from models import User  # noqa: F401 - register model for create_all
+from models import (  # noqa: F401 - register models for create_all
+    ApiKey,
+    AuditEvent,
+    AuthSession,
+    CompanyProfile,
+    NotificationSettings,
+    OAuthExchangeCode,
+    User,
+)
 from routers import ai, auth, compare, datasheet, purchase_orders, reports, research, workspace
+from routers import org_settings, security_center
 from portfolio.PortfolioApi import router as portfolio_router
+from security import SecurityHeadersMiddleware, assert_secure_runtime
 
 settings = get_settings()
 _LOCAL_VITE_ORIGINS = (
@@ -41,6 +52,11 @@ _cors_origin_regex = _LOCAL_ORIGIN_REGEX if _use_local_cors else None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    assert_secure_runtime(
+        settings.secret_key,
+        is_production=settings.is_production,
+        dev_return_otp=settings.dev_return_otp,
+    )
     await init_db()
     if settings.mongo_url and settings.mongo_db_name:
         db = get_mongo_db()
@@ -64,13 +80,28 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="InteligentResearch API", version="0.1.0", lifespan=lifespan)
+_docs = None if settings.is_production and not settings.enable_docs else "/docs"
+_redoc = None if settings.is_production and not settings.enable_docs else "/redoc"
+_openapi = None if settings.is_production and not settings.enable_docs else "/openapi.json"
 
+app = FastAPI(
+    title="InteligentResearch API",
+    version="0.2.0",
+    lifespan=lifespan,
+    docs_url=_docs,
+    redoc_url=_redoc,
+    openapi_url=_openapi,
+)
+
+if settings.allowed_host_list:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,
     same_site="lax",
-    https_only=_frontend_origin.startswith("https://"),
+    https_only=_frontend_origin.startswith("https://") or settings.is_production,
     max_age=3600 * 24,
 )
 app.add_middleware(
@@ -83,6 +114,8 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(security_center.router)
+app.include_router(org_settings.router)
 app.include_router(ai.router)
 app.include_router(workspace.router)
 app.include_router(datasheet.router)

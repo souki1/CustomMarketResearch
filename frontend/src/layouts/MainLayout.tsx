@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { CommandPalette, Navbar, Sidebar } from '@/components'
 import { BucketProvider } from '@/contexts/BucketContext'
 import { ComparisonProvider } from '@/contexts/ComparisonContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
-import { getCurrentUserEmail, syncWorkspaceOwner } from '@/lib/auth'
+import { getCurrentUserEmail, syncWorkspaceOwner, useAuthToken } from '@/lib/auth'
 
 const SIDEBAR_OPEN_KEY = 'sidebar-open'
 
@@ -142,6 +142,11 @@ function MainLayoutContent() {
  * Sidebar can be collapsed by the Research inspector on /research; other routes expand it again.
  */
 export function MainLayout() {
+  const token = useAuthToken()
+  const location = useLocation()
+  if (!token) {
+    return <Navigate to="/signin" replace state={{ from: location.pathname }} />
+  }
   return (
     <LayoutProvider>
       <MainLayoutContent />

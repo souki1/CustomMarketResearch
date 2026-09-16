@@ -5,43 +5,21 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import decode_access_token
-from config import get_settings
-from database import get_db
+from deps import get_current_user
 from models import User
 from mongo import get_mongo_db, get_next_sequence
 from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
 from reports.docx_import import create_linked_report_from_docx
+from security import assert_csv_bytes, assert_docx_bytes, assert_safe_image_bytes
 from workspace_reports_folder import get_or_create_reports_folder_id
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
-settings = get_settings()
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = _BACKEND_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-async def get_current_user(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth[7:]
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 
 @router.get("/items", response_model=list[WorkspaceItemResponse])
@@ -178,6 +156,7 @@ async def upload_csv(
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    assert_csv_bytes(content)
 
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
@@ -223,15 +202,7 @@ async def upload_csv(
     )
 
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
-IMAGE_CONTENT_TYPES = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-}
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
 @router.post("/upload-image", response_model=WorkspaceItemResponse, status_code=201)
@@ -247,18 +218,19 @@ async def upload_image(
     if suffix not in IMAGE_SUFFIXES:
         raise HTTPException(
             status_code=400,
-            detail="Only image files are supported (.jpg, .jpeg, .png, .gif, .webp, .svg)",
+            detail="Only image files are supported (.jpg, .jpeg, .png, .gif, .webp)",
         )
 
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+    sniffed = assert_safe_image_bytes(content)
 
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
 
     safe_name = Path(file.filename).name
-    content_type = IMAGE_CONTENT_TYPES.get(suffix) or file.content_type or "image/jpeg"
+    content_type = sniffed
 
     now = datetime.utcnow()
     new_id = await get_next_sequence(mongo_db, "workspace_items")
@@ -315,6 +287,7 @@ async def upload_docx(
     content = await file.read()
     if len(content) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Document too large (max 25MB)")
+    assert_docx_bytes(content)
 
     if mongo_db is None:
         raise HTTPException(status_code=500, detail="MongoDB is not configured")
