@@ -216,7 +216,10 @@ _DEFAULT_RESEARCH_AGENTS: tuple[dict[str, str], ...] = (
         "focus": "vendors",
         "instructions": (
             "Find distributors and manufacturers that sell this exact part. "
-            "Extract vendor name, website, location, authorized status, and whether they stock this part number."
+            "Extract vendor name, website, location, authorized status, certifications "
+            "(ISO 9001, ISO 14001, IATF 16949, or similar), website reliability signals "
+            "from the page (authorized dealer, marketplace, manufacturer — do not invent), "
+            "vendor score/rating, and whether they stock this part number."
         ),
         "search_hint": "distributor supplier authorized reseller",
     },

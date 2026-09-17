@@ -6,7 +6,7 @@ import { ComparisonProvider } from '@/contexts/ComparisonContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
 import { getCurrentUserEmail, syncWorkspaceOwner } from '@/lib/auth'
 
-const SIDEBAR_OPEN_KEY = 'sidebar-open'
+const SIDEBAR_OPEN_KEY = 'sidebar-expanded'
 
 const OpenCommandPaletteContext = createContext<(() => void) | null>(null)
 
@@ -39,9 +39,9 @@ function MainLayoutContent() {
   const prevPathnameRef = useRef<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
-      return localStorage.getItem(SIDEBAR_OPEN_KEY) !== 'false'
+      return localStorage.getItem(SIDEBAR_OPEN_KEY) === 'true'
     } catch {
-      return true
+      return false
     }
   })
   const [sidebarOpenBeforeInspector, setSidebarOpenBeforeInspector] = useState<boolean | null>(null)
@@ -118,12 +118,12 @@ function MainLayoutContent() {
             onSidebarToggle={handleSidebarToggle}
             onOpenCommandPalette={openCommandPalette}
           />
-          <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden bg-app-bg">
+          <div className="flex h-[calc(100vh-3rem)] overflow-hidden bg-app-bg">
             <div
-              className={`flex h-full shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
+              className={`flex h-full shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-16'}`}
             >
               <div className="h-full w-full overflow-hidden">
-                <Sidebar open={showSidebar} collapsed={!showSidebar} />
+                <Sidebar open={showSidebar} collapsed={!showSidebar} onToggle={handleSidebarToggle} />
               </div>
             </div>
             <main className="h-full min-h-0 min-w-0 flex-1 bg-app-bg">

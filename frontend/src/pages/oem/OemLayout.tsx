@@ -12,7 +12,7 @@ import { DeskSectionNav } from './oemUi'
 export function OemLayout() {
   return (
     <div className="flex min-h-full bg-app-bg">
-      <aside className="sticky top-0 hidden h-[calc(100vh-3.5rem)] w-56 shrink-0 border-r border-app-separator bg-app-surface md:block">
+      <aside className="sticky top-0 hidden h-[calc(100vh-3rem)] w-56 shrink-0 border-r border-app-separator bg-app-surface md:block">
         <AppScroll className="h-full" contentClassName="px-3 py-5">
         <p className="px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary">OEM</p>
         <h1 className="mt-1 px-2.5 text-[17px] font-semibold tracking-[-0.02em] text-app-label">

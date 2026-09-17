@@ -4,17 +4,18 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   CreditCard,
   LayoutPanelLeft,
   LogOut,
-  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   Settings,
-  ShoppingCart,
-  Sparkles,
   UserRound,
 } from 'lucide-react'
+import { PartSourceMark } from '@/components/PartSourceMark'
 import {
   AUTH_CHANGED_EVENT,
   getCurrentUserName,
@@ -23,8 +24,7 @@ import {
   clearAuth,
 } from '@/lib/auth'
 import { profilePhotoUrl } from '@/lib/api'
-import { BUCKET_PATH } from '@/lib/paths'
-import { useBucket } from '@/contexts/BucketContext'
+import { getBreadcrumbs } from '@/lib/breadcrumbs'
 
 type NavbarProps = {
   sidebarOpen?: boolean
@@ -44,14 +44,12 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 const modKey = isMac ? '⌘' : 'Ctrl'
 
 const iconBtn =
-  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40'
+  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40'
 
 export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalette }: NavbarProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const showSearchOnNarrow =
-    location.pathname === '/research' || location.pathname.startsWith('/research/')
-  const { items: bucketItems } = useBucket()
+  const crumbs = getBreadcrumbs(location.pathname)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -181,54 +179,97 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
 
   return (
-    <nav
-      className="sticky top-0 z-20 h-14 border-b border-app-separator bg-app-surface/80 backdrop-blur-xl"
-      aria-label="Main navigation"
-    >
+    <header className="sticky top-0 z-20 h-12 border-b border-app-separator bg-white text-app-label">
       <div className="flex h-full w-full items-center gap-2 px-3 sm:px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {onSidebarToggle && (
-            <button
-              type="button"
-              onClick={onSidebarToggle}
-              className={iconBtn}
-              aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-              title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            >
-              {sidebarOpen ? (
-                <PanelLeft size={18} strokeWidth={1.75} aria-hidden />
-              ) : (
-                <LayoutPanelLeft size={18} strokeWidth={1.75} aria-hidden />
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="group/brand flex shrink-0 items-center gap-1.5">
+            <div className="relative h-8 w-8">
+              <Link
+                to="/"
+                aria-label="PartSource.ai home"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-app-accent transition-opacity duration-150 group-hover/brand:pointer-events-none group-hover/brand:opacity-0"
+              >
+                <PartSourceMark className="h-7 w-7" />
+              </Link>
+              {onSidebarToggle && (
+                <button
+                  type="button"
+                  onClick={onSidebarToggle}
+                  className="absolute inset-0 flex items-center justify-center rounded-md text-app-secondary opacity-0 transition-opacity duration-150 pointer-events-none hover:bg-app-fill hover:text-app-label group-hover/brand:pointer-events-auto group-hover/brand:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+                  aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+                  title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+                >
+                  {sidebarOpen ? (
+                    <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
+                  ) : (
+                    <PanelLeftOpen size={18} strokeWidth={1.75} aria-hidden />
+                  )}
+                </button>
               )}
-            </button>
-          )}
-          <Link
-            to="/"
-            className={iconBtn}
-            aria-label="Home"
-            title="Home"
-          >
-            <Sparkles size={18} strokeWidth={1.75} className="text-app-accent" aria-hidden />
-          </Link>
-
-          {onOpenCommandPalette && (
-            <div
-              className={`relative min-w-0 max-w-md flex-1 ${showSearchOnNarrow ? 'block' : 'hidden sm:block'}`}
+            </div>
+            <Link
+              to="/"
+              className="hidden items-baseline rounded-md px-1 py-0.5 sm:flex focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+              aria-label="PartSource.ai home"
             >
+              <span className="text-[13px] font-semibold tracking-[-0.02em] text-app-label">PartSource</span>
+              <span className="text-[13px] font-medium text-app-secondary">.ai</span>
+            </Link>
+          </div>
+          <span className="hidden h-4 w-px shrink-0 bg-app-separator sm:block" aria-hidden />
+          <nav aria-label="Breadcrumb" className="min-w-0">
+            <ol className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {crumbs.map((crumb, index) => {
+                const isLast = index === crumbs.length - 1
+                return (
+                  <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1">
+                    {index > 0 && (
+                      <ChevronRight
+                        size={14}
+                        strokeWidth={2.25}
+                        className="shrink-0 text-app-tertiary"
+                        aria-hidden
+                      />
+                    )}
+                    {crumb.href && !isLast ? (
+                      <Link
+                        to={crumb.href}
+                        className="truncate rounded-md px-1 py-0.5 text-[13px] font-medium text-app-secondary transition-colors hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+                      >
+                        {crumb.label}
+                      </Link>
+                    ) : (
+                      <span
+                        className={`truncate px-1 py-0.5 text-[13px] ${isLast ? 'font-semibold text-app-label' : 'font-medium text-app-secondary'}`}
+                        aria-current={isLast ? 'page' : undefined}
+                      >
+                        {crumb.label}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
+          </nav>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onOpenCommandPalette && (
+            <div className="relative hidden sm:block">
               <button
                 type="button"
                 onClick={handleOpenCommandPalette}
-                className="flex h-9 w-full items-center gap-2 rounded-[10px] bg-app-fill px-3 text-left text-[13px] text-app-tertiary transition-colors hover:bg-app-fill-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+                className="mr-1 flex h-8 items-center gap-2 rounded-md bg-app-fill px-2.5 text-left text-[13px] text-app-secondary transition-colors hover:bg-app-fill-strong hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
                 aria-label="Search (Ctrl+K)"
               >
                 <Search size={15} strokeWidth={1.75} className="shrink-0" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">Search files, folders, and pages</span>
-                <kbd className="hidden shrink-0 rounded-md bg-app-surface px-1.5 py-0.5 text-xs font-medium text-app-secondary ring-1 ring-app-separator sm:inline">
+                <span className="hidden truncate lg:inline">Search</span>
+                <kbd className="hidden shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-app-tertiary ring-1 ring-app-separator xl:inline">
                   {isMac ? '⌘K' : 'Ctrl+K'}
                 </kbd>
               </button>
               {showCommandTip && (
-                <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-app-separator bg-app-elevated px-3 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+                <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-app-separator bg-app-elevated px-3 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
                   <p className="text-[13px] font-semibold text-app-label">Search from anywhere</p>
                   <p className="mt-0.5 text-xs text-app-secondary">
                     Press Ctrl+K to jump to files, research, and settings.
@@ -244,30 +285,21 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
               )}
             </div>
           )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-0.5">
+          {onOpenCommandPalette && (
+            <button
+              type="button"
+              onClick={handleOpenCommandPalette}
+              className={`${iconBtn} sm:hidden`}
+              aria-label="Search (Ctrl+K)"
+            >
+              <Search size={18} strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
           <Link
             to="/settings/billing"
             className="hidden h-8 items-center rounded-full bg-app-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50 sm:inline-flex"
           >
             Upgrade
-          </Link>
-
-          <Link
-            to={BUCKET_PATH}
-            className={`${iconBtn} relative`}
-            aria-label={
-              bucketItems.length > 0 ? `Bucket, ${bucketItems.length} items` : 'Bucket'
-            }
-            title="Bucket"
-          >
-            <ShoppingCart size={18} strokeWidth={1.75} aria-hidden />
-            {bucketItems.length > 0 && (
-              <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-app-accent px-1 text-[11px] font-semibold leading-none text-white">
-                {bucketItems.length > 9 ? '9+' : bucketItems.length}
-              </span>
-            )}
           </Link>
 
           <div className="relative" ref={helpRef}>
@@ -380,23 +412,18 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
               ref={dropdownBtnRef}
               type="button"
               onClick={() => setDropdownOpen((o) => !o)}
-              className="flex h-9 items-center gap-2 rounded-[10px] py-1 pl-1 pr-2 text-app-label hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
+              className="flex h-8 items-center gap-1.5 rounded-md py-0.5 pl-0.5 pr-1.5 text-app-label hover:bg-app-fill focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40"
               aria-expanded={dropdownOpen}
               aria-haspopup="true"
               aria-label="Workspace and account menu"
+              title={userEmail ?? displayName}
             >
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-accent text-xs font-semibold text-white">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-fill text-[11px] font-semibold text-app-label">
                 {profilePhotoFullUrl ? (
                   <img src={profilePhotoFullUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
                   initials
                 )}
-              </div>
-              <div className="hidden min-w-0 text-left sm:block">
-                <p className="truncate text-[13px] font-semibold leading-tight text-app-label">{displayName}</p>
-                <p className="truncate text-xs leading-tight text-app-secondary" title={userEmail ?? undefined}>
-                  {userEmail ?? `${displayName}'s Workspace`}
-                </p>
               </div>
               <ChevronDown size={14} strokeWidth={2} className="hidden text-app-tertiary sm:block" aria-hidden />
             </button>
@@ -449,7 +476,7 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
           </div>
         </div>
       </div>
-    </nav>
+    </header>
   )
 }
 

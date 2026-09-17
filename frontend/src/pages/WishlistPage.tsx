@@ -1207,7 +1207,7 @@ export function WishlistPage() {
       className={
         pageLayout === 'lists'
           ? // Bound the board to the viewport so list columns scroll internally.
-            'flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-app-bg'
+            'flex h-[calc(100vh-3rem)] w-full flex-col overflow-hidden bg-app-bg'
           : 'flex min-h-full w-full flex-col bg-app-bg'
       }
     >

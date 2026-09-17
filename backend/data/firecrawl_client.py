@@ -181,6 +181,60 @@ DEFAULT_EXTRACT_SCHEMA: dict = {
         "contact": {"type": "string"},
         "manufacturer": {"type": "string"},
         "part_number": {"type": "string"},
+        "sku": {"type": "string"},
+        "stock": {
+            "type": "string",
+            "description": "Stock status or quantity as shown on the page.",
+        },
+        "moq": {
+            "type": "string",
+            "description": "Minimum order quantity as shown on the page (number or short phrase).",
+        },
+        "certifications": {
+            "type": "string",
+            "description": (
+                "Vendor or product quality certifications such as ISO 9001, ISO 14001, "
+                "IATF 16949, AS9100, RoHS, or 'ISO certified'. Comma-separated if several."
+            ),
+        },
+        "score": {
+            "type": "string",
+            "description": "Vendor rating or score as shown (for example 4.7/5, 92, or 92%).",
+        },
+        "review_rating": {
+            "type": "string",
+            "description": "Customer review rating as shown on the page, if any.",
+        },
+        "authorized_status": {
+            "type": "string",
+            "description": (
+                "Authorized OEM dealer, Independent reseller, Marketplace, "
+                "Manufacturer site, or Not stated. Use only page evidence."
+            ),
+        },
+        "website_reliability": {
+            "type": "string",
+            "description": (
+                "Short evidence-based reliability label from THIS page only "
+                "(for example 'Authorized Kubota dealer' or 'Marketplace listing'). "
+                "Never invent a numeric trust score or off-page reputation."
+            ),
+        },
+        "reliability_notes": {
+            "type": "string",
+            "description": (
+                "Factual trust signals on the page: authorized badge, years in business, "
+                "physical address, reviews, about-company. Comma-separated. Omit if none."
+            ),
+        },
+        "requested_fields": {
+            "type": "array",
+            "description": (
+                "Every extra fact the user asked for that does not fit a named field, "
+                "as name/value pairs."
+            ),
+            "items": _NAME_VALUE_ITEM,
+        },
     },
 }
 

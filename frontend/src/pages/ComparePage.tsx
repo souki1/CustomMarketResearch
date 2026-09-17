@@ -266,7 +266,7 @@ const COMPARE_PAGE_STATE_KEY = 'ir-compare-page-state-v1'
 const COMPARE_VENDOR_COVERAGE_VIEW_KEY = 'ir-compare-vendor-coverage-view'
 
 /** Fixed height matches `main` in MainLayout so the sheet sidebar does not stretch with content (avoids large-screen layout glitches). */
-const COMPARE_PAGE_H = 'h-[calc(100vh-3.5rem)]'
+const COMPARE_PAGE_H = 'h-[calc(100vh-3rem)]'
 
 function readPersistedCompareState(): {
   compareTabs?: CompareTab[]

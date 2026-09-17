@@ -87,7 +87,7 @@ export function BucketPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] w-full min-w-0 overflow-y-auto bg-app-bg">
+    <div className="flex h-[calc(100vh-3rem)] w-full min-w-0 overflow-y-auto bg-app-bg">
       <div className="flex w-full flex-col gap-3.5 p-5 lg:flex-row lg:items-start lg:gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-3.5">
           <div className="flex flex-wrap items-start justify-between gap-3">

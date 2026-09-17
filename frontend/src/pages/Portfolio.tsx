@@ -1581,7 +1581,7 @@ export function PortfolioPage() {
     portfolioSummary?.unique_parts ?? partGroups.length
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] w-full overflow-x-hidden bg-app-bg">
+    <div className="min-h-[calc(100vh-3rem)] w-full overflow-x-hidden bg-app-bg">
       <div className="flex w-full flex-col gap-4 px-4 py-5 sm:px-6">
         <PortfolioDashboard
           loading={loading}

@@ -521,7 +521,7 @@ export function GenerateReportPage() {
 
   /** Same height as app sidebar so reports split (nav | content) stays aligned on large screens */
   const reportsRouteShell =
-    'box-border flex h-[calc(100vh-3.5rem)] w-full max-w-full flex-col overflow-hidden'
+    'box-border flex h-[calc(100vh-3rem)] w-full max-w-full flex-col overflow-hidden'
 
   if (studioMode === 'studio') {
     const portfolioHint = portfolioCtx

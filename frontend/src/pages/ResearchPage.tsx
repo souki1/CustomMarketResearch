@@ -797,6 +797,301 @@ function parseStockQty(stock: string | null): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+const MOQ_FIELD_ALIASES = [
+  'moq',
+  'minimum order quantity',
+  'minimum_order_quantity',
+  'minimum order',
+  'minimum_order',
+  'min order',
+  'min_order',
+  'min qty',
+  'min_qty',
+  'minimum qty',
+  'minimum_qty',
+]
+
+const CERT_FIELD_ALIASES = [
+  'certifications',
+  'certification',
+  'certs',
+  'certificates',
+  'iso',
+  'iso certified',
+  'iso_certified',
+  'quality certifications',
+  'quality_certifications',
+  'accreditations',
+  'accreditation',
+  'compliance',
+]
+
+const KNOWN_CERT_RE =
+  /\b(?:ISO\s*\d{4,5}(?:[:\-]\d{2,4})?|ISO\s*certified|IATF\s*16949|AS\s*9100[A-Z]?|TS\s*16949|RoHS(?:\s*compliant)?|REACH|UL(?:\s*listed)?|CE(?:\s*mark(?:ed)?)?|PPAP|ISO9001|ISO14001|ISO45001)\b/gi
+
+function parseMoqQty(raw: string | null): number | null {
+  if (!raw) return null
+  const t = raw.toLowerCase().replace(/,/g, '')
+  if (/\b(none|n\/a|na|not required|no moq)\b/.test(t)) return 1
+  const m = t.match(/(\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const n = parseFloat(m[1]!)
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+}
+
+function formatMoq(qty: number | null, raw: string | null): string | null {
+  if (qty != null) return qty.toLocaleString()
+  if (!raw) return null
+  const t = raw.trim()
+  return t ? t : null
+}
+
+function parseOfferScoreValue(raw: string | null): number | null {
+  if (!raw) return null
+  const t = raw.trim()
+  if (!t) return null
+  const stars = t.match(/(\d+(?:\.\d+)?)\s*(?:\/\s*5|stars?)/i)
+  if (stars) {
+    const n = parseFloat(stars[1]!)
+    if (Number.isFinite(n) && n >= 0 && n <= 5) return Math.round((n / 5) * 100)
+  }
+  const outOfTen = t.match(/(\d+(?:\.\d+)?)\s*\/\s*10\b/)
+  if (outOfTen) {
+    const n = parseFloat(outOfTen[1]!)
+    if (Number.isFinite(n) && n >= 0 && n <= 10) return Math.round(n * 10)
+  }
+  const pct = t.match(/(\d+(?:\.\d+)?)\s*%/)
+  if (pct) {
+    const n = parseFloat(pct[1]!)
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)))
+  }
+  const n = Number(t.replace(/[^\d.]/g, ''))
+  if (!Number.isFinite(n)) return null
+  if (n <= 5 && /star|rating/i.test(t)) return Math.round((n / 5) * 100)
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function normalizeCertLabel(token: string): string | null {
+  const t = token.replace(/\s+/g, ' ').trim()
+  if (!t || t.length > 48) return null
+  const iso = t.match(/iso\s*(\d{4,5})(?:[:\-](\d{2,4}))?/i)
+  if (iso) return iso[2] ? `ISO ${iso[1]}:${iso[2]}` : `ISO ${iso[1]}`
+  if (/iso\s*certified/i.test(t)) return 'ISO certified'
+  if (/iatf\s*16949/i.test(t)) return 'IATF 16949'
+  if (/as\s*9100/i.test(t)) {
+    const rev = t.match(/9100([A-Z])?/i)
+    return rev?.[1] ? `AS9100${rev[1]!.toUpperCase()}` : 'AS9100'
+  }
+  if (/ts\s*16949/i.test(t)) return 'TS 16949'
+  if (/rohs/i.test(t)) return 'RoHS'
+  if (/reach/i.test(t)) return 'REACH'
+  if (/\bul\b/i.test(t)) return /listed/i.test(t) ? 'UL listed' : 'UL'
+  if (/\bce\b/i.test(t)) return 'CE'
+  if (/\bppap\b/i.test(t)) return 'PPAP'
+  if (/^[A-Za-z0-9][A-Za-z0-9 .:+-]{1,40}$/.test(t)) return t
+  return null
+}
+
+function certsFromText(text: string, splitUnknown: boolean): string[] {
+  const known = [...text.matchAll(KNOWN_CERT_RE)]
+    .map((m) => normalizeCertLabel(m[0]!))
+    .filter((c): c is string => Boolean(c))
+  if (known.length > 0) return known
+  if (!splitUnknown) return []
+  return text
+    .split(/[,;/|]+|\band\b/i)
+    .map((part) => normalizeCertLabel(part))
+    .filter((c): c is string => Boolean(c))
+}
+
+function ingestCertValue(val: unknown, add: (label: string) => void, splitUnknown: boolean) {
+  if (val == null) return
+  if (typeof val === 'boolean') {
+    if (val) add('ISO certified')
+    return
+  }
+  if (Array.isArray(val)) {
+    for (const item of val) ingestCertValue(item, add, true)
+    return
+  }
+  const text = compactNestedText(val) ?? asDisplayText(val)
+  if (text) certsFromText(text, splitUnknown).forEach(add)
+}
+
+function collectOfferCertifications(data: Record<string, unknown>, details: Record<string, unknown> | null): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (label: string) => {
+    const key = label.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(label)
+  }
+
+  const nestedRecords = [
+    data,
+    details,
+    parseMaybeRecord(pickScrapedField(data, ['specifications', 'product_specifications', 'specs'])),
+    parseMaybeRecord(pickScrapedField(data, ['product details', 'product_details', 'details'])),
+  ].filter((rec): rec is Record<string, unknown> => rec != null)
+
+  for (const rec of nestedRecords) {
+    ingestCertValue(pickScrapedField(rec, CERT_FIELD_ALIASES), add, true)
+  }
+
+  if (out.length === 0) {
+    for (const rec of nestedRecords) {
+      for (const [key, val] of Object.entries(rec)) {
+        if (!/cert|iso|accredit|compliance|standard/i.test(key)) continue
+        ingestCertValue(val, add, true)
+      }
+    }
+  }
+
+  return out.slice(0, 6)
+}
+
+function ResearchOfferScoreBar({ score }: { score: number }) {
+  const barColor =
+    score >= 70 ? 'bg-app-ok' : score >= 45 ? 'bg-app-accent' : score >= 25 ? 'bg-amber-500' : 'bg-red-500'
+  const textColor =
+    score >= 70
+      ? 'text-app-ok'
+      : score >= 45
+        ? 'text-app-accent'
+        : score >= 25
+          ? 'text-amber-700'
+          : 'text-red-600'
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <div className="h-[3px] w-10 overflow-hidden rounded-sm bg-app-fill-strong">
+        <div className={`h-full rounded-sm ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
+      </div>
+      <span className={`min-w-[18px] text-right font-mono text-[12px] font-medium tabular-nums ${textColor}`}>
+        {score}
+      </span>
+    </div>
+  )
+}
+
+function computeOfferFitScore(
+  offer: {
+    score: number | null
+    priceNum: number | null
+    stockQty: number | null
+    stock: string | null
+    leadRank: LeadRank | null
+    certifications: string[]
+    moqQty: number | null
+  },
+  bestPrice: number | null
+): number | null {
+  if (offer.score != null) return offer.score
+  const hasSignal =
+    offer.priceNum != null ||
+    offer.stockQty != null ||
+    offer.leadRank != null ||
+    offer.certifications.length > 0 ||
+    offer.moqQty != null ||
+    Boolean(offer.stock)
+  if (!hasSignal) return null
+  let score = 28
+  if (offer.priceNum != null && bestPrice != null && bestPrice > 0) {
+    score += Math.round(Math.max(0, Math.min(28, (bestPrice / offer.priceNum) * 28)))
+  } else if (offer.priceNum != null) {
+    score += 10
+  }
+  if (offer.stockQty != null && offer.stockQty > 0) score += 16
+  else if (offer.stock && /in stock|available|low stock/i.test(offer.stock)) score += 12
+  else if (offer.stock && /out of stock|unavailable|sold out/i.test(offer.stock)) score += 0
+  if (offer.leadRank) {
+    if (offer.leadRank.hours <= 24) score += 16
+    else if (offer.leadRank.hours <= 72) score += 10
+    else score += 5
+  }
+  if (offer.certifications.length > 0) score += Math.min(14, offer.certifications.length * 7)
+  if (offer.moqQty === 1) score += 6
+  else if (offer.moqQty != null && offer.moqQty <= 10) score += 3
+  return Math.max(8, Math.min(96, score))
+}
+
+type ReliabilityLevel = 'high' | 'mid' | 'low' | 'unknown'
+
+function parseOfferReliability(
+  data: Record<string, unknown>,
+  details: Record<string, unknown> | null
+): { label: string | null; notes: string | null; level: ReliabilityLevel } {
+  const authorized =
+    asDisplayText(
+      pickScrapedField(data, [
+        'authorized_status',
+        'authorized status',
+        'authorized dealer',
+        'authorized',
+        'oem authorized',
+      ])
+    ) ??
+    (details
+      ? asDisplayText(
+          pickScrapedField(details, ['authorized_status', 'authorized dealer', 'authorized'])
+        )
+      : null)
+  const reliability =
+    asDisplayText(
+      pickScrapedField(data, ['website_reliability', 'website reliability', 'reliability'])
+    ) ??
+    (details
+      ? asDisplayText(pickScrapedField(details, ['website_reliability', 'reliability']))
+      : null)
+  const notes =
+    asDisplayText(pickScrapedField(data, ['reliability_notes', 'reliability notes'])) ??
+    (details ? asDisplayText(pickScrapedField(details, ['reliability_notes'])) : null)
+  const label = reliability ?? authorized
+  const blob = [label, notes, authorized].filter(Boolean).join(' ').toLowerCase()
+  let level: ReliabilityLevel = 'unknown'
+  if (!blob) {
+    return { label: null, notes, level }
+  }
+  if (/\b(marketplace|amazon|ebay|unverified|suspicious)\b/.test(blob)) {
+    level = 'low'
+  } else if (/\b(authorized|oem dealer|manufacturer site|official dealer)\b/.test(blob)) {
+    level = 'high'
+  } else if (/\b(not stated|unknown|n\/a)\b/.test(blob)) {
+    level = 'unknown'
+  } else if (/\b(independent|reseller|distributor)\b/.test(blob)) {
+    level = 'mid'
+  } else if (label) {
+    level = 'mid'
+  }
+  return { label, notes, level }
+}
+
+function ResearchOfferReliability({
+  reliability,
+}: {
+  reliability: { label: string | null; notes: string | null; level: ReliabilityLevel }
+}) {
+  if (!reliability.label) {
+    return <span className="text-app-tertiary">—</span>
+  }
+  const tone =
+    reliability.level === 'high'
+      ? 'bg-emerald-50 text-emerald-800'
+      : reliability.level === 'low'
+        ? 'bg-red-50 text-red-800'
+        : reliability.level === 'mid'
+          ? 'bg-app-accent-soft text-app-accent'
+          : 'bg-app-fill text-app-secondary'
+  return (
+    <span
+      className={`inline-flex max-w-[160px] truncate rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
+      title={reliability.notes ? `${reliability.label} — ${reliability.notes}` : reliability.label}
+    >
+      {reliability.label}
+    </span>
+  )
+}
+
 type BuySuggestionKind = 'price' | 'lead' | 'stock'
 
 type BuySuggestion = {
@@ -901,6 +1196,26 @@ const COMMERCIAL_SPEC_KEYS = new Set([
   'currency',
   'description',
   'productdescription',
+  'moq',
+  'minimumorderquantity',
+  'minimumorder',
+  'minorder',
+  'minqty',
+  'certifications',
+  'certification',
+  'certs',
+  'certificates',
+  'iso',
+  'isocertified',
+  'score',
+  'rating',
+  'vendorscore',
+  'authorizedstatus',
+  'authorizeddealer',
+  'websitereliability',
+  'reliability',
+  'reliabilitynotes',
+  'reviewrating',
 ])
 
 function specRowsFromRecord(source: Record<string, unknown>): { label: string; value: string }[] {
@@ -1139,6 +1454,16 @@ function scrapedOfferFields(data: Record<string, unknown>) {
     parseLeadRank(deliveryRaw, delivery) ??
     (details ? parseLeadRank(details.leadTime ?? details.lead_time ?? details.delivery, null) : null)
   const stockQty = parseStockQty(stock)
+  const moqRaw =
+    asDisplayText(pickScrapedField(data, MOQ_FIELD_ALIASES)) ??
+    (details ? asDisplayText(pickScrapedField(details, MOQ_FIELD_ALIASES)) : null)
+  const moqQty = parseMoqQty(moqRaw)
+  const certifications = collectOfferCertifications(data, details)
+  const scoreRaw =
+    asDisplayText(pickScrapedField(data, ['score', 'rating', 'vendor score', 'vendor_score', 'stars'])) ??
+    (details ? asDisplayText(pickScrapedField(details, ['score', 'rating', 'vendor_score', 'stars'])) : null)
+  const score = parseOfferScoreValue(scoreRaw)
+  const reliability = parseOfferReliability(data, details)
   return {
     vendor,
     desc,
@@ -1151,6 +1476,11 @@ function scrapedOfferFields(data: Record<string, unknown>) {
     contact,
     manufacturer,
     priceNum,
+    moqRaw,
+    moqQty,
+    certifications,
+    score,
+    reliability,
     image: extractImageFromRecord(data),
     specs: collectProductSpecs(data),
   }
@@ -1551,6 +1881,8 @@ const ROWS_PER_PAGE_OPTIONS: number[] = [10, 25, 50, 100]
 const DEFAULT_SHEET_ROWS = 10
 const DEFAULT_SHEET_COLS = 10
 const DEFAULT_RESEARCH_AI_QUERY =
+  'Extract the full part listing, certifications (ISO and similar), authorized-dealer status, and website reliability signals from the page. Do not invent reputation or scores that are not shown.'
+const LEGACY_RESEARCH_AI_QUERY =
   'Product Image, Product description, Vendor name, Price, Product details, Delivery, Location, Contact'
 
 type AgentFocusTemplate = {
@@ -1565,7 +1897,7 @@ const AGENT_FOCUS_TEMPLATES: Record<ResearchAgentFocus, AgentFocusTemplate> = {
     label: 'Vendors',
     hint: 'Find distributors and manufacturers',
     instructions:
-      'Find distributors and manufacturers that sell this exact part. Extract vendor name, website, location, authorized status, and whether they stock this part number.',
+      'Find distributors and manufacturers that sell this exact part. Extract vendor name, website, location, authorized status, certifications (ISO and similar), website reliability signals from the page, and whether they stock this part number.',
     searchHint: 'distributor supplier authorized reseller',
   },
   pricing: {
@@ -2232,7 +2564,7 @@ export function ResearchPage() {
         const searchResult = await searchSelectionAndStoreUrls(
           saved.id,
           token,
-          aiQuery?.trim() || null,
+          aiQuery?.trim() || DEFAULT_RESEARCH_AI_QUERY,
           {
             zipCode,
             address,
@@ -5084,7 +5416,7 @@ export function ResearchPage() {
 
   return (
     <div
-      className={`bg-app-bg text-app-label ${isInspectorOpen ? 'flex h-[calc(100vh-3.5rem)] overflow-hidden' : 'min-h-full'}`}
+      className={`bg-app-bg text-app-label ${isInspectorOpen ? 'flex h-[calc(100vh-3rem)] overflow-hidden' : 'min-h-full'}`}
     >
       {newSheetModalOpen && (
         <div
@@ -5628,12 +5960,18 @@ export function ResearchPage() {
               Start research
             </h2>
             <p className="mt-1 text-sm text-app-secondary">
-              Review or edit the extraction query, then set a ZIP or address. Search
-              results prefer vendors and listings near that location. Product image,
-              specifications, and datasheet are always collected.
+              Review or edit the extra extraction request, then set a ZIP or address.
+              Every run also scrapes the full part listing, what you asked for,
+              certifications, and website reliability signals from each page.
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {['Product image', 'Specifications', 'Datasheet'].map((label) => (
+              {[
+                'Full part details',
+                'Specifications',
+                'Datasheet',
+                'Certifications',
+                'Website reliability',
+              ].map((label) => (
                 <span
                   key={label}
                   className="inline-flex items-center rounded-[6px] border border-app-separator bg-app-fill px-2 py-0.5 text-[11px] font-medium text-app-secondary"
@@ -6157,8 +6495,8 @@ export function ResearchPage() {
       <div
         className={
           isInspectorOpen
-            ? 'flex h-[calc(100vh-3.5rem)] min-w-0 flex-1 flex-col overflow-hidden'
-            : 'flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden'
+            ? 'flex h-[calc(100vh-3rem)] min-w-0 flex-1 flex-col overflow-hidden'
+            : 'flex h-[calc(100vh-3rem)] flex-col overflow-hidden'
         }
       >
       <div className="shrink-0 border-b border-app-separator bg-app-surface/80 px-5 py-3 backdrop-blur-xl">
@@ -6690,7 +7028,10 @@ export function ResearchPage() {
                 )
                 return
               }
-              if (!researchAiQueryInput.trim()) {
+              if (
+                !researchAiQueryInput.trim() ||
+                researchAiQueryInput.trim() === LEGACY_RESEARCH_AI_QUERY
+              ) {
                 setResearchAiQueryInput(DEFAULT_RESEARCH_AI_QUERY)
               }
               setResearchFieldsPopupOpen(true)
@@ -7937,13 +8278,17 @@ export function ResearchPage() {
                             </div>
                           </div>
                           <div className="overflow-x-auto">
-                            <table className="min-w-[720px] w-full text-left text-[13px]">
+                            <table className="min-w-[1080px] w-full text-left text-[13px]">
                               <thead>
                                 <tr className="border-b border-app-separator text-[11px] font-semibold tracking-[-0.01em] text-app-secondary">
                                   <th className="px-4 py-2.5">Distributor</th>
                                   <th className="px-3 py-2.5">SKU</th>
                                   <th className="px-3 py-2.5 text-right">Stock</th>
                                   <th className="px-3 py-2.5 text-right">Unit price</th>
+                                  <th className="px-3 py-2.5 text-right">MOQ</th>
+                                  <th className="px-3 py-2.5">Certifications</th>
+                                  <th className="px-3 py-2.5">Reliability</th>
+                                  <th className="px-3 py-2.5 text-right">Score</th>
                                   <th className="px-3 py-2.5">Delivery</th>
                                   <th className="px-3 py-2.5">Location</th>
                                   <th className="px-3 py-2.5">Contact</th>
@@ -7972,6 +8317,8 @@ export function ResearchPage() {
                                   )
                                   const updatedAt = item.change_log?.[0]?.at
                                   const skuLabel = offer.sku ?? String(selectedRowData?.[0] ?? '—')
+                                  const moqLabel = formatMoq(offer.moqQty, offer.moqRaw)
+                                  const offerScore = computeOfferFitScore(offer, structuredOfferSummary.bestPrice)
                                   return (
                                     <Fragment key={item.id ?? idx}>
                                       <tr
@@ -8066,6 +8413,36 @@ export function ResearchPage() {
                                         >
                                           {offer.priceNum != null ? formatUsd(offer.priceNum) : '—'}
                                         </td>
+                                        <td className="px-3 py-2.5 text-right tabular-nums text-app-secondary">
+                                          {moqLabel ?? '—'}
+                                        </td>
+                                        <td className="max-w-[180px] px-3 py-2.5">
+                                          {offer.certifications.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                              {offer.certifications.map((cert) => (
+                                                <span
+                                                  key={cert}
+                                                  className="shrink-0 rounded bg-app-fill px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-app-secondary"
+                                                  title={cert}
+                                                >
+                                                  {cert}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <span className="text-app-tertiary">—</span>
+                                          )}
+                                        </td>
+                                        <td className="max-w-[170px] px-3 py-2.5">
+                                          <ResearchOfferReliability reliability={offer.reliability} />
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right">
+                                          {offerScore != null ? (
+                                            <ResearchOfferScoreBar score={offerScore} />
+                                          ) : (
+                                            <span className="text-app-tertiary">—</span>
+                                          )}
+                                        </td>
                                         <td className="max-w-[160px] truncate px-3 py-2.5 text-app-secondary" title={offer.delivery ?? undefined}>
                                           {offer.delivery ?? '—'}
                                         </td>
@@ -8124,7 +8501,7 @@ export function ResearchPage() {
                                       </tr>
                                       {(sourceEditing || sourceAiOpen) && (
                                         <tr className="border-b border-app-separator bg-app-fill/40">
-                                          <td colSpan={9} className="px-4 py-3">
+                                          <td colSpan={13} className="px-4 py-3">
                                             {sourceAiOpen && (
                                               <div className="mb-3">
                                                 <ResearchRowAiChat

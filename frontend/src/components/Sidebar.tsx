@@ -1,13 +1,14 @@
 import {
-  Archive,
   Factory,
   Files,
   GitCompare,
   Heart,
   LayoutDashboard,
   LayoutGrid,
+  LayoutPanelLeft,
   LineChart,
   Package,
+  PanelLeft,
   Search,
   Settings,
   ShoppingCart,
@@ -16,7 +17,6 @@ import {
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import {
-  BUCKET_PATH,
   FILES_PATH,
   OEM_OVERVIEW_PATH,
   OEM_PATH,
@@ -97,12 +97,6 @@ const GROUPS: NavGroup[] = [
         icon: ShoppingCart,
         match: (p) => p.startsWith(PURCHASE_ORDER_PATH),
       },
-      {
-        to: BUCKET_PATH,
-        label: 'Bucket',
-        icon: Archive,
-        match: (p) => p === BUCKET_PATH,
-      },
     ],
   },
   {
@@ -118,45 +112,63 @@ const GROUPS: NavGroup[] = [
 type SidebarProps = {
   open: boolean
   collapsed?: boolean
+  onToggle?: () => void
 }
 
 function linkClass(active: boolean, collapsed: boolean) {
   const base = collapsed
-    ? 'flex h-9 w-9 items-center justify-center rounded-[8px] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50'
+    ? 'flex h-10 w-10 items-center justify-center rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50'
     : 'flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-medium tracking-[-0.01em] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-accent/50'
   if (active) {
-    return `${base} bg-app-fill-strong text-app-label`
+    return collapsed
+      ? `${base} bg-app-accent-soft text-app-topbar`
+      : `${base} bg-app-fill-strong text-app-label`
   }
-  return `${base} text-app-secondary hover:bg-app-fill hover:text-app-label`
+  return collapsed
+    ? `${base} text-app-secondary hover:bg-app-fill hover:text-app-topbar`
+    : `${base} text-app-secondary hover:bg-app-fill hover:text-app-label`
 }
 
-export function Sidebar({ open, collapsed = false }: SidebarProps) {
+export function Sidebar({ open, collapsed = false, onToggle }: SidebarProps) {
   const location = useLocation()
 
   if (collapsed) {
     return (
-      <aside className="h-full min-h-0 w-14 shrink-0 border-r border-app-separator bg-app-sidebar" aria-label="Sidebar">
-        <nav className="flex h-full min-h-0 flex-col items-center gap-4 overflow-y-auto px-2 py-3">
-          {GROUPS.map((group) => (
-            <div key={group.id} className="flex flex-col items-center gap-1" role="group" aria-label={group.label}>
-              {group.items.map((item) => {
-                const Icon = item.icon
-                const active = item.match(location.pathname)
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={linkClass(active, true)}
-                    aria-label={item.label}
-                    aria-current={active ? 'page' : undefined}
-                    title={item.label}
-                  >
-                    <Icon size={ICON} strokeWidth={STROKE} aria-hidden />
-                  </Link>
-                )
-              })}
-            </div>
-          ))}
+      <aside className="h-full min-h-0 w-16 shrink-0 border-r border-app-separator bg-white" aria-label="Sidebar">
+        <nav className="flex h-full min-h-0 flex-col items-center px-2 py-4">
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-5 overflow-y-auto">
+            {GROUPS.map((group) => (
+              <div key={group.id} className="flex flex-col items-center gap-1" role="group" aria-label={group.label}>
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  const active = item.match(location.pathname)
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={linkClass(active, true)}
+                      aria-label={item.label}
+                      aria-current={active ? 'page' : undefined}
+                      title={item.label}
+                    >
+                      <Icon size={ICON} strokeWidth={STROKE} aria-hidden />
+                    </Link>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+          {onToggle && (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="mt-3 flex h-10 w-10 items-center justify-center rounded-xl text-app-secondary hover:bg-app-fill hover:text-app-topbar focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50"
+              aria-label="Show sidebar labels"
+              title="Show sidebar labels"
+            >
+              <LayoutPanelLeft size={ICON} strokeWidth={STROKE} aria-hidden />
+            </button>
+          )}
         </nav>
       </aside>
     )
@@ -168,39 +180,52 @@ export function Sidebar({ open, collapsed = false }: SidebarProps) {
       aria-label="Sidebar"
       aria-hidden={!open}
     >
-      <nav className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-3 py-3">
-        {GROUPS.map((group) => (
-          <div key={group.id} role="group" aria-labelledby={`nav-${group.id}`}>
-            <p
-              id={`nav-${group.id}`}
-              className="mb-1 px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary"
-            >
-              {group.label}
-            </p>
-            <div className="flex flex-col gap-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon
-                const active = item.match(location.pathname)
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={linkClass(active, false)}
-                    aria-current={active ? 'page' : undefined}
-                  >
-                    <Icon
-                      size={ICON}
-                      strokeWidth={STROKE}
-                      className={active ? 'text-app-accent' : 'text-app-tertiary'}
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate">{item.label}</span>
-                  </Link>
-                )
-              })}
+      <nav className="flex h-full min-h-0 flex-col px-3 py-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
+          {GROUPS.map((group) => (
+            <div key={group.id} role="group" aria-labelledby={`nav-${group.id}`}>
+              <p
+                id={`nav-${group.id}`}
+                className="mb-1 px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary"
+              >
+                {group.label}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  const active = item.match(location.pathname)
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={linkClass(active, false)}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <Icon
+                        size={ICON}
+                        strokeWidth={STROKE}
+                        className={active ? 'text-app-accent' : 'text-app-tertiary'}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate">{item.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {onToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="mt-2 flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-medium text-app-secondary hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50"
+            aria-label="Hide sidebar labels"
+          >
+            <PanelLeft size={ICON} strokeWidth={STROKE} aria-hidden />
+            Collapse
+          </button>
+        )}
       </nav>
     </aside>
   )

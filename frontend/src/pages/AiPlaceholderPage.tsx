@@ -186,8 +186,8 @@ const iconBtn =
 
 const AI_HISTORY_OPEN_KEY = 'ir-ai-history-open'
 
-/** Match sticky sidebar column height exactly (navbar `h-14` = 3.5rem). */
-const AI_PAGE_SHELL = 'box-border flex h-[calc(100vh-3.5rem)] w-full max-w-full flex-col overflow-hidden'
+/** Match sticky sidebar column height exactly (navbar `h-12` = 3rem). */
+const AI_PAGE_SHELL = 'box-border flex h-[calc(100vh-3rem)] w-full max-w-full flex-col overflow-hidden'
 
 const aiCollapsedSessionBtn = (active: boolean) =>
   `flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight transition-all sm:h-9 sm:w-9 ${

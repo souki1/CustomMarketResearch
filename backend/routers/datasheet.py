@@ -78,19 +78,33 @@ def _dedupe_urls_prefer_order(urls: list[str], *, limit: int = 15) -> list[str]:
 _US_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
 
 DEFAULT_EXTRACT_FIELDS_PROMPT = (
-    "Always extract these default fields even if they were not requested:\n"
-    "- product_image: the main product photograph as a direct https URL "
-    "(prefer the large product photo, og:image, or first gallery image; "
-    "not a logo, icon, or sprite).\n"
-    "- specifications: copy EVERY row from spec / details tables as an object of "
-    "name -> value (dimensions, material, compatibility, weight, length, width, "
-    "height, OEM/part numbers, voltage, capacity, color, finish, and similar). "
-    "Do not summarize or omit rows.\n"
-    "- datasheet_url: a direct https URL to a PDF file (path ends in .pdf) for the "
-    "official datasheet, spec sheet, or parts/operator manual. Never use a product "
-    "listing, parts catalog, or shopping page.\n"
-    "Also extract vendor_name, price (keep currency symbols), product_description, "
-    "delivery/lead time, location, contact, manufacturer, and part_number when present. "
+    "Always extract the COMPLETE listing for this exact part — including the user's "
+    "requested fields AND the defaults below. Never skip defaults because the user "
+    "asked for something specific. Do not invent values that are not on the page.\n"
+    "Part identity:\n"
+    "- product_image: main product photograph as a direct https URL "
+    "(large photo, og:image, or first gallery image; not a logo or icon).\n"
+    "- product_description, manufacturer, part_number, sku.\n"
+    "- specifications: copy EVERY spec/details row as name -> value. Do not omit rows.\n"
+    "- datasheet_url: direct https URL ending in .pdf for the official datasheet, "
+    "spec sheet, or parts/operator manual. Never a catalog or shopping page.\n"
+    "Commercial:\n"
+    "- vendor_name, price (keep currency symbols), stock/availability, moq "
+    "(minimum order quantity), delivery/lead time, location, contact.\n"
+    "Quality and trust (from THIS page only):\n"
+    "- certifications: ISO 9001, ISO 14001, IATF 16949, AS9100, RoHS, CE, UL, "
+    "PPAP, or phrases like 'ISO certified'. Comma-separated if several.\n"
+    "- score or review_rating if shown (for example 4.7/5 or 92%).\n"
+    "- authorized_status: Authorized OEM dealer, Independent reseller, "
+    "Marketplace, Manufacturer site, or Not stated.\n"
+    "- website_reliability: a short evidence-based label from page facts "
+    "(authorized badge, OEM dealer, marketplace listing). Never invent a "
+    "numeric trust score or off-page reputation.\n"
+    "- reliability_notes: factual signals on the page (authorized badge, years "
+    "in business, physical address, reviews, about-company). Omit if none.\n"
+    "User request:\n"
+    "- requested_fields: every extra fact the user asked for that does not fit "
+    "a named field, as name/value pairs. Always include those when present.\n"
     "Return structured JSON. Omit empty values."
 )
 
@@ -125,6 +139,20 @@ _NON_SPEC_KEYS = {
     "currency",
     "description",
     "productdescription",
+    "moq",
+    "minimumorderquantity",
+    "certifications",
+    "certification",
+    "score",
+    "rating",
+    "sku",
+    "authorizedstatus",
+    "authorizeddealer",
+    "websitereliability",
+    "reliability",
+    "reliabilitynotes",
+    "reviewrating",
+    "requestedfields",
     "name",
     "title",
     "manufacturer",
@@ -355,6 +383,8 @@ def _normalize_extracted_defaults(data: dict, *, page_url: str | None = None) ->
     if specs:
         out["specifications"] = specs
 
+    _flatten_requested_fields(out)
+
     datasheet = _first_http_url(out.get("datasheet_url"))
     if not datasheet:
         for alias in (
@@ -393,10 +423,66 @@ def _with_restored_default_fields(
     out = _normalize_extracted_defaults(dict(data), page_url=page_url)
     if isinstance(raw, dict):
         raw_norm = _normalize_extracted_defaults(raw, page_url=page_url)
-        for key in ("product_image", "specifications", "datasheet_url"):
+        for key in (
+            "product_image",
+            "specifications",
+            "datasheet_url",
+            "certifications",
+            "moq",
+            "score",
+            "stock",
+            "sku",
+            "authorized_status",
+            "website_reliability",
+            "reliability_notes",
+            "review_rating",
+            "requested_fields",
+        ):
             if not out.get(key) and raw_norm.get(key):
                 out[key] = raw_norm[key]
+        if out.get("requested_fields"):
+            _flatten_requested_fields(out)
     return out
+
+
+_UNSAFE_EXTRACT_KEYS = frozenset({"__proto__", "constructor", "prototype", "id", "_id"})
+
+
+def _safe_extract_key(raw: object) -> str | None:
+    text = re.sub(r"[^a-z0-9_]+", "_", str(raw or "").strip().lower()).strip("_")
+    if not text or len(text) > 80 or text in _UNSAFE_EXTRACT_KEYS:
+        return None
+    return text
+
+
+def _flatten_requested_fields(out: dict) -> None:
+    """Lift user-asked name/value pairs onto top-level keys without overwriting defaults."""
+    raw = out.get("requested_fields")
+    items: list[object]
+    if isinstance(raw, list):
+        items = raw
+    elif isinstance(raw, dict):
+        items = [{"name": key, "value": val} for key, val in raw.items()]
+    else:
+        return
+    for item in items:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("key") or item.get("label")
+            value = item.get("value")
+            if value is None:
+                value = item.get("val")
+        else:
+            continue
+        key = _safe_extract_key(name)
+        if not key or key in out:
+            continue
+        if value is None or value == "":
+            continue
+        if isinstance(value, (dict, list)):
+            continue
+        text = str(value).strip()
+        if text:
+            out[key] = text[:2000]
 
 
 def _compose_research_extract_query(
@@ -406,11 +492,15 @@ def _compose_research_extract_query(
     find_more: bool = False,
     agent_focus: str | None = None,
 ) -> str:
-    """User prompt plus default image / spec / datasheet extraction."""
+    """User prompt plus full part / reliability / certification extraction."""
     parts: list[str] = []
     user = (user_query or "").strip()
     if user:
-        parts.append(user)
+        parts.append(
+            "USER REQUEST (required extra extraction — include these facts when "
+            "present on the page, in named fields or requested_fields):\n"
+            + user[:4000]
+        )
     parts.append(DEFAULT_EXTRACT_FIELDS_PROMPT)
     focus = (agent_focus or "").strip().lower()
     if find_more and focus == "datasheets":

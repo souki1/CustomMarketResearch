@@ -229,3 +229,11 @@ export function isOemSection(raw: string | undefined): raw is OemSectionId {
 export function isSupplierSection(raw: string | undefined): raw is SupplierSectionId {
   return SUPPLIER_IDS.some((id) => id === raw)
 }
+
+export function oemNavGroupLabel(section: string): string | undefined {
+  return OEM_NAV.find((group) => group.items.some((item) => item.id === section))?.label
+}
+
+export function supplierNavGroupLabel(section: string): string | undefined {
+  return SUPPLIER_NAV.find((group) => group.items.some((item) => item.id === section))?.label
+}

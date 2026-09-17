@@ -93,15 +93,15 @@ CLEAN_SYSTEM = """You clean and normalize product/parts data extracted from web 
 Return ONLY a valid JSON object. No markdown, no explanation, no code blocks.
 
 Rules:
-1. Use snake_case keys. Always keep these when present: product_image, product_description, vendor_name, price, specifications, product_details, datasheet_url, delivery, location, contact, manufacturer, part_number
+1. Use snake_case keys. Always keep these when present: product_image, product_description, vendor_name, price, specifications, product_details, datasheet_url, delivery, location, contact, manufacturer, part_number, sku, stock, moq, certifications, score, review_rating, authorized_status, website_reliability, reliability_notes, requested_fields
 2. product_image: if array, use the first valid https URL; if string, use as-is; fix protocol-relative URLs (//host -> https://host)
 3. product_description: if array, join with " | "; trim whitespace
 4. price: preserve exactly as shown including currency symbol ($, €, £, etc.); if array, use first price string; remove if empty
 5. specifications: keep as an object of technical spec name -> value; snake_case keys; remove empty values. If specs arrived as a list of {name,value} or {key,value}, convert to an object.
 6. product_details: keep as object; use snake_case keys; remove empty values
 7. datasheet_url: a direct https URL to a PDF file (path ends in .pdf). Never a catalog or product webpage. If the value is an object with url/href/src, use that. Map data_sheet, spec_sheet, manual_url, pdf_url onto datasheet_url when datasheet_url is missing.
-8. delivery, location, contact: omit if null or empty
-9. Preserve any additional non-empty keys the extractor returned (user-requested fields).
+8. delivery, location, contact, moq, certifications, score, stock, sku, authorized_status, website_reliability, reliability_notes, review_rating: omit if null or empty
+9. Preserve any additional non-empty keys the extractor returned (user-requested fields). Keep requested_fields as an array of {name,value} when present.
 10. Omit any key with null, empty string, or empty array"""
 
 
