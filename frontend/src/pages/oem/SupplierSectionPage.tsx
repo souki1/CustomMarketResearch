@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
-import { SUPPLIER_HOME_PATH } from '@/lib/paths'
+import { Link, Navigate, useParams } from 'react-router-dom'
+import { SUPPLIER_AGENTS_PATH, SUPPLIER_HOME_PATH } from '@/lib/paths'
+import { AgentBridgePanel } from './AgentBridgePanel'
+import { OEM_RFQ_AGENT_ID, THIS_OEM_ID } from './agentBridgeSeed'
 import { CatalogPanel, isSupplierCatalogId, SUPPLIER_CATALOGS } from './deskCatalogs'
 import { isSupplierSection } from './deskNav'
 import { useOemDesk } from './OemDeskContext'
@@ -52,6 +54,8 @@ function SupplierSection({ section }: { section: SupplierSectionId }) {
       return <PaymentsPanel vendorView />
     case 'profile':
       return <SupplierProfile />
+    case 'agents':
+      return <AgentBridgePanel side="supplier" />
     default: {
       const _exhaustive: never = section
       return _exhaustive
@@ -132,7 +136,7 @@ function SupplierRfqs() {
             title={`Your bid · ${selected.partNumber}`}
             action={
               selected.status === 'open' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
@@ -152,6 +156,12 @@ function SupplierRfqs() {
                   >
                     Submit bid
                   </AccentButton>
+                  <Link
+                    to={`${SUPPLIER_AGENTS_PATH}?oem=${THIS_OEM_ID}&agent=${OEM_RFQ_AGENT_ID}&rfq=${selected.id}`}
+                    className="inline-flex h-8 items-center rounded-[8px] border border-app-separator px-3 text-[13px] font-medium text-app-label hover:bg-app-fill"
+                  >
+                    Send to OEM agent
+                  </Link>
                 </div>
               ) : null
             }

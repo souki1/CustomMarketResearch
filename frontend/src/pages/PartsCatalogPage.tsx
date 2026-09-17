@@ -16,6 +16,7 @@ import {
   Truck,
   X,
 } from 'lucide-react'
+import { AppScroll } from '@/components/AppScroll'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -285,7 +286,7 @@ export function PartsCatalogPage() {
     pageItems.length > 0 && pageItems.every((item) => selected.has(item.id))
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] w-full min-w-0 flex-col overflow-hidden bg-app-bg">
+    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-app-bg">
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-app-separator bg-app-surface px-5">
         <div className="min-w-0">
           <h1 className="truncate text-[22px] font-semibold tracking-[-0.03em] text-app-label">
@@ -321,9 +322,9 @@ export function PartsCatalogPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-5">
         {!loading && !error && items.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
             {[
               { label: 'Listings', value: catalogStats.listings, hint: 'vendor offers' },
               { label: 'Unique parts', value: catalogStats.uniqueParts, hint: 'distinct part IDs' },
@@ -344,7 +345,7 @@ export function PartsCatalogPage() {
           </div>
         )}
 
-        <div className="flex flex-col gap-3 rounded-lg border border-app-separator bg-app-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex shrink-0 flex-col gap-3 rounded-lg border border-app-separator bg-app-surface p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-app-tertiary">
               Active filters
@@ -478,7 +479,7 @@ export function PartsCatalogPage() {
           </div>
         </div>
 
-        <div className="flex min-h-105 flex-1 flex-col overflow-hidden rounded-lg border border-app-separator bg-app-surface">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-app-separator bg-app-surface">
           {loading ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-sm text-app-secondary">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -504,7 +505,7 @@ export function PartsCatalogPage() {
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-auto">
+              <AppScroll className="min-h-0 flex-1">
                 <table className="w-full min-w-180 border-collapse text-left">
                   <thead className="sticky top-0 z-10 border-b border-app-separator bg-app-fill">
                     <tr>
@@ -651,7 +652,7 @@ export function PartsCatalogPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </AppScroll>
 
               <div className="flex items-center justify-between border-t border-app-separator bg-app-fill px-3 py-2.5">
                 <span className="text-xs font-semibold text-app-secondary">

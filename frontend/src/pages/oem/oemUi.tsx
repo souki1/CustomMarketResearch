@@ -1,4 +1,75 @@
 import type { ReactNode } from 'react'
+import { NavLink } from 'react-router-dom'
+import type { NavGroup } from './deskNav'
+
+export function DeskSectionNav<T extends string>({
+  groups,
+  basePath,
+  ariaLabel,
+  activeClassName,
+  compact,
+}: {
+  groups: NavGroup<T>[]
+  basePath: string
+  ariaLabel: string
+  activeClassName: string
+  compact?: boolean
+}) {
+  if (compact) {
+    return (
+      <nav className="flex gap-1 overflow-x-auto pb-1" aria-label={ariaLabel}>
+        {groups.flatMap((g) => g.items).map((item) => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.id}
+              to={`${basePath}/${item.id}`}
+              className={({ isActive }) =>
+                `inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium ${
+                  isActive ? activeClassName : 'text-app-secondary hover:bg-app-fill'
+                }`
+              }
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+              {item.label}
+            </NavLink>
+          )
+        })}
+      </nav>
+    )
+  }
+
+  return (
+    <nav className="flex flex-col gap-3.5" aria-label={ariaLabel}>
+      {groups.map((group) => (
+        <div key={group.id}>
+          <p className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-app-tertiary">
+            {group.label}
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {group.items.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.id}
+                  to={`${basePath}/${item.id}`}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium ${
+                      isActive ? activeClassName : 'text-app-secondary hover:bg-app-fill hover:text-app-label'
+                    }`
+                  }
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span className="min-w-0 truncate">{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </nav>
+  )
+}
 
 export function formatUsd(n: number): string {
   return new Intl.NumberFormat(undefined, {

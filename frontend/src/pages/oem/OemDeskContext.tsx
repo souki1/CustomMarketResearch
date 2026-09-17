@@ -20,6 +20,14 @@ import {
   SUPPLIERS,
   TRACK_ROWS,
 } from './oemSeed'
+import {
+  DEMO_SUPPLIER_ID,
+  OEM_RFQ_AGENT_ID,
+  bridgeThreadId,
+  mockAgentReply,
+  newBridgeMessage,
+  seedBridgeMessages,
+} from './agentBridgeSeed'
 import type {
   AckStatus,
   ApprovalRow,
@@ -27,6 +35,9 @@ import type {
   AsnRow,
   BidRow,
   BomLine,
+  BridgeMessage,
+  BridgeQuoteCard,
+  BridgeSide,
   CertRow,
   ChangeOrderRow,
   ComplianceRow,
@@ -66,8 +77,21 @@ type OemDeskContextValue = {
   production: ProductionRow[]
   certs: CertRow[]
   qualityDocs: QualityDocRow[]
+  bridgeMessages: BridgeMessage[]
   awardBid: (rfqId: string, bidId: string) => void
   submitSupplierBid: (rfqId: string, unitPrice: number, leadDays: number) => void
+  sendBridgeChat: (input: {
+    side: BridgeSide
+    oemId: string
+    supplierId: string
+    agentId: string
+    text: string
+  }) => void
+  sendQuoteToOemAgent: (input: {
+    oemId: string
+    supplierId: string
+    quote: BridgeQuoteCard
+  }) => void
   ackPo: (poId: string, ack: AckStatus) => void
   receiveLine: (receiptId: string, qty: number) => void
   setNcrStatus: (id: string, status: NcrStatus) => void
@@ -80,7 +104,6 @@ type OemDeskContextValue = {
 
 const OemDeskContext = createContext<OemDeskContextValue | null>(null)
 
-const DEMO_SUPPLIER_ID = 's1'
 const DEMO_SUPPLIER_NAME = 'Messicks'
 
 export function OemDeskProvider({ children }: { children: ReactNode }) {
@@ -94,6 +117,7 @@ export function OemDeskProvider({ children }: { children: ReactNode }) {
   const [production, setProduction] = useState<ProductionRow[]>(PRODUCTION)
   const [payments, setPayments] = useState<PaymentRow[]>(PAYMENTS)
   const [qualityDocs, setQualityDocs] = useState<QualityDocRow[]>(QUALITY_DOCS)
+  const [bridgeMessages, setBridgeMessages] = useState<BridgeMessage[]>(() => seedBridgeMessages())
 
   const awardBid = (rfqId: string, bidId: string) => {
     setRfqs((prev) => {
@@ -251,6 +275,60 @@ export function OemDeskProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  const sendBridgeChat = (input: {
+    side: BridgeSide
+    oemId: string
+    supplierId: string
+    agentId: string
+    text: string
+  }) => {
+    const threadId = bridgeThreadId(input.oemId, input.supplierId, input.agentId)
+    const human: BridgeMessage = newBridgeMessage({
+      threadId,
+      speaker: input.side === 'oem' ? 'oem-human' : 'supplier-human',
+      agentId: input.agentId,
+      text: input.text,
+    })
+    const reply: BridgeMessage = newBridgeMessage({
+      threadId,
+      speaker: input.side === 'oem' ? 'supplier-agent' : 'oem-agent',
+      agentId: input.agentId,
+      text: mockAgentReply({
+        sideAsking: input.side,
+        agentId: input.agentId,
+        text: input.text,
+      }),
+    })
+    setBridgeMessages((prev) => [...prev, human, reply])
+  }
+
+  const sendQuoteToOemAgent = (input: {
+    oemId: string
+    supplierId: string
+    quote: BridgeQuoteCard
+  }) => {
+    const threadId = bridgeThreadId(input.oemId, input.supplierId, OEM_RFQ_AGENT_ID)
+    const human: BridgeMessage = newBridgeMessage({
+      threadId,
+      speaker: 'supplier-human',
+      agentId: OEM_RFQ_AGENT_ID,
+      text: `Quote for ${input.quote.rfqNumber} · ${input.quote.partNumber}.`,
+      quote: input.quote,
+    })
+    const reply: BridgeMessage = newBridgeMessage({
+      threadId,
+      speaker: 'oem-agent',
+      agentId: OEM_RFQ_AGENT_ID,
+      text: mockAgentReply({
+        sideAsking: 'supplier',
+        agentId: OEM_RFQ_AGENT_ID,
+        text: human.text,
+        quote: input.quote,
+      }),
+    })
+    setBridgeMessages((prev) => [...prev, human, reply])
+  }
+
   const value = useMemo(
     () => ({
       bom: BOM_LINES,
@@ -272,8 +350,11 @@ export function OemDeskProvider({ children }: { children: ReactNode }) {
       production,
       certs: CERTS,
       qualityDocs,
+      bridgeMessages,
       awardBid,
       submitSupplierBid,
+      sendBridgeChat,
+      sendQuoteToOemAgent,
       ackPo,
       receiveLine,
       setNcrStatus,
@@ -283,7 +364,7 @@ export function OemDeskProvider({ children }: { children: ReactNode }) {
       markPaid,
       toggleQualityDoc,
     }),
-    [rfqs, track, receipts, quality, portalPos, approvals, asns, production, payments, qualityDocs]
+    [rfqs, track, receipts, quality, portalPos, approvals, asns, production, payments, qualityDocs, bridgeMessages]
   )
 
   return <OemDeskContext.Provider value={value}>{children}</OemDeskContext.Provider>

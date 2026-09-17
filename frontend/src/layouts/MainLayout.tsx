@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CommandPalette, Navbar, Sidebar } from '@/components'
+import { AppScroll, CommandPalette, Navbar, Sidebar } from '@/components'
 import { BucketProvider } from '@/contexts/BucketContext'
 import { ComparisonProvider } from '@/contexts/ComparisonContext'
 import { LayoutProvider, useLayout } from '@/contexts/LayoutContext'
@@ -118,16 +118,18 @@ function MainLayoutContent() {
             onSidebarToggle={handleSidebarToggle}
             onOpenCommandPalette={openCommandPalette}
           />
-          <div className="flex bg-app-bg">
+          <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden bg-app-bg">
             <div
-              className={`sticky top-14 flex h-[calc(100vh-3.5rem)] shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
+              className={`flex h-full shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-14'}`}
             >
               <div className="h-full w-full overflow-hidden">
                 <Sidebar open={showSidebar} collapsed={!showSidebar} />
               </div>
             </div>
-            <main className="min-h-[calc(100vh-3.5rem)] min-w-0 flex-1 bg-app-bg">
-              <Outlet />
+            <main className="h-full min-h-0 min-w-0 flex-1 bg-app-bg">
+              <AppScroll className="scroll--flush h-full" contentClassName="h-full">
+                <Outlet />
+              </AppScroll>
             </main>
           </div>
         </ComparisonProvider>

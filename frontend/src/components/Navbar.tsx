@@ -182,10 +182,10 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
 
   return (
     <nav
-      className="sticky top-0 z-20 border-b border-app-separator bg-app-surface/80 backdrop-blur-xl"
+      className="sticky top-0 z-20 h-14 border-b border-app-separator bg-app-surface/80 backdrop-blur-xl"
       aria-label="Main navigation"
     >
-      <div className="flex h-14 w-full items-center gap-2 px-3 sm:px-4">
+      <div className="flex h-full w-full items-center gap-2 px-3 sm:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {onSidebarToggle && (
             <button

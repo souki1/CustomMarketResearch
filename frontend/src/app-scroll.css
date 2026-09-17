@@ -1,0 +1,118 @@
+/*
+  Custom scroller: .scroll--root > .scroll--viewport > .scroll--content
+  Do not set scrollbar-width / scrollbar-color on Chromium — it drops webkit rules.
+*/
+
+.scroll--root {
+  --_space: 8px;
+  --_theme: var(--app-secondary);
+  --_track: color-mix(in srgb, var(--app-label) 16%, transparent);
+  --_thumb: color-mix(in srgb, var(--app-label) 42%, transparent);
+  --_thumb-strong: color-mix(in srgb, var(--app-label) 62%, transparent);
+
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding-inline-end: var(--_space);
+}
+
+.scroll--root.scroll--flush {
+  padding-inline-end: 0;
+}
+
+.scroll--viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior-y: contain;
+}
+
+@supports (container-type: scroll-state) {
+  .scroll--viewport {
+    container: --scrollport / size scroll-state;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scroll--viewport {
+    scroll-behavior: smooth;
+  }
+}
+
+.scroll--viewport:is(:focus-visible, :focus-within) {
+  outline: none;
+  outline-offset: -2px;
+}
+
+.scroll--viewport::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+.scroll--viewport::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.scroll--viewport::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scroll--viewport::-webkit-scrollbar-track {
+  margin-block: var(--_space);
+  background: var(--_track);
+  background-clip: padding-box;
+  border-radius: 1e3px;
+}
+
+.scroll--viewport::-webkit-scrollbar-thumb {
+  background-color: var(--_thumb);
+  border: 2px solid transparent;
+  border-radius: 1e3px;
+  background-clip: padding-box;
+}
+
+@media (forced-colors: active) {
+  .scroll--viewport::-webkit-scrollbar-thumb {
+    border: 2px solid currentcolor;
+  }
+}
+
+.scroll--viewport:is(:focus-visible, :focus-within)::-webkit-scrollbar-thumb {
+  background-color: var(--_thumb-strong);
+}
+
+@media (hover: hover) {
+  .scroll--viewport:hover::-webkit-scrollbar-thumb {
+    background-color: var(--_thumb-strong);
+  }
+
+  .scroll--viewport::-webkit-scrollbar-thumb:hover {
+    background-color: var(--_theme);
+  }
+}
+
+@supports (-moz-appearance: none) {
+  .scroll--viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--_thumb) var(--_track);
+    transition: scrollbar-color 0.3s ease;
+  }
+
+  .scroll--viewport:is(:focus-visible, :focus-within) {
+    scrollbar-color: var(--_thumb-strong) var(--_track);
+  }
+
+  @media (hover: hover) {
+    .scroll--viewport:hover {
+      scrollbar-color: var(--_thumb-strong) var(--_track);
+    }
+  }
+}

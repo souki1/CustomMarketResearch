@@ -15,6 +15,7 @@ export type OemInteractiveId =
   | 'payments'
   | 'compliance'
   | 'cost-down'
+  | 'agents'
 
 export type OemCatalogId =
   | 'forecast'
@@ -56,6 +57,7 @@ export type SupplierInteractiveId =
   | 'quality'
   | 'payments'
   | 'profile'
+  | 'agents'
 
 export type SupplierCatalogId =
   | 'onboarding'
@@ -111,6 +113,43 @@ export type SupplierRow = {
   onTime: number
   quality: number
   risk: 'low' | 'medium' | 'high'
+}
+
+export type BridgeSide = 'oem' | 'supplier'
+
+export type BridgeSpeaker = 'oem-human' | 'oem-agent' | 'supplier-human' | 'supplier-agent'
+
+export type BridgeAgent = {
+  id: string
+  name: string
+  focus: string
+  blurb: string
+}
+
+export type BridgeOrg = {
+  id: string
+  name: string
+  subtitle: string
+  agents: BridgeAgent[]
+}
+
+export type BridgeQuoteCard = {
+  rfqId: string
+  rfqNumber: string
+  partNumber: string
+  qty: number
+  unitPrice: number
+  leadDays: number
+}
+
+export type BridgeMessage = {
+  id: string
+  threadId: string
+  speaker: BridgeSpeaker
+  agentId: string
+  text: string
+  at: string
+  quote?: BridgeQuoteCard
 }
 
 export type BidRow = {

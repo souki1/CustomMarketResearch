@@ -451,7 +451,7 @@ export function DashboardPage() {
         : 'No files yet'
 
   return (
-    <div className="min-h-full overflow-y-auto bg-app-bg p-6 sm:p-8">
+    <div className="min-h-full bg-app-bg p-6 sm:p-8">
       <EnterpriseDashboard
         loading={loading}
         userName={userName}

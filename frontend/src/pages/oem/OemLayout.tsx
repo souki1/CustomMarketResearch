@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { AppScroll } from '@/components/AppScroll'
+import { Link, Outlet } from 'react-router-dom'
 import {
   OEM_PATH,
   PURCHASE_ORDER_PATH,
@@ -6,41 +7,26 @@ import {
   SUPPLIER_HOME_PATH,
 } from '@/lib/paths'
 import { OEM_NAV } from './deskNav'
+import { DeskSectionNav } from './oemUi'
 
 export function OemLayout() {
   return (
     <div className="flex min-h-full bg-app-bg">
-      <aside className="sticky top-0 hidden h-[calc(100vh-3.5rem)] w-52 shrink-0 overflow-y-auto border-r border-app-separator bg-app-surface px-3 py-5 md:block">
+      <aside className="sticky top-0 hidden h-[calc(100vh-3.5rem)] w-56 shrink-0 border-r border-app-separator bg-app-surface md:block">
+        <AppScroll className="h-full" contentClassName="px-3 py-5">
         <p className="px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary">OEM</p>
         <h1 className="mt-1 px-2.5 text-[17px] font-semibold tracking-[-0.02em] text-app-label">
           Buyer desk
         </h1>
-        <nav className="mt-4 flex flex-col gap-3.5" aria-label="OEM desk sections">
-          {OEM_NAV.map((group) => (
-            <div key={group.id}>
-              <p className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-app-tertiary">
-                {group.label}
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.id}
-                    to={`${OEM_PATH}/${item.id}`}
-                    className={({ isActive }) =>
-                      `rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium ${
-                        isActive
-                          ? 'bg-app-fill-strong text-app-label'
-                          : 'text-app-secondary hover:bg-app-fill hover:text-app-label'
-                      }`
-                    }
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
+        <div className="mt-4">
+          <DeskSectionNav
+            groups={OEM_NAV}
+            basePath={OEM_PATH}
+            ariaLabel="OEM desk sections"
+            activeClassName="bg-app-fill-strong text-app-label"
+          />
+        </div>
+        </AppScroll>
       </aside>
       <div className="min-w-0 flex-1">
         <header className="border-b border-app-separator bg-app-surface px-5 py-4 sm:px-6">
@@ -76,23 +62,15 @@ export function OemLayout() {
               </Link>
             </div>
           </div>
-          <nav className="mt-3 flex gap-1 overflow-x-auto pb-1 md:hidden" aria-label="OEM sections">
-            {OEM_NAV.flatMap((g) => g.items).map((item) => (
-              <NavLink
-                key={item.id}
-                to={`${OEM_PATH}/${item.id}`}
-                className={({ isActive }) =>
-                  `shrink-0 rounded-[8px] px-2.5 py-1.5 text-[13px] font-medium ${
-                    isActive
-                      ? 'bg-app-fill-strong text-app-label'
-                      : 'text-app-secondary hover:bg-app-fill'
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+          <div className="mt-3 md:hidden">
+            <DeskSectionNav
+              groups={OEM_NAV}
+              basePath={OEM_PATH}
+              ariaLabel="OEM sections"
+              activeClassName="bg-app-fill-strong text-app-label"
+              compact
+            />
+          </div>
         </header>
         <div className="px-5 py-5 sm:px-6">
           <Outlet />

@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
-import { OEM_OVERVIEW_PATH } from '@/lib/paths'
+import { Link, Navigate, useParams } from 'react-router-dom'
+import { OEM_AGENTS_PATH, OEM_OVERVIEW_PATH } from '@/lib/paths'
+import { AgentBridgePanel } from './AgentBridgePanel'
+import { SUP_QUOTE_AGENT_ID } from './agentBridgeSeed'
 import { CatalogPanel, isOemCatalogId, OEM_CATALOGS } from './deskCatalogs'
 import { isOemSection } from './deskNav'
 import { useOemDesk } from './OemDeskContext'
@@ -154,6 +156,8 @@ function OemSection({ section }: { section: OemSectionId }) {
       return <CompliancePanel />
     case 'cost-down':
       return <CostDownPanel />
+    case 'agents':
+      return <AgentBridgePanel side="oem" />
     default: {
       const _exhaustive: never = section
       return _exhaustive
@@ -242,7 +246,7 @@ function SuppliersPanel() {
         />
       </div>
       <Panel title="Supplier master">
-        <DataTable columns={['Supplier', 'Category', 'Region', 'Authorized', 'On-time', 'Quality', 'Risk']}>
+        <DataTable columns={['Supplier', 'Category', 'Region', 'Authorized', 'On-time', 'Quality', 'Risk', '']}>
           {suppliers.map((s) => (
             <tr key={s.id}>
               <td className="px-4 py-2.5 font-medium">{s.name}</td>
@@ -257,6 +261,14 @@ function SuppliersPanel() {
               <td className="px-4 py-2.5 tabular-nums">{s.quality}%</td>
               <td className="px-4 py-2.5">
                 <Badge tone={riskTone(s.risk)}>{s.risk}</Badge>
+              </td>
+              <td className="px-4 py-2.5 text-right">
+                <Link
+                  to={`${OEM_AGENTS_PATH}?supplier=${s.id}`}
+                  className="text-[12px] font-medium text-app-accent hover:underline"
+                >
+                  Ask their agent
+                </Link>
               </td>
             </tr>
           ))}
@@ -327,9 +339,17 @@ function RfqsPanel() {
                     </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    {selected.status === 'open' ? (
-                      <AccentButton onClick={() => awardBid(selected.id, b.id)}>Award</AccentButton>
-                    ) : null}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Link
+                        to={`${OEM_AGENTS_PATH}?supplier=${b.supplierId}&agent=${SUP_QUOTE_AGENT_ID}`}
+                        className="text-[12px] font-medium text-app-accent hover:underline"
+                      >
+                        Ask agent
+                      </Link>
+                      {selected.status === 'open' ? (
+                        <AccentButton onClick={() => awardBid(selected.id, b.id)}>Award</AccentButton>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

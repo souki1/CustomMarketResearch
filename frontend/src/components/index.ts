@@ -1,4 +1,5 @@
 export { AllFilesFilters } from './AllFilesFilters'
+export { AppScroll } from './AppScroll'
 export { AllFilesView } from './AllFilesView'
 export { Card } from './Card'
 export { CommandPalette } from './CommandPalette'

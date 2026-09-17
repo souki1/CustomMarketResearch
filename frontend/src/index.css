@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./app-scroll.css";
 
 @theme inline {
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
@@ -124,9 +125,23 @@
 html,
 body,
 #root {
+  height: 100%;
   min-height: 100%;
   background-color: var(--app-bg);
   color: var(--app-label);
+}
+
+/* Hide native bars everywhere except AppScroll viewports.
+   scrollbar-width on .scroll--viewport would make Chromium drop ::-webkit-scrollbar. */
+*:not(.scroll--viewport) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*:not(.scroll--viewport)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 button,
