@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card } from '@/components'
-import { confirmPasswordChange, getMe, profilePhotoUrl, requestPasswordChangeCode, updateProfile, uploadProfilePhoto } from '@/lib/api'
+import { getMe, profilePhotoUrl, updateProfile, uploadProfilePhoto } from '@/lib/api'
 import { getCurrentUserEmail, getCurrentUserName, getCurrentUserPhotoUrl, getToken, setCurrentUserName, setCurrentUserPhotoUrl } from '@/lib/auth'
 import { SETTINGS_ACTIONS_CLASS, SETTINGS_BTN_PRIMARY_CLASS, SETTINGS_BTN_SECONDARY_CLASS, SETTINGS_CARD_CLASS, SETTINGS_INPUT_CLASS, SETTINGS_INPUT_READONLY_CLASS, SETTINGS_LABEL_CLASS } from '@/lib/settingsFormStyles'
 
@@ -62,15 +63,6 @@ export function SettingsProfilePage() {
     profilePhotoUrl: string | null
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
-  const [pwStep, setPwStep] = useState<'request' | 'confirm'>('request')
-  const [pwCode, setPwCode] = useState('')
-  const [pwNew, setPwNew] = useState('')
-  const [pwConfirm, setPwConfirm] = useState('')
-  const [pwBusy, setPwBusy] = useState(false)
-  const [pwMsg, setPwMsg] = useState<string | null>(null)
-  const [pwErr, setPwErr] = useState<string | null>(null)
-  const passwordsMismatch = pwConfirm.length > 0 && pwNew !== pwConfirm
 
   useEffect(() => {
     const token = getToken()
@@ -206,80 +198,6 @@ export function SettingsProfilePage() {
     e.target.value = ''
   }
 
-  const openChangePassword = () => {
-    setChangePasswordOpen(true)
-    setPwStep('request')
-    setPwCode('')
-    setPwNew('')
-    setPwConfirm('')
-    setPwMsg(null)
-    setPwErr(null)
-  }
-
-  const closeChangePassword = () => {
-    setChangePasswordOpen(false)
-    setPwBusy(false)
-    setPwMsg(null)
-    setPwErr(null)
-  }
-
-  const sendVerificationCode = async () => {
-    const token = getToken()
-    if (!token) return
-    setPwBusy(true)
-    setPwErr(null)
-    setPwMsg(null)
-    try {
-      const resp = await requestPasswordChangeCode(token, 'email')
-      setPwStep('confirm')
-      if (resp.delivery === 'console') {
-        setPwMsg('Verification code generated. Check the backend console logs (email sending is not configured yet).')
-      } else {
-        setPwMsg('Verification code sent to your email.')
-      }
-      if (resp.dev_code) {
-        setPwMsg((prev) => (prev ? `${prev} (Dev code: ${resp.dev_code})` : `Dev code: ${resp.dev_code}`))
-      }
-    } catch (err) {
-      setPwErr(err instanceof Error ? err.message : 'Failed to send code')
-    } finally {
-      setPwBusy(false)
-    }
-  }
-
-  const confirmNewPassword = async () => {
-    const token = getToken()
-    if (!token) return
-    setPwErr(null)
-    setPwMsg(null)
-    const code = pwCode.trim()
-    if (!code) {
-      setPwErr('Enter the verification code.')
-      return
-    }
-    if (!pwNew || pwNew.length < 8) {
-      setPwErr('New password must be at least 8 characters.')
-      return
-    }
-    if (pwNew !== pwConfirm) {
-      setPwErr('Passwords do not match.')
-      return
-    }
-    setPwBusy(true)
-    try {
-      const resp = await confirmPasswordChange(token, { code, new_password: pwNew })
-      setPwMsg(resp.detail || 'Password updated.')
-      setPwStep('request')
-      setPwCode('')
-      setPwNew('')
-      setPwConfirm('')
-    } catch (err) {
-      setPwErr(err instanceof Error ? err.message : 'Failed to change password')
-    } finally {
-      setPwBusy(false)
-    }
-  }
-
   if (loading) {
     return (
       <header className="mb-8">
@@ -303,7 +221,7 @@ export function SettingsProfilePage() {
       <header className="mb-8">
         <h1 className="text-lg font-semibold text-app-label">Profile</h1>
         <p className="mt-1 text-sm text-app-secondary">
-          Update your personal information and security settings.
+          Update your personal information.
         </p>
         {fetchFailed && (
           <p className="mt-2 text-sm text-amber-600">
@@ -394,22 +312,14 @@ export function SettingsProfilePage() {
               onChange={(e) => setJobTitle(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-4">
-            <button
-              type="button"
-              onClick={openChangePassword}
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-medium text-app-secondary">Password and two-factor authentication</p>
+            <Link
+              to="/settings/security"
               className="w-fit rounded-md border border-app-separator bg-app-surface px-3 py-1.5 text-xs font-medium text-app-secondary hover:bg-app-fill"
             >
-              Change password
-            </button>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-app-secondary">Two-factor authentication</span>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input type="checkbox" className="peer sr-only" />
-              <span className="h-4 w-8 rounded-full bg-app-fill-strong peer-checked:bg-emerald-500" />
-              <span className="absolute left-0.5 h-3 w-3 rounded-full bg-app-surface shadow peer-checked:translate-x-4" />
-            </label>
-            </div>
+              Manage security
+            </Link>
           </div>
         </div>
       </Card>
@@ -432,102 +342,6 @@ export function SettingsProfilePage() {
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
-
-      {changePasswordOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-[520px] rounded-xl border border-app-separator bg-app-surface shadow-sm">
-            <div className="flex items-center justify-between border-b border-app-separator px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-app-label">Change password</p>
-                <p className="text-xs text-app-secondary">We’ll send a verification code to your email to confirm.</p>
-              </div>
-              <button
-                type="button"
-                onClick={closeChangePassword}
-                className="rounded-md px-2 py-1 text-sm text-app-secondary hover:bg-app-fill"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="px-4 py-4 space-y-3">
-              {pwMsg && <p className="text-sm text-emerald-700">{pwMsg}</p>}
-              {pwErr && <p className="text-sm text-red-600">{pwErr}</p>}
-
-              {pwStep === 'request' ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-app-secondary">
-                    Send code to: <span className="font-medium">{email || 'your email'}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={sendVerificationCode}
-                    disabled={pwBusy}
-                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {pwBusy ? 'Sending…' : 'Send verification code'}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div>
-                    <label className={SETTINGS_LABEL_CLASS} htmlFor="pw-code">Verification code</label>
-                    <input
-                      id="pw-code"
-                      className={SETTINGS_INPUT_CLASS}
-                      value={pwCode}
-                      onChange={(e) => setPwCode(e.target.value)}
-                      placeholder="6-digit code"
-                    />
-                  </div>
-                  <div>
-                    <label className={SETTINGS_LABEL_CLASS} htmlFor="pw-new">New password</label>
-                    <input
-                      id="pw-new"
-                      type="password"
-                      className={SETTINGS_INPUT_CLASS}
-                      value={pwNew}
-                      onChange={(e) => setPwNew(e.target.value)}
-                      placeholder="At least 8 characters"
-                    />
-                  </div>
-                  <div>
-                    <label className={SETTINGS_LABEL_CLASS} htmlFor="pw-confirm">Confirm new password</label>
-                    <input
-                      id="pw-confirm"
-                      type="password"
-                      className={SETTINGS_INPUT_CLASS}
-                      value={pwConfirm}
-                      onChange={(e) => setPwConfirm(e.target.value)}
-                    />
-                    {passwordsMismatch && (
-                      <p className="mt-1 text-xs text-red-600">Passwords do not match.</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={confirmNewPassword}
-                      disabled={pwBusy}
-                      className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {pwBusy ? 'Saving…' : 'Confirm & update password'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={sendVerificationCode}
-                      disabled={pwBusy}
-                      className="rounded-md border border-app-separator bg-app-surface px-3 py-2 text-sm font-medium text-app-secondary hover:bg-app-fill disabled:opacity-50"
-                    >
-                      Resend code
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

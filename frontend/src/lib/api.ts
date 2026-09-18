@@ -1,4 +1,4 @@
-import { getToken } from './auth'
+import { getToken, handleUnauthorizedSession } from './auth'
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
@@ -8,9 +8,37 @@ function bearerAuthHeader(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {}
 }
 
+function isPublicAuthApiPath(path: string): boolean {
+  return (
+    path.startsWith('/auth/signin') ||
+    path.startsWith('/auth/signup') ||
+    path.startsWith('/auth/google') ||
+    path.startsWith('/auth/exchange')
+  )
+}
+
+function onApiFailure(path: string, status: number) {
+  if (status === 401 && !isPublicAuthApiPath(path)) {
+    handleUnauthorizedSession()
+  }
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${API_BASE}${path}`, init)
+  if (!res.ok) onApiFailure(path, res.status)
+  return res
+}
+
 export type SignUpPayload = { email: string; password: string; display_name?: string }
 export type SignInPayload = { email: string; password: string }
-export type AuthResponse = { access_token: string; token_type: string; display_name: string }
+export type AuthResponse = {
+  access_token?: string | null
+  token_type: string
+  display_name?: string | null
+  email?: string | null
+  requires_2fa?: boolean
+  two_factor_token?: string | null
+}
 
 export type WorkspaceItem = {
   id: number
@@ -36,7 +64,7 @@ async function request<T>(
     ...bearerAuthHeader(),
   }
   void _ignoredExplicitToken
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const res = await apiFetch(path, { ...init, headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
@@ -60,6 +88,9 @@ export type MeResponse = {
   phone: string | null
   job_title: string | null
   profile_photo_url: string | null
+  has_password?: boolean
+  google_linked?: boolean
+  two_factor_enabled?: boolean
 }
 
 export async function getMe(token: string): Promise<MeResponse> {
@@ -95,6 +126,7 @@ export async function uploadProfilePhoto(file: File, token: string): Promise<MeR
     body: form,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Upload failed'
     throw new Error(msg)
@@ -115,7 +147,7 @@ export async function requestPasswordChangeCode(
   })
 }
 
-export type PasswordChangeConfirmResponse = { detail: string }
+export type PasswordChangeConfirmResponse = { detail: string; access_token?: string | null }
 
 export async function confirmPasswordChange(
   token: string,
@@ -126,6 +158,87 @@ export async function confirmPasswordChange(
     body: JSON.stringify(payload),
     token,
   })
+}
+
+export async function exchangeAuthCode(code: string): Promise<AuthResponse> {
+  return request<AuthResponse>('/auth/exchange', { method: 'POST', body: JSON.stringify({ code }) })
+}
+
+export async function verifySignInTwoFactor(payload: {
+  two_factor_token: string
+  code: string
+}): Promise<AuthResponse> {
+  return request<AuthResponse>('/auth/signin/verify-2fa', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function resendSignInTwoFactor(twoFactorToken: string): Promise<PasswordChangeRequestResponse> {
+  return request<PasswordChangeRequestResponse>('/auth/signin/resend-2fa', {
+    method: 'POST',
+    body: JSON.stringify({ two_factor_token: twoFactorToken }),
+  })
+}
+
+export async function requestEnableTwoFactor(token: string): Promise<PasswordChangeRequestResponse> {
+  return request<PasswordChangeRequestResponse>('/auth/2fa/enable/request', { method: 'POST', token })
+}
+
+export async function confirmEnableTwoFactor(token: string, code: string): Promise<MeResponse> {
+  return request<MeResponse>('/auth/2fa/enable/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+    token,
+  })
+}
+
+export async function requestDisableTwoFactor(token: string): Promise<PasswordChangeRequestResponse> {
+  return request<PasswordChangeRequestResponse>('/auth/2fa/disable/request', { method: 'POST', token })
+}
+
+export async function confirmDisableTwoFactor(token: string, code: string): Promise<MeResponse> {
+  return request<MeResponse>('/auth/2fa/disable/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+    token,
+  })
+}
+
+export type AuthSessionInfo = {
+  id: number
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  user_agent: string | null
+  ip_address: string | null
+  current: boolean
+}
+
+export async function listAuthSessions(token: string): Promise<AuthSessionInfo[]> {
+  return request<AuthSessionInfo[]>('/auth/sessions', { token })
+}
+
+export async function revokeAuthSession(
+  token: string,
+  sessionId: number
+): Promise<{ detail: string; current?: boolean }> {
+  return request(`/auth/sessions/${sessionId}`, { method: 'DELETE', token })
+}
+
+export async function revokeOtherAuthSessions(token: string): Promise<{ detail: string }> {
+  return request('/auth/sessions/revoke-others', { method: 'POST', token })
+}
+
+export async function logoutCurrentSession(token: string): Promise<{ detail: string }> {
+  return request('/auth/logout', { method: 'POST', token })
+}
+
+export async function deleteAccount(
+  token: string,
+  payload: { confirmation: string; password?: string; email: string }
+): Promise<{ detail: string }> {
+  return request('/auth/me/delete', { method: 'POST', body: JSON.stringify(payload), token })
 }
 
 export function getGoogleLoginUrl(): string {
@@ -179,6 +292,7 @@ export async function uploadWorkspaceCsv(
     body: form,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -204,6 +318,7 @@ export async function uploadWorkspaceImage(
     body: form,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -224,6 +339,7 @@ export async function uploadWorkspaceDocx(file: File, token: string): Promise<Wo
     body: form,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -236,6 +352,7 @@ export async function getWorkspaceMediaBlob(itemId: number, token: string): Prom
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/media`, { headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -260,6 +377,7 @@ export async function getWorkspaceFileContent(itemId: number, token: string): Pr
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}/content`, { headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -282,6 +400,7 @@ export async function updateWorkspaceFileContent(
     body: content,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -489,6 +608,7 @@ export async function downloadResearchDatasheetPdf(
     { headers: bearerAuthHeader() }
   )
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Datasheet download failed'
     throw new Error(msg)
@@ -787,6 +907,7 @@ export async function deleteResearchAgent(agentId: number, token: string): Promi
   void token
   const res = await fetch(`${API_BASE}/research/agents/${agentId}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail)
       ? err.detail[0]?.msg ?? 'Request failed'
@@ -833,6 +954,7 @@ export async function deleteResearchAgentAssignment(
     headers,
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail)
       ? err.detail[0]?.msg ?? 'Request failed'
@@ -846,6 +968,7 @@ export async function deleteWorkspaceItem(itemId: number, token: string): Promis
   void token
   const res = await fetch(`${API_BASE}/workspace/items/${itemId}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1025,6 +1148,7 @@ export async function deletePurchaseOrder(token: string, id: number): Promise<vo
   void token
   const res = await fetch(`${API_BASE}/purchase-orders/${id}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1098,6 +1222,7 @@ export async function deleteReport(token: string, id: number): Promise<void> {
   void token
   const res = await fetch(`${API_BASE}/reports/${id}`, { method: 'DELETE', headers })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = Array.isArray(err.detail) ? err.detail[0]?.msg ?? 'Request failed' : (err.detail ?? 'Request failed')
     throw new Error(typeof msg === 'string' ? msg : 'Request failed')
@@ -1110,6 +1235,7 @@ async function fetchBlob(path: string, token: string): Promise<Blob> {
     headers: bearerAuthHeader(),
   })
   if (!res.ok) {
+    onApiFailure('', res.status)
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const msg = typeof err.detail === 'string' ? err.detail : 'Export failed'
     throw new Error(msg)

@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
-import { getGoogleLoginUrl, getMe, signIn } from '@/lib/api'
+import {
+  authEntryHref,
+  clearTwoFactorChallenge,
+  consumePostAuthRedirect,
+  peekTwoFactorChallenge,
+  rememberPostAuthRedirect,
+  setCurrentUserName,
+  setCurrentUserEmail,
+  setCurrentUserPhotoUrl,
+  setToken,
+  stashTwoFactorChallenge,
+} from '@/lib/auth'
+import { getGoogleLoginUrl, getMe, resendSignInTwoFactor, signIn, verifySignInTwoFactor } from '@/lib/api'
 
 function GoogleIcon() {
   return (
@@ -35,9 +46,11 @@ function EnvelopeIcon() {
 }
 
 export function SignInPage() {
-  const [step, setStep] = useState<'email' | 'password'>('email')
+  const [step, setStep] = useState<'email' | 'password' | '2fa'>('email')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [searchParams] = useSearchParams()
@@ -49,10 +62,36 @@ export function SignInPage() {
 
   useEffect(() => {
     const err = searchParams.get('error')
-    if (err) setError(err === 'google_denied' ? 'Google sign-in was cancelled or failed.' : 'Something went wrong.')
+    if (err === 'google_denied') setError('Google sign-in was cancelled or failed.')
+    else if (err === 'account_disabled') setError('This account has been deleted or disabled.')
+    else if (err) setError('Something went wrong.')
+    rememberPostAuthRedirect(searchParams.get('next'))
+    const pending = peekTwoFactorChallenge()
+    if (pending && searchParams.get('verify') === '1') {
+      setTwoFactorToken(pending)
+      setStep('2fa')
+    }
   }, [searchParams])
 
+  function finishSignIn(res: { access_token?: string | null; display_name?: string | null; email?: string | null }) {
+    if (!res.access_token) {
+      throw new Error('Sign in failed')
+    }
+    clearTwoFactorChallenge()
+    const accountEmail = res.email?.trim() || email.trim()
+    if (accountEmail) setCurrentUserEmail(accountEmail)
+    if (res.display_name) setCurrentUserName(res.display_name)
+    setToken(res.access_token)
+    getMe(res.access_token)
+      .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
+      .catch(() => {
+        // ignore
+      })
+    navigate(consumePostAuthRedirect(searchParams.get('next')), { replace: true })
+  }
+
   function handleGoogleSignIn() {
+    rememberPostAuthRedirect(searchParams.get('next'))
     window.location.href = getGoogleLoginUrl()
   }
 
@@ -68,19 +107,52 @@ export function SignInPage() {
     setLoading(true)
     try {
       const res = await signIn({ email: email.trim(), password })
-      // Bind workspace owner before token so scoped storage keys never read another user's cache.
-      setCurrentUserEmail(email.trim())
-      setCurrentUserName(res.display_name)
-      setToken(res.access_token)
-      // Fetch profile photo right after login so navbar can show it
-      getMe(res.access_token)
-        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
-        .catch(() => {
-          // ignore
-        })
-      navigate('/')
+      if (res.requires_2fa && res.two_factor_token) {
+        stashTwoFactorChallenge(res.two_factor_token)
+        setTwoFactorToken(res.two_factor_token)
+        setStep('2fa')
+        return
+      }
+      finishSignIn(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleVerifyTwoFactor(e: React.FormEvent) {
+    e.preventDefault()
+    if (!twoFactorToken) {
+      setError('Verification session expired. Sign in again.')
+      setStep('password')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      const res = await verifySignInTwoFactor({
+        two_factor_token: twoFactorToken,
+        code: twoFactorCode.trim(),
+      })
+      finishSignIn(res)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid verification code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleResendTwoFactor() {
+    if (!twoFactorToken) return
+    setError('')
+    setLoading(true)
+    try {
+      const resp = await resendSignInTwoFactor(twoFactorToken)
+      setError('')
+      if (resp.dev_code) setError(`Code resent. Dev code: ${resp.dev_code}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend code')
     } finally {
       setLoading(false)
     }
@@ -95,7 +167,9 @@ export function SignInPage() {
         <p className="mb-6 text-[13px] text-app-secondary">
           {step === 'email'
             ? 'Sign in to continue researching parts and vendors.'
-            : 'Enter your password to sign in.'}
+            : step === '2fa'
+              ? 'Enter the verification code sent to your email.'
+              : 'Enter your password to sign in.'}
         </p>
 
         {error && (
@@ -151,6 +225,39 @@ export function SignInPage() {
               </button>
             </form>
           </>
+        ) : step === '2fa' ? (
+          <form className="space-y-5" onSubmit={handleVerifyTwoFactor}>
+            <div className="space-y-2">
+              <label htmlFor="signin-2fa-code" className="block text-sm font-medium text-app-secondary">
+                Verification code
+              </label>
+              <input
+                id="signin-2fa-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-transparent transition-colors"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-[10px] bg-app-accent px-5 py-2.5 font-semibold text-white transition-colors hover:bg-app-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? 'Verifying…' : 'Verify and sign in'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleResendTwoFactor()}
+              disabled={loading}
+              className="w-full text-sm font-medium text-app-secondary hover:text-app-label disabled:opacity-50"
+            >
+              Resend code
+            </button>
+          </form>
         ) : (
           <form className="space-y-5" onSubmit={handleSignIn}>
             <div className="space-y-2">
@@ -201,7 +308,7 @@ export function SignInPage() {
 
         <p className="mt-6 text-center text-sm text-app-secondary">
           Don&apos;t have an account?{' '}
-          <Link to="/signup" className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
+          <Link to={authEntryHref('/signup', searchParams.get('next'))} className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
             Sign up
           </Link>
         </p>

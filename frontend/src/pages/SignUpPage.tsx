@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { setCurrentUserName, setCurrentUserEmail, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  authEntryHref,
+  consumePostAuthRedirect,
+  rememberPostAuthRedirect,
+  setCurrentUserName,
+  setCurrentUserEmail,
+  setCurrentUserPhotoUrl,
+  setToken,
+} from '@/lib/auth'
+import { passwordPolicyError, PASSWORD_POLICY_HINT } from '@/lib/passwordPolicy'
 import { getGoogleLoginUrl, signUp } from '@/lib/api'
 
 function GoogleIcon() {
@@ -44,12 +53,18 @@ export function SignUpPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   useEffect(() => {
     document.title = 'Sign up — Intelligent Research'
   }, [])
 
+  useEffect(() => {
+    rememberPostAuthRedirect(searchParams.get('next'))
+  }, [searchParams])
+
   function handleGoogleSignUp() {
+    rememberPostAuthRedirect(searchParams.get('next'))
     window.location.href = getGoogleLoginUrl()
   }
 
@@ -60,18 +75,23 @@ export function SignUpPage() {
       setError('Passwords do not match')
       return
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    const policy = passwordPolicyError(password)
+    if (policy) {
+      setError(policy)
       return
     }
     setLoading(true)
     try {
       const res = await signUp({ email: email.trim(), password })
-      setCurrentUserEmail(email.trim())
+      if (!res.access_token) {
+        setError('Sign up failed')
+        return
+      }
+      setCurrentUserEmail(res.email?.trim() || email.trim())
       setCurrentUserName(res.display_name ?? deriveNameFromEmail(email.trim()))
       setCurrentUserPhotoUrl(null)
       setToken(res.access_token)
-      navigate('/')
+      navigate(consumePostAuthRedirect(searchParams.get('next')), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign up failed')
     } finally {
@@ -136,12 +156,13 @@ export function SignUpPage() {
               id="signup-password"
               type="password"
               autoComplete="new-password"
-              placeholder="••••••••"
+              placeholder={PASSWORD_POLICY_HINT}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               className="w-full px-4 py-2.5 rounded-lg border border-app-separator bg-app-surface text-app-label placeholder:text-app-tertiary focus:outline-none focus:ring-2 focus:ring-offset-app-bg focus:ring-blue-500 focus:border-app-accent transition-colors"
             />
+            <p className="text-xs text-app-secondary">{PASSWORD_POLICY_HINT}</p>
           </div>
           <div className="space-y-2">
             <label htmlFor="signup-confirm" className="block text-sm font-medium text-app-secondary">
@@ -168,7 +189,7 @@ export function SignUpPage() {
         </form>
         <p className="mt-6 text-center text-sm text-app-secondary">
           Already have an account?{' '}
-          <Link to="/signin" className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
+          <Link to={authEntryHref('/signin', searchParams.get('next'))} className="font-semibold text-app-accent hover:text-app-accent hover:underline focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-app-bg rounded">
             Sign in
           </Link>
         </p>

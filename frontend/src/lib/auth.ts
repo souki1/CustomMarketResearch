@@ -270,3 +270,144 @@ export function useAuthToken(): string | null {
 
   return token
 }
+
+const POST_AUTH_REDIRECT_KEY = 'cmr_post_auth_redirect'
+const TWO_FACTOR_PENDING_KEY = 'cmr_2fa_pending'
+const AUTH_PUBLIC_PATHS = new Set(['/signin', '/signup', '/auth/callback'])
+const DEFAULT_AFTER_AUTH_PATH = '/'
+
+function decodeJwtPayload(token: string): { exp?: unknown } | null {
+  const parts = token.split('.')
+  if (parts.length !== 3 || !parts[1]) return null
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+    return JSON.parse(atob(padded)) as { exp?: unknown }
+  } catch {
+    return null
+  }
+}
+
+/** Client-side expiry check for UX only. The API still verifies the signature. */
+export function isJwtExpired(token: string, skewSeconds = 10): boolean {
+  const payload = decodeJwtPayload(token)
+  if (typeof payload?.exp !== 'number') return true
+  return payload.exp * 1000 <= Date.now() + skewSeconds * 1000
+}
+
+export function hasValidSession(token: string | null = getToken()): boolean {
+  if (!token?.trim()) return false
+  return !isJwtExpired(token)
+}
+
+export function isAuthenticated(): boolean {
+  return hasValidSession()
+}
+
+/** Allow only in-app relative paths. Blocks protocol-relative and external URLs. */
+export function sanitizeAppPath(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  let path = raw.trim()
+  if (!path) return null
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    return null
+  }
+  if (path.length > 2048) return null
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('://') || path.includes('\\')) {
+    return null
+  }
+  if (/[\u0000-\u001F]/.test(path)) return null
+  const pathname = path.split('?')[0]?.split('#')[0] ?? ''
+  if (!pathname || AUTH_PUBLIC_PATHS.has(pathname)) return null
+  if (pathname.startsWith('/signin') || pathname.startsWith('/signup') || pathname.startsWith('/auth/')) {
+    return null
+  }
+  return path
+}
+
+export function signInHref(next?: string | null): string {
+  const safe = sanitizeAppPath(next)
+  if (!safe || safe === DEFAULT_AFTER_AUTH_PATH) return '/signin'
+  return `/signin?next=${encodeURIComponent(safe)}`
+}
+
+export function authEntryHref(path: '/signin' | '/signup', next?: string | null): string {
+  const safe = sanitizeAppPath(next)
+  if (!safe) return path
+  return `${path}?next=${encodeURIComponent(safe)}`
+}
+
+export function buildSignInHref(from: { pathname: string; search: string; hash: string }): string {
+  return signInHref(`${from.pathname}${from.search}${from.hash}`)
+}
+
+export function rememberPostAuthRedirect(next?: string | null) {
+  const safe = sanitizeAppPath(next)
+  try {
+    if (safe) sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, safe)
+    else sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export function consumePostAuthRedirect(explicitNext?: string | null): string {
+  const fromQuery = sanitizeAppPath(explicitNext)
+  let stored: string | null = null
+  try {
+    stored = sanitizeAppPath(sessionStorage.getItem(POST_AUTH_REDIRECT_KEY))
+    sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY)
+  } catch {
+    stored = null
+  }
+  return fromQuery ?? stored ?? DEFAULT_AFTER_AUTH_PATH
+}
+
+export function stashTwoFactorChallenge(token: string) {
+  try {
+    sessionStorage.setItem(TWO_FACTOR_PENDING_KEY, token)
+  } catch {
+    // ignore
+  }
+}
+
+export function peekTwoFactorChallenge(): string | null {
+  try {
+    return sessionStorage.getItem(TWO_FACTOR_PENDING_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function clearTwoFactorChallenge() {
+  try {
+    sessionStorage.removeItem(TWO_FACTOR_PENDING_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/** Drop an expired JWT so guests never keep a dead session in storage. */
+export function dropExpiredSession() {
+  const token = getToken()
+  if (token && isJwtExpired(token)) clearAuth()
+}
+
+/** Clear a rejected/expired session and send the user to sign-in so in-memory state cannot leak. */
+export function handleUnauthorizedSession() {
+  if (!getToken()) return
+  if (typeof window === 'undefined') {
+    clearAuth()
+    return
+  }
+  const pathname = window.location.pathname
+  const onAuthPage =
+    pathname === '/signin' || pathname === '/signup' || pathname.startsWith('/auth/')
+  const next = sanitizeAppPath(`${pathname}${window.location.search}${window.location.hash}`)
+  rememberPostAuthRedirect(next)
+  clearAuth()
+  if (onAuthPage) return
+  window.location.replace(signInHref(next))
+}

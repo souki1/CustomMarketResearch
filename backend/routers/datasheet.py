@@ -6,16 +6,13 @@ from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlparse, urlunparse
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import decode_access_token
 from config import get_settings
-from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
+from routers.auth import get_current_user
 from schemas import (
     DataSheetSelectionCreate,
     DataSheetSelectionResponse,
@@ -605,24 +602,6 @@ def _compose_research_location(body: ResearchSearchBody | None) -> str:
 
 
 router = APIRouter(prefix="/datasheet", tags=["datasheet"])
-
-
-async def get_current_user(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth[7:]
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 
 @router.post("/selections", response_model=DataSheetSelectionResponse, status_code=201)

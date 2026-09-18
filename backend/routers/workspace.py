@@ -5,14 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth_utils import decode_access_token
 from config import get_settings
-from database import get_db
 from models import User
 from mongo import get_mongo_db, get_next_sequence
+from routers.auth import get_current_user
 from schemas import WorkspaceItemCreate, WorkspaceItemMove, WorkspaceItemResponse
 from reports.docx_import import create_linked_report_from_docx
 from workspace_reports_folder import get_or_create_reports_folder_id
@@ -24,24 +21,6 @@ settings = get_settings()
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = _BACKEND_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-async def get_current_user(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth[7:]
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 
 @router.get("/items", response_model=list[WorkspaceItemResponse])

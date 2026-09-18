@@ -2,11 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from config import get_settings, parse_frontend_urls
 from database import init_db
 from mongo import get_mongo_db
-from models import User  # noqa: F401 - register model for create_all
+from models import AuthSession, User  # noqa: F401 - register models for create_all
 from routers import ai, auth, compare, datasheet, purchase_orders, reports, research, workspace
 from portfolio.PortfolioApi import router as portfolio_router
 
@@ -64,8 +67,25 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=()",
+        )
+        response.headers.setdefault("X-XSS-Protection", "0")
+        if request.url.path.startswith("/auth/") and request.method != "OPTIONS":
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+
 app = FastAPI(title="InteligentResearch API", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,

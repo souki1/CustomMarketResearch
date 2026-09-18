@@ -87,6 +87,16 @@ async def init_db() -> None:
                 ("password_change_code_expires_at", "TIMESTAMPTZ"),
                 ("password_change_code_last_sent_at", "TIMESTAMPTZ"),
                 ("password_change_code_attempts", "INTEGER DEFAULT 0"),
+                ("is_active", "BOOLEAN DEFAULT TRUE"),
+                ("token_version", "INTEGER DEFAULT 0"),
+                ("failed_login_count", "INTEGER DEFAULT 0"),
+                ("locked_until", "TIMESTAMPTZ"),
+                ("two_factor_enabled", "BOOLEAN DEFAULT FALSE"),
+                ("two_factor_code_hash", "VARCHAR(128)"),
+                ("two_factor_code_expires_at", "TIMESTAMPTZ"),
+                ("two_factor_code_last_sent_at", "TIMESTAMPTZ"),
+                ("two_factor_code_attempts", "INTEGER DEFAULT 0"),
+                ("two_factor_code_purpose", "VARCHAR(32)"),
             ]:
                 # Use a nested transaction (SAVEPOINT) per column so that a
                 # single failure doesn't abort the entire connection transaction.

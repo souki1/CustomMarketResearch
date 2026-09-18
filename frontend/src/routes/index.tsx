@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 
 import { MainLayout } from '@/layouts'
+import { FallbackRoute, GuestOnly, RequireAuth } from '@/routes/AuthGuards'
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { ComparePage } from '@/pages/ComparePage'
 import { AiPlaceholderPage } from '@/pages/AiPlaceholderPage'
@@ -32,62 +33,72 @@ import { WishlistPage } from '@/pages/WishlistPage'
 
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: <MainLayout />,
+    element: <RequireAuth />,
     children: [
-      { index: true, element: <DashboardPage /> },
-      { path: 'files', element: <HomePage /> },
-      { path: 'research', element: <ResearchPage /> },
-      { path: 'parts-catalog', element: <PartsCatalogPage /> },
-      { path: 'research/compare', element: <ComparePage /> },
-      { path: 'compare', element: <Navigate to={RESEARCH_COMPARE_PATH} replace /> },
-      { path: 'reports', element: <GenerateReportPage /> },
-      { path: 'bucket', element: <BucketPage /> },
-
-      { path: 'purchase-order', element: <PurchaseOrderPage /> },
-      { path: 'purchase-order/:poId', element: <PurchaseOrderDetailPage /> },
       {
-        element: <DeskShell />,
+        path: '/',
+        element: <MainLayout />,
         children: [
+          { index: true, element: <DashboardPage /> },
+          { path: 'files', element: <HomePage /> },
+          { path: 'research', element: <ResearchPage /> },
+          { path: 'parts-catalog', element: <PartsCatalogPage /> },
+          { path: 'research/compare', element: <ComparePage /> },
+          { path: 'compare', element: <Navigate to={RESEARCH_COMPARE_PATH} replace /> },
+          { path: 'reports', element: <GenerateReportPage /> },
+          { path: 'bucket', element: <BucketPage /> },
+          { path: 'purchase-order', element: <PurchaseOrderPage /> },
+          { path: 'purchase-order/:poId', element: <PurchaseOrderDetailPage /> },
           {
-            path: 'oem',
-            element: <OemLayout />,
+            element: <DeskShell />,
             children: [
-              { index: true, element: <Navigate to={OEM_OVERVIEW_PATH} replace /> },
-              { path: 'portal', element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
-              { path: ':section', element: <OemSectionPage /> },
+              {
+                path: 'oem',
+                element: <OemLayout />,
+                children: [
+                  { index: true, element: <Navigate to={OEM_OVERVIEW_PATH} replace /> },
+                  { path: 'portal', element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
+                  { path: ':section', element: <OemSectionPage /> },
+                ],
+              },
+              {
+                path: 'supplier',
+                element: <SupplierLayout />,
+                children: [
+                  { index: true, element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
+                  { path: ':section', element: <SupplierSectionPage /> },
+                ],
+              },
             ],
           },
+          { path: 'ai', element: <AiPlaceholderPage /> },
+          { path: 'portfolio', element: <PortfolioPage /> },
+          { path: 'wishlist', element: <WishlistPage /> },
           {
-            path: 'supplier',
-            element: <SupplierLayout />,
+            path: 'settings',
+            element: <SettingsLayout />,
             children: [
-              { index: true, element: <Navigate to={SUPPLIER_HOME_PATH} replace /> },
-              { path: ':section', element: <SupplierSectionPage /> },
+              { index: true, element: <Navigate to="/settings/profile" replace /> },
+              { path: 'profile', element: <SettingsProfilePage /> },
+              { path: 'company', element: <SettingsCompanyPage /> },
+              { path: 'billing', element: <SettingsBillingPage /> },
+              { path: 'notifications', element: <SettingsNotificationsPage /> },
+              { path: 'security', element: <SettingsSecurityPage /> },
             ],
           },
-        ],
-      },
-      { path: 'ai', element: <AiPlaceholderPage /> },
-      { path: 'portfolio', element: <PortfolioPage /> },
-      { path: 'wishlist', element: <WishlistPage /> },
-      {
-        path: 'settings',
-        element: <SettingsLayout />,
-        children: [
-          { index: true, element: <Navigate to="/settings/profile" replace /> },
-          { path: 'profile', element: <SettingsProfilePage /> },
-          { path: 'company', element: <SettingsCompanyPage /> },
-          { path: 'billing', element: <SettingsBillingPage /> },
-          { path: 'notifications', element: <SettingsNotificationsPage /> },
-          { path: 'security', element: <SettingsSecurityPage /> },
         ],
       },
     ],
   },
-  { path: 'signin', element: <SignInPage /> },
-  { path: 'signup', element: <SignUpPage /> },
+  {
+    element: <GuestOnly />,
+    children: [
+      { path: 'signin', element: <SignInPage /> },
+      { path: 'signup', element: <SignUpPage /> },
+    ],
+  },
   { path: 'auth/callback', element: <AuthCallbackPage /> },
+  { path: '*', element: <FallbackRoute /> },
 ])
 
 export function AppRouter() {

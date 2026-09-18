@@ -9,6 +9,9 @@ from config import get_settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
 
+PURPOSE_ACCESS = "access"
+PURPOSE_2FA = "2fa"
+
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -18,10 +21,15 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(sub: str | int, extra: dict[str, Any] | None = None) -> str:
-    minutes = settings.access_token_expire_minutes or 10080  # 7 days if not set in .env
-    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    payload = {"sub": str(sub), "exp": expire}
+def create_access_token(
+    sub: str | int,
+    extra: dict[str, Any] | None = None,
+    *,
+    minutes: int | None = None,
+) -> str:
+    ttl = minutes if minutes is not None else (settings.access_token_expire_minutes or 10080)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ttl)
+    payload = {"sub": str(sub), "exp": expire, "purpose": PURPOSE_ACCESS}
     if extra:
         payload.update(extra)
     algo = settings.algorithm or "HS256"

@@ -22,8 +22,9 @@ import {
   getCurrentUserEmail,
   getCurrentUserPhotoUrl,
   clearAuth,
+  getToken,
 } from '@/lib/auth'
-import { profilePhotoUrl } from '@/lib/api'
+import { logoutCurrentSession, profilePhotoUrl } from '@/lib/api'
 import { getBreadcrumbs } from '@/lib/breadcrumbs'
 
 type NavbarProps = {
@@ -164,7 +165,15 @@ export function Navbar({ sidebarOpen = true, onSidebarToggle, onOpenCommandPalet
     setMenuAnimated(false)
   }, [dropdownOpen])
 
-  function handleSignOut() {
+  async function handleSignOut() {
+    const token = getToken()
+    if (token) {
+      try {
+        await logoutCurrentSession(token)
+      } catch {
+        // still clear locally
+      }
+    }
     clearAuth()
     setDropdownOpen(false)
     navigate('/signin')

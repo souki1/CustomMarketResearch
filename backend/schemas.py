@@ -1,14 +1,21 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Literal
+
+from security import assert_password_policy
 
 
 class SignUpBody(BaseModel):
     email: EmailStr
     password: str
     display_name: str | None = None
+
+    @field_validator("password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        return assert_password_policy(value)
 
 
 class SignInBody(BaseModel):
@@ -17,9 +24,29 @@ class SignInBody(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
-    display_name: str
+    display_name: str | None = None
+    email: str | None = None
+    requires_2fa: bool = False
+    two_factor_token: str | None = None
+
+
+class TwoFactorVerifyBody(BaseModel):
+    two_factor_token: str
+    code: str = Field(min_length=4, max_length=12)
+
+
+class TwoFactorResendBody(BaseModel):
+    two_factor_token: str
+
+
+class TwoFactorConfirmBody(BaseModel):
+    code: str = Field(min_length=4, max_length=12)
+
+
+class AuthExchangeBody(BaseModel):
+    code: str = Field(min_length=8, max_length=256)
 
 
 class UserResponse(BaseModel):
@@ -29,6 +56,9 @@ class UserResponse(BaseModel):
     phone: str | None = None
     job_title: str | None = None
     profile_photo_url: str | None = None
+    has_password: bool = False
+    google_linked: bool = False
+    two_factor_enabled: bool = False
 
     class Config:
         from_attributes = True
@@ -54,9 +84,31 @@ class PasswordChangeConfirmBody(BaseModel):
     code: str
     new_password: str
 
+    @field_validator("new_password")
+    @classmethod
+    def _password_policy(cls, value: str) -> str:
+        return assert_password_policy(value)
+
 
 class PasswordChangeConfirmResponse(BaseModel):
     detail: str
+    access_token: str | None = None
+
+
+class AuthSessionResponse(BaseModel):
+    id: int
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    user_agent: str | None = None
+    ip_address: str | None = None
+    current: bool = False
+
+
+class DeleteAccountBody(BaseModel):
+    confirmation: str
+    password: str | None = None
+    email: str
 
 
 class WorkspaceItemBase(BaseModel):

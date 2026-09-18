@@ -1,35 +1,83 @@
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { setCurrentUserEmail, setCurrentUserName, setCurrentUserPhotoUrl, setToken } from '@/lib/auth'
-import { getMe } from '@/lib/api'
+import {
+  consumePostAuthRedirect,
+  setCurrentUserEmail,
+  setCurrentUserName,
+  setCurrentUserPhotoUrl,
+  setToken,
+  stashTwoFactorChallenge,
+} from '@/lib/auth'
+import { exchangeAuthCode, getMe } from '@/lib/api'
 
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const token = searchParams.get('token')
+  const code = searchParams.get('code')
+  const legacyToken = searchParams.get('token')
   const displayName = searchParams.get('display_name')
   const email = searchParams.get('email')
   const error = searchParams.get('error')
+  const next = searchParams.get('next')
 
   useEffect(() => {
-    if (error) {
-      navigate('/signin?error=' + encodeURIComponent(error), { replace: true })
-      return
+    let cancelled = false
+
+    async function completeAuth() {
+      if (error) {
+        navigate('/signin?error=' + encodeURIComponent(error), { replace: true })
+        return
+      }
+
+      try {
+        if (code) {
+          const res = await exchangeAuthCode(code)
+          if (cancelled) return
+          if (res.requires_2fa && res.two_factor_token) {
+            stashTwoFactorChallenge(res.two_factor_token)
+            navigate('/signin?verify=1', { replace: true })
+            return
+          }
+          if (!res.access_token) {
+            navigate('/signin?error=exchange_failed', { replace: true })
+            return
+          }
+          if (res.email) setCurrentUserEmail(res.email)
+          if (res.display_name) setCurrentUserName(res.display_name)
+          setToken(res.access_token)
+          getMe(res.access_token)
+            .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
+            .catch(() => {
+              // ignore
+            })
+          navigate(consumePostAuthRedirect(next), { replace: true })
+          return
+        }
+
+        if (legacyToken) {
+          if (email) setCurrentUserEmail(email)
+          if (displayName) setCurrentUserName(displayName)
+          setToken(legacyToken)
+          getMe(legacyToken)
+            .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
+            .catch(() => {
+              // ignore
+            })
+          navigate(consumePostAuthRedirect(next), { replace: true })
+          return
+        }
+
+        navigate('/signin', { replace: true })
+      } catch {
+        if (!cancelled) navigate('/signin?error=exchange_failed', { replace: true })
+      }
     }
-    if (token) {
-      // Bind workspace owner before token so scoped storage keys never read another user's cache.
-      if (email) setCurrentUserEmail(email)
-      if (displayName) setCurrentUserName(displayName)
-      setToken(token)
-      // Fetch profile photo after login so navbar can show it immediately
-      getMe(token)
-        .then((me) => setCurrentUserPhotoUrl(me.profile_photo_url ?? null))
-        .catch(() => {
-          // ignore (navbar will fall back to letter avatar)
-        })
+
+    void completeAuth()
+    return () => {
+      cancelled = true
     }
-    navigate('/', { replace: true })
-  }, [token, displayName, email, error, navigate])
+  }, [code, legacyToken, displayName, email, error, next, navigate])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-app-bg text-[13px] text-app-secondary">
