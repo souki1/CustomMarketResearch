@@ -28,6 +28,7 @@ export type OemCatalogId =
   | 'auctions'
   | 'punchout'
   | 'aml'
+  | 'requests'
   | 'expedite'
   | 'budgets'
   | 'landed-cost'

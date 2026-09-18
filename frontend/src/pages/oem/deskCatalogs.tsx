@@ -153,6 +153,21 @@ export const OEM_CATALOGS: Record<OemCatalogId, CatalogSpec> = {
       ['HH164-32430', 'Gates', '6M3K-08', 'Pending', 'E. Walsh'],
     ]
   ),
+  requests: spec(
+    'Purchase requests in the buy queue',
+    [
+      { label: 'Open', value: '4' },
+      { label: 'Awaiting quote', value: '2' },
+    ],
+    ['Request', 'Part', 'Qty', 'Need by', 'Buyer', 'Status'],
+    [
+      ['PR-1042', 'TC403-14670', '40', '2026-09-22', 'A. Patel', 'RFQ out'],
+      ['PR-1040', '1G539-33012', '12', '2026-09-18', 'A. Patel', 'Approved'],
+      ['PR-1037', 'HH164-32430', '8', '2026-09-25', 'R. Chen', 'Draft'],
+      ['PR-1033', 'TA040-14720', '6', '2026-09-16', 'A. Patel', 'On hold'],
+    ],
+    'Intake from plants before RFQ or PO. Approved requests move to In track.'
+  ),
   expedite: spec(
     'Expedites & line-down',
     [
