@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { OEM_OVERVIEW_PATH, PARTS_CATALOG_PATH, RESEARCH_COMPARE_PATH, SUPPLIER_HOME_PATH } from '@/lib/paths'
+import {
+  OEM_OVERVIEW_PATH,
+  PARTS_CATALOG_PATH,
+  PURCHASE_ORDER_PATH,
+  RESEARCH_COMPARE_PATH,
+  SUPPLIER_HOME_PATH,
+} from '@/lib/paths'
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -135,6 +141,13 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
         keywords: ['compare', 'comparison', 'parts', 'vendors'],
         icon: <ResearchIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
         action: () => navigate(RESEARCH_COMPARE_PATH),
+      },
+      {
+        id: 'purchase-order',
+        label: 'Go to Purchase Order',
+        keywords: ['purchase', 'order', 'po', 'procurement', 'vendor', 'orders'],
+        icon: <FileIcon className="h-4 w-4 shrink-0 text-app-secondary" />,
+        action: () => navigate(PURCHASE_ORDER_PATH),
       },
       {
         id: 'oem-desk',

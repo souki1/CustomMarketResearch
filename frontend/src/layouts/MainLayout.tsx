@@ -123,7 +123,7 @@ function MainLayoutContent() {
               className={`flex h-full shrink-0 transition-[width] duration-200 ease-out ${showSidebar ? 'w-56' : 'w-16'}`}
             >
               <div className="h-full w-full overflow-hidden">
-                <Sidebar open={showSidebar} collapsed={!showSidebar} onToggle={handleSidebarToggle} />
+                <Sidebar open={showSidebar} collapsed={!showSidebar} />
               </div>
             </div>
             <main className="h-full min-h-0 min-w-0 flex-1 bg-app-bg">

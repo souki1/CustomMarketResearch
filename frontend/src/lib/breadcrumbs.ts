@@ -156,8 +156,15 @@ export function getBreadcrumbs(pathname: string): BreadcrumbItem[] {
     return markCurrent([dashboard, { label: 'Bucket', href: '/bucket' }])
   }
 
-  if (path === '/purchase-order') {
-    return markCurrent([dashboard, { label: 'Operate' }, { label: 'Orders', href: '/purchase-order' }])
+  if (path === '/purchase-order' || path.startsWith('/purchase-order/')) {
+    const crumbs: BreadcrumbItem[] = [
+      dashboard,
+      { label: 'Decide' },
+      { label: 'Purchase Order', href: '/purchase-order' },
+    ]
+    const poId = path.split('/')[2]
+    if (poId) crumbs.push({ label: `PO ${poId}`, href: path })
+    return markCurrent(crumbs)
   }
 
   if (path === '/ai') {

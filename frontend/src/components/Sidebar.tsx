@@ -1,17 +1,15 @@
 import {
+  ClipboardList,
   Factory,
   Files,
   GitCompare,
   Heart,
   LayoutDashboard,
   LayoutGrid,
-  LayoutPanelLeft,
   LineChart,
   Package,
-  PanelLeft,
   Search,
   Settings,
-  ShoppingCart,
   Sparkles,
   Store,
 } from 'lucide-react'
@@ -70,6 +68,12 @@ const GROUPS: NavGroup[] = [
         icon: GitCompare,
         match: (p) => p === RESEARCH_COMPARE_PATH,
       },
+      {
+        to: PURCHASE_ORDER_PATH,
+        label: 'Purchase Order',
+        icon: ClipboardList,
+        match: (p) => p.startsWith(PURCHASE_ORDER_PATH),
+      },
       { to: '/reports', label: 'Reports', icon: LineChart, match: (p) => p === '/reports' },
       { to: '/portfolio', label: 'Portfolio', icon: LayoutGrid, match: (p) => p === '/portfolio' },
       { to: WISHLIST_PATH, label: 'Wishlist', icon: Heart, match: (p) => p === WISHLIST_PATH },
@@ -91,12 +95,6 @@ const GROUPS: NavGroup[] = [
         icon: Store,
         match: (p) => p.startsWith(SUPPLIER_PATH),
       },
-      {
-        to: PURCHASE_ORDER_PATH,
-        label: 'Orders',
-        icon: ShoppingCart,
-        match: (p) => p.startsWith(PURCHASE_ORDER_PATH),
-      },
     ],
   },
   {
@@ -112,24 +110,23 @@ const GROUPS: NavGroup[] = [
 type SidebarProps = {
   open: boolean
   collapsed?: boolean
-  onToggle?: () => void
 }
 
 function linkClass(active: boolean, collapsed: boolean) {
   const base = collapsed
     ? 'flex h-10 w-10 items-center justify-center rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50'
-    : 'flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-medium tracking-[-0.01em] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-accent/50'
+    : 'flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-normal tracking-[-0.01em] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-accent/50'
   if (active) {
     return collapsed
       ? `${base} bg-app-accent-soft text-app-topbar`
-      : `${base} bg-app-fill-strong text-app-label`
+      : `${base} bg-app-fill-strong text-app-secondary`
   }
   return collapsed
-    ? `${base} text-app-secondary hover:bg-app-fill hover:text-app-topbar`
-    : `${base} text-app-secondary hover:bg-app-fill hover:text-app-label`
+    ? `${base} text-app-tertiary hover:bg-app-fill hover:text-app-topbar`
+    : `${base} text-app-tertiary hover:bg-app-fill hover:text-app-secondary`
 }
 
-export function Sidebar({ open, collapsed = false, onToggle }: SidebarProps) {
+export function Sidebar({ open, collapsed = false }: SidebarProps) {
   const location = useLocation()
 
   if (collapsed) {
@@ -158,17 +155,6 @@ export function Sidebar({ open, collapsed = false, onToggle }: SidebarProps) {
               </div>
             ))}
           </div>
-          {onToggle && (
-            <button
-              type="button"
-              onClick={onToggle}
-              className="mt-3 flex h-10 w-10 items-center justify-center rounded-xl text-app-secondary hover:bg-app-fill hover:text-app-topbar focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50"
-              aria-label="Show sidebar labels"
-              title="Show sidebar labels"
-            >
-              <LayoutPanelLeft size={ICON} strokeWidth={STROKE} aria-hidden />
-            </button>
-          )}
         </nav>
       </aside>
     )
@@ -186,7 +172,7 @@ export function Sidebar({ open, collapsed = false, onToggle }: SidebarProps) {
             <div key={group.id} role="group" aria-labelledby={`nav-${group.id}`}>
               <p
                 id={`nav-${group.id}`}
-                className="mb-1 px-2.5 text-xs font-semibold tracking-[0.04em] text-app-tertiary"
+                className="mb-1 px-2.5 text-xs font-normal tracking-[0.04em] text-app-tertiary"
               >
                 {group.label}
               </p>
@@ -215,17 +201,6 @@ export function Sidebar({ open, collapsed = false, onToggle }: SidebarProps) {
             </div>
           ))}
         </div>
-        {onToggle && (
-          <button
-            type="button"
-            onClick={onToggle}
-            className="mt-2 flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] font-medium text-app-secondary hover:bg-app-fill hover:text-app-label focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent/50"
-            aria-label="Hide sidebar labels"
-          >
-            <PanelLeft size={ICON} strokeWidth={STROKE} aria-hidden />
-            Collapse
-          </button>
-        )}
       </nav>
     </aside>
   )

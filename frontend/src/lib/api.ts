@@ -993,6 +993,10 @@ export async function listPurchaseOrders(token: string): Promise<PurchaseOrderRe
   return request<PurchaseOrderResponse[]>('/purchase-orders', { token })
 }
 
+export async function getPurchaseOrder(token: string, id: number): Promise<PurchaseOrderResponse> {
+  return request<PurchaseOrderResponse>(`/purchase-orders/${id}`, { token })
+}
+
 export async function createPurchaseOrder(
   token: string,
   payload: PurchaseOrderCreatePayload
